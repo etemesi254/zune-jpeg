@@ -13,9 +13,9 @@ use std::fs::{metadata, File};
 use std::io::{BufRead, BufReader, Read};
 use zune_traits::sync::{ColorProfile, ImageTrait};
 use zune_traits::image::Image;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-#[derive(Clone, Default)]
+#[derive(Clone,Default)]
 #[allow(clippy::upper_case_acronyms)]
 pub struct JPEG {
     pub(crate) info: ImageInfo,
@@ -23,13 +23,13 @@ pub struct JPEG {
     pub(crate) dc_huffman_tables: Vec<HuffmanTable>,
     pub(crate) ac_huffman_tables: Vec<HuffmanTable>,
 
-    file_name: Path,
+    file_name: PathBuf,
 }
 
 impl JPEG {
-    pub fn new<P>(file: P) -> JPEG where P:AsRef<Path> {
+    pub fn new<P>(file: P) -> JPEG where P:AsRef<PathBuf>+Clone {
         JPEG {
-            file_name: file,
+            file_name: file.as_ref().to_owned(),
             ..Self::default()
         }
     }
@@ -45,16 +45,28 @@ impl JPEG {
         self.dc_huffman_tables.extend_from_slice(table.0.as_slice());
         self.ac_huffman_tables.extend_from_slice(table.1.as_slice());
     }
+    /// Decode a buffer already in memory
+    ///
+    /// The buffer should be a valid JPEG file, perhaps created by the command
+    /// `std:::vec::read()`
+    ///
+    /// # Errors
+    /// If the image is not a valid JPEG file
+    pub fn decode_buffer(buf:&[u8]) -> Result<Image, DecodeErrors> {
+
+        let mut image = JPEG::default();
+        image.decode_internal(BufReader::new(buf))
+    }
     /// Decode a JPEG file
     ///
     /// # Errors
     ///  - `IllegalMagicBytes` - The first two bytes of the image are not `0xffd8`
     ///  - `UnsupportedImage`  - The image encoding scheme is not yet supported, for now we only support
     /// Baseline DCT which is suitable for most images out there
-    pub fn decode_file<P>(file: P) -> Result<Image, DecodeErrors> where P:AsRef<Path>{
+    pub fn decode_file<P>(file: P) -> Result<Image, DecodeErrors> where P:AsRef<Path>+Clone{
         let buffer = BufReader::new(File::open(file.clone()).expect("Could not open file"));
         let mut decoder = JPEG {
-            file_name: file,
+            file_name: file.as_ref().to_owned(),
             // Let others be default
             ..JPEG::default()
         };
@@ -154,11 +166,6 @@ impl JPEG {
     }
 }
 impl ImageTrait for JPEG {
-    fn decode_buffer(&mut self, buf: &[u8]) -> Vec<u8> {
-        todo!()
-    }
-
-
 
     fn width(&self) -> u32 {
         u32::from(self.info.width)
@@ -170,10 +177,10 @@ impl ImageTrait for JPEG {
     fn decode(&mut self) {
         let buffer = BufReader::new(
             File::open(self.file_name.clone())
-                .unwrap_or_else(|_| panic!("Could not open file {}", self.file_name)),
+                .unwrap_or_else(|_| panic!("Could not open file {}", self.file_name.to_str().unwrap())),
         );
         self.decode_internal(buffer)
-            .unwrap_or_else(|f| panic!("Error decoding image {}\n{}", self.file_name, f));
+            .unwrap_or_else(|f| panic!("Error decoding image {}\n{}", self.file_name.to_str().unwrap(), f));
     }
     fn color_profile(&self) -> ColorProfile {
         self.info.color_profile
@@ -185,10 +192,10 @@ impl ImageTrait for JPEG {
 
     fn pretty_print(&self) {
         let meta = metadata(self.file_name.clone())
-            .unwrap_or_else(|_| panic!("Could not get image data {}", self.file_name.clone()));
+            .unwrap_or_else(|_| panic!("Could not get image data {}", self.file_name.clone().to_str().unwrap()));
         // I override this, because I CAN
         println!("+--------------------------------------------------------+");
-        println!("Image File             : {}", self.file_name);
+        println!("Image File             : {}", self.file_name.to_str().unwrap());
         println!("Image Size             : {:?} bytes", meta.len());
         println!("Image Width            : {:?}", self.width());
         println!("Image Height           : {:?}", self.height());
