@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::many_single_char_names, clippy::similar_names)]
+#![allow(clippy::many_single_char_names, clippy::similar_names)]
 //! YUV to RGB Conversion
 //!
 //! Conversion equations can be implemented are
@@ -27,7 +27,7 @@ use std::cmp::{max, min};
 /// Generate tables used in const evaluation
 const fn uv_to_rgb_tables(u: i32, v: i32) -> (i32, i32, i32, i32) {
     // This was an implementation borrowed from ffmpeg
-    // and I forgot its implementation so ill leave a `TODO` here
+    // and I forgot where, so ill leave a `TODO` here until i findd it
     let u = u - 128;
     let v = v - 128;
     // A good intro to bitwise operations
@@ -75,19 +75,25 @@ const BU_TABLE: [i32; 255] = ALL_TABLES.3;
 
 /// 8 bit conversion of YUV to RGB conversion using lookup tables
 /// and clamping values between 0 and 255
+///
+/// # Arguments
+/// > - `y`:Luma component
+/// > - `cb`,`cr`: Chroma components
+/// # Returns
+/// > `(r:u8,g:u8,b:u8)`: Converted color components from  the inputs
 #[allow(
     clippy::module_name_repetitions,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap
 )]
-pub fn yuv_to_rgb_8_bit(y: u8, u: u8, v: u8) -> (u8, u8, u8) {
-    let (y_c, u_c, v_c) = ((y as i32) << 16, u as usize, v as usize);
+pub fn yuv_to_rgb_8_bit(y: u8, cb: u8, cr: u8) -> (u8, u8, u8) {
+    let (y_c, u_c, v_c) = ((y as i32) << 16, cb as usize, cr as usize);
     unsafe {
         // Okay why?
-        // Saves us some  because we know will never panic as u8 are between 0 and 255 and
+        // Saves us some time because we know it will never panic as u8 are between 0 and 255 and
         // our tables are between 0 and 255 so it will never be out of bounds (the u8 would overflow or underflow before it becomes out of bounds)
 
-        // shift down y_c 16 bits to it's original value
+        // shift down  16 bits to it's original value after calculations
         let r = y_c + RV_TABLE.get_unchecked(v_c) + 32768 >> 16;
 
         let g = y_c + GU_TABLE.get_unchecked(u_c) + GV_TABLE.get_unchecked(v_c) >> 16;
@@ -96,16 +102,24 @@ pub fn yuv_to_rgb_8_bit(y: u8, u: u8, v: u8) -> (u8, u8, u8) {
         return (clamp(r), clamp(g), clamp(b));
     }
 }
+/// Convert YCbCr color space to RGB colorspace for each color space in the MCU
+///
+/// #  Arguments
+/// > - `y`,`cb`,`cr`: 2-Dimension array (8 by 8) representing an MCU in the image
+/// # Returns
+/// > `[Array2<f64>;3]`:An array containing `R`,`G` and `B` elements, each with 64 elements for the MCU
 #[allow(clippy::module_name_repetitions)]
-pub fn yuv_to_rgb_mcu(y: &Array2<u8>, u: &Array2<u8>, v: &Array2<u8>) -> [Array2<u8>; 3] {
+pub fn yuv_to_rgb_mcu(y: &Array2<u8>, cb: &Array2<u8>, cr: &Array2<u8>) -> [Array2<u8>; 3] {
     let mut r = Array2::zeros((8, 8));
     // cloning is faster than constructing
     let mut g = r.clone();
     let mut b = g.clone();
     let mut pos = 0;
-    Zip::from(y).and(u).and(v).for_each(|y, cb, cr| {
+    Zip::from(y).and(cb).and(cr).for_each(|y, cb, cr| {
         let values = yuv_to_rgb_8_bit(*y, *cb, *cr);
+        // positions to place the new arrays
         let (x_plane, y_plane) = (pos / 8, pos % 8);
+
         r[[x_plane, y_plane]] = values.0;
         g[[x_plane, y_plane]] = values.1;
         b[[x_plane, y_plane]] = values.2;
