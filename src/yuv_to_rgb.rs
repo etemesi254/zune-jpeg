@@ -1,3 +1,4 @@
+#![allow(dead_code, clippy::many_single_char_names, clippy::similar_names)]
 //! YUV to RGB Conversion
 //!
 //! Conversion equations can be implemented are
@@ -6,7 +7,7 @@
 //! G = Y - 0.34414 * Cb - 0.71414 * Cr
 //! B = Y + 1.77200 * Cb
 //! ```
-//!  To avoid floating point arithmetic, (which is expensive see [here](http://justinparrtech.com/JustinParr-Tech/programming-tip-turn-floating-point-operations-in-to-integer-operations/)))
+//! To avoid floating point arithmetic, (which is expensive a good explanation is found [here])
 //! we represent fractional constants as integers scaled up to 2¹⁶( 4 digits precision);
 //! we have to divide the products by 2¹⁶ with appropriate rounding to get correct answer.
 //!
@@ -19,62 +20,100 @@
 //! For benchmarks of different ways to convert YUV/YCbCr colorspace to RGB see
 //! `/benches/yuv_to_rgb.rs`
 //!
-//!
+//![here]:http://justinparrtech.com/JustinParr-Tech/programming-tip-turn-floating-point-operations-in-to-integer-operations/
+use ndarray::{Array2, Zip};
 use std::cmp::{max, min};
 
-/// Generate tables
-#[inline]
-const fn yuv_to_rgb_tables(u: i32, v: i32) -> (i32, i32, i32, i32) {
-    let u = u -128;
-    let v = v -128;
-    // Minimum Supported Rust Version just went up to 1.46.0
-    // where saturating integers were implemented
-    let coeff_rv = (91881 * v + 32768 >> 16);
-    let coeff_gu =  -22554 * u;
+/// Generate tables used in const evaluation
+const fn uv_to_rgb_tables(u: i32, v: i32) -> (i32, i32, i32, i32) {
+    // This was an implementation borrowed from ffmpeg
+    // and I forgot its implementation so ill leave a `TODO` here
+    let u = u - 128;
+    let v = v - 128;
+    // A good intro to bitwise operations
+    // https://www.codeproject.com/Articles/2247/An-Introduction-to-Bitwise-Operators
+
+    // add and divide by 2^16
+    let coeff_rv = 91881 * v;
+    let coeff_gu = -22554 * u;
     let coeff_gv = -46802 * v;
-    let coeff_bu =  116130 * u;
+    let coeff_bu = 116130 * u;
     //let r = (y + (91881 * v + 32768 >> 16)) as u8;
     //let g = (y + (-22554 * u - 46802 * v + 32768 >> 16)) as u8;
     // let b = (y + 116130 * u+ 32768 >> 16) as u8;
     (coeff_rv, coeff_gu, coeff_gv, coeff_bu)
 }
+/// Generate lookup tables for the constants
 const fn generate_tables() -> ([i32; 255], [i32; 255], [i32; 255], [i32; 255]) {
-    let mut rv_table:[i32;255] = [0;255];
-    let mut gu_table:[i32;255] = [0;255];
-    let mut gv_table:[i32;255] = [0;255];
-    let mut bu_table: [i32; 255] = [0;255];
-    let mut f = 0;
-    while f != 255 {
-        let pos = f as usize;
-        let v = yuv_to_rgb_tables(f,f);
-        rv_table[pos] = v.0 ;
+    // each table contains conversion tables
+    let mut rv_table: [i32; 255] = [0; 255];
+    let mut gu_table: [i32; 255] = [0; 255];
+    let mut gv_table: [i32; 255] = [0; 255];
+    let mut bu_table: [i32; 255] = [0; 255];
+
+    // for loop isn't allowed in const functions, which is weird
+    let mut pos: usize = 0;
+    while pos != 255 {
+        let v = uv_to_rgb_tables(pos as i32, pos as i32);
+        rv_table[pos] = v.0;
         gu_table[pos] = v.1;
         gv_table[pos] = v.2;
         bu_table[pos] = v.3;
-        f+=1;
-    };
-    (rv_table,gu_table,gv_table,bu_table)
+        pos += 1;
+    }
+    (rv_table, gu_table, gv_table, bu_table)
 }
 const ALL_TABLES: ([i32; 255], [i32; 255], [i32; 255], [i32; 255]) = generate_tables();
-/// 1.40200 * V for all values from 1 to 255
+/// `1.40200 * V` bit-shifted to int for all values from 1 to 255
 const RV_TABLE: [i32; 255] = ALL_TABLES.0;
-/// 0.34414 * u for all values from 1 to 255
+/// `0.34414 * u` bit-shifted to int for all values from 1 to 255
 const GU_TABLE: [i32; 255] = ALL_TABLES.1;
-/// 0.71414 * v for all values from 1 to 255
+/// `0.71414 * v` bit-shifted to int for all values from 1 to 255
 const GV_TABLE: [i32; 255] = ALL_TABLES.2;
-/// 1.77200 * u for all values from 1 to 255
-const BU_TABLE :[i32;255]=   ALL_TABLES.3;
-#[inline(always)]
-fn yuv_to_rgb(y:u8, u:u8, v:u8) -> (u8, u8, u8) {
-    let (y,u,v) = (y as usize, u as usize,v as usize);
-    let r = (y as i32+RV_TABLE[v]) ;
-    let g = (y as i32+GU_TABLE[u]+GV_TABLE[v]+32768 >> 16) ;
-    let b = (y as i32+BU_TABLE[u]+32768 >> 16) ;
+/// `1.77200 * u` bit-shifted to int for all values from 1 to 255
+const BU_TABLE: [i32; 255] = ALL_TABLES.3;
 
-    return (clamp(r),clamp(g),clamp(b));
+/// 8 bit conversion of YUV to RGB conversion using lookup tables
+/// and clamping values between 0 and 255
+#[allow(
+    clippy::module_name_repetitions,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+pub fn yuv_to_rgb_8_bit(y: u8, u: u8, v: u8) -> (u8, u8, u8) {
+    let (y_c, u_c, v_c) = ((y as i32) << 16, u as usize, v as usize);
+    unsafe {
+        // Okay why?
+        // Saves us some  because we know will never panic as u8 are between 0 and 255 and
+        // our tables are between 0 and 255 so it will never be out of bounds (the u8 would overflow or underflow before it becomes out of bounds)
 
+        // shift down y_c 16 bits to it's original value
+        let r = y_c + RV_TABLE.get_unchecked(v_c) + 32768 >> 16;
+
+        let g = y_c + GU_TABLE.get_unchecked(u_c) + GV_TABLE.get_unchecked(v_c) >> 16;
+        let b = y_c + BU_TABLE.get_unchecked(u_c) + 32768 >> 16;
+
+        return (clamp(r), clamp(g), clamp(b));
+    }
 }
-/// Fastest clamp I could find
-fn clamp(a:i32)->u8{
-    (min(max(0,a),255)) as u8
+#[allow(clippy::module_name_repetitions)]
+pub fn yuv_to_rgb_mcu(y: &Array2<u8>, u: &Array2<u8>, v: &Array2<u8>) -> [Array2<u8>; 3] {
+    let mut r = Array2::zeros((8, 8));
+    // cloning is faster than constructing
+    let mut g = r.clone();
+    let mut b = g.clone();
+    let mut pos = 0;
+    Zip::from(y).and(u).and(v).for_each(|y, cb, cr| {
+        let values = yuv_to_rgb_8_bit(*y, *cb, *cr);
+        let (x_plane, y_plane) = (pos / 8, pos % 8);
+        r[[x_plane, y_plane]] = values.0;
+        g[[x_plane, y_plane]] = values.1;
+        b[[x_plane, y_plane]] = values.2;
+        pos += 1;
+    });
+    [r, g, b]
+}
+/// Limit values to 0 and 255
+fn clamp(a: i32) -> u8 {
+    (min(max(0, a), 255)) as u8
 }
