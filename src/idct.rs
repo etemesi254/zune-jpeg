@@ -64,24 +64,45 @@ const A: [f64; 6] = [
 pub fn idct(array: &mut Array2<f64>) {
     // 2 Dimension IDCT-II can be classified
 
-    // as applying DCT-III (or DCT-II) on the rows
+    // as applying DCT-III (or DCT-II) on the columns
 
-    // and then applying it on the columns
+    // and then applying it on the rows
 
+    // weird stuff i found, if column looks like [dct_coeff,0,0,0,0,0,0], it's idct is [dct_coeff/16]
+    // for all rows, so hello short circuiting
+    let dc_coeff = array[[0, 0]] / 2.8284271247461903;
+    let ac_coeff = dc_coeff / 2.8284271247461903;
+    // apply on columns first,(to allow short circuiting), see below
+
+    for mut i in array.columns_mut() {
+        inverse_transform(&mut i, dc_coeff);
+    }
     // apply on rows
     for mut i in array.rows_mut() {
-        inverse_transform(&mut i);
-    }
-    // apply on columns
-    for mut i in array.columns_mut() {
-        inverse_transform(&mut i)
+        inverse_transform(&mut i, ac_coeff);
     }
 }
 /// Computes the scaled DCT type III on the given length-8 array in place.
 ///The inverse of this function is transform(), except for rounding errors.
-fn inverse_transform(vector: &mut ArrayViewMut1<f64>) {
+fn inverse_transform(vector: &mut ArrayViewMut1<f64>, coeff: f64) {
     assert_eq!(vector.len(), 8, "Inverse DCT works only on 8 by 8 vectors");
-
+    // Due to quantization, most AC coefficients are usually zero, the IDCT of that column is IDCT of
+    // the DC_COEFFICIENT spread
+    // Another interesting thing is that that idct will always be scaled down by this constant `2.8284271247461903`
+    // hence we can fill our array with coeff, which is DC Coefficient divided by the constant above for the rows
+    // and for rows, it's dc_coeff/columns
+    if vector[0] != 0.0
+        && vector[1] == 0.0
+        && vector[2] == 0.0
+        && vector[3] == 0.0
+        && vector[4] == 0.0
+        && vector[5] == 0.0
+        && vector[6] == 0.0
+        && vector[7] == 0.0
+    {
+        vector.fill(coeff);
+        return;
+    }
     // A straightforward inverse of the forward algorithm
     let v15 = vector[0] / S[0];
     let v26 = vector[1] / S[1];
