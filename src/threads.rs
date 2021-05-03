@@ -2,43 +2,36 @@ use crate::idct::idct;
 use crate::misc::UN_ZIGZAG;
 use crate::yuv_to_rgb::yuv_to_rgb_mcu;
 use ndarray::{arr2, ArcArray1, Array1, Array2};
+use rayon::prelude::*;
 use std::ops::IndexMut;
 use std::sync::{Arc, Mutex};
-use threadpool::{Builder, ThreadPool};
 
-/// Create a thread-pool
-fn create_pool() -> ThreadPool {
-    Builder::new()
-        .thread_name("zune-jpeg".to_string())
-        .thread_stack_size(1024)
-        .build()
-}
-/// Parse YCbCr MCU's
-///
+/// Parse YCbCr MCU
 pub fn parse_threads_ycbcr(
     channels: Vec<[Array1<f64>; 3]>,
     dc_qt: &Array1<f64>,
     ac_qt: &Array1<f64>,
 ) -> Vec<[Array2<u8>; 3]> {
-    let pool = create_pool();
     // Store global channels
     let global_parsed_channel = Arc::new(Mutex::new(vec![
         [arr2(&[[]]), arr2(&[[]]), arr2(&[[]])];
         channels.len()
     ]));
+    // Something we can clone, since its easier to clone than initialize
+    let p: [Array2<u8>; 3] = [arr2(&[[]]), arr2(&[[]]), arr2(&[[]])];
 
     // DC and AC quantization tables
-    let dc_arc = ArcArray1::from_vec(dc_qt.to_vec());
-    let ac_arc = ArcArray1::from_vec(ac_qt.to_vec());
+    let dc_arc = dc_qt.to_shared();
+    let ac_arc = ac_qt.to_shared();
 
     // do idct and all those stuff
-    for (pos, mcu) in channels.into_iter().enumerate() {
+    channels.into_par_iter().enumerate().for_each(|(pos, mcu)| {
         let a = dc_arc.clone();
         let b = ac_arc.clone();
         let c = global_parsed_channel.clone();
-        pool.execute(move || parse_ycbcr_channels(mcu, pos, a, b, c))
-    }
-    pool.join();
+        let d = p.clone();
+        parse_ycbcr_channels(mcu, d, pos, a, b, c);
+    });
 
     let lock_for_rgb = &*global_parsed_channel.lock().unwrap();
     let lock_for_rgb = lock_for_rgb.to_vec();
@@ -54,6 +47,7 @@ pub fn parse_threads_ycbcr(
 /// > - channels :`[Array1<f64>;3]` - Contains color components the `Y` component
 /// is the first element ,the `Cb` component is the second element and the `Cr` component is the third component
 ///> - position:`usize`: The Position of this MCU in the image
+/// > - cloned_channel: Something we can clone,it's cheaper to clone than initialize
 ///> - y_qt:The Luma quantization table
 ///> - cb_cr_qt: The Chrominance and Luminance quantization table
 ///> - buf : A Mutex guarded `Vec` where the resulting parsed matrix will be placed
@@ -69,14 +63,14 @@ pub fn parse_threads_ycbcr(
 ///> - Places the RGB MCU in the buffer
 fn parse_ycbcr_channels(
     channels: [Array1<f64>; 3],
+    cloned_channel: [Array2<u8>; 3],
     position: usize,
     y_qt: ArcArray1<f64>,
     cb_cr_qt: ArcArray1<f64>,
     buf: Arc<Mutex<Vec<[Array2<u8>; 3]>>>,
 ) {
-    // the fact that they can't clone items to spread them makes
-    // us not use the `[arr2(&[[]]);3]` syntax
-    let mut parsed_channel: [Array2<u8>; 3] = [arr2(&[[]]), arr2(&[[]]), arr2(&[[]])];
+    // Initializing this takes a lot of time, so it's better to own one that was sent to us
+    let mut parsed_channel: [Array2<u8>; 3] = cloned_channel;
 
     for (pos, channel) in channels.iter().enumerate() {
         // get appropriate qt table
