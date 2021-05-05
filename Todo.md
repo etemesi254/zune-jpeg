@@ -1,0 +1,3 @@
+ - Faster Huffman Decoder
+ - Integer idct
+ - Better way to do YCbCr to RGB conversion
