@@ -6,14 +6,13 @@
 //!
 use std::io::{BufRead, BufReader, Read};
 
-use byteorder::{BigEndian, ReadBytesExt};
 use ndarray::Array1;
 use zune_traits::sync::ColorProfile;
 
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::image::ImageInfo;
-use crate::misc::{SOFMarkers, UN_ZIGZAG};
+use crate::misc::{SOFMarkers, UN_ZIGZAG, read_u16_be, read_u8, read_u16_into};
 
 /// Parse a Huffman Tree
 ///
@@ -36,11 +35,13 @@ pub fn parse_huffman<R>(
 where
     R: Read,
 {
+    // stupid error on read_u16
+    let mut buf = buf;
     // This should be the first step in decoding
 
     // Read the length of the Huffman table
-    let dht_length = buf
-        .read_u16::<BigEndian>()
+
+    let dht_length = read_u16_be(&mut buf)
         .expect("Could not read Huffman length from image")
         - 2;
     let mut length_read: u16 = 0;
@@ -49,13 +50,12 @@ where
     // A single DHT table may contain multiple HT's
     while length_read < dht_length {
         // HT information
-        let mut ht_info: [u8; 1] = [0];
-        buf.read_exact(&mut ht_info)
+        let  ht_info = read_u8(&mut buf)
             .expect("Could not read ht info to a buffer");
 
         // third bit indicates whether the huffman encoding is DC or AC type
-        let dc_or_ac = (ht_info[0] >> 4) & 0x01;
-        let _index = (ht_info[0] & 0x0f) as usize;
+        let dc_or_ac = (ht_info >> 4) & 0x01;
+        let _index = (ht_info & 0x0f) as usize;
         // read the number of symbols
         let mut num_symbols: [u8; 16] = [0; 16];
         buf.read_exact(&mut num_symbols)
@@ -101,12 +101,13 @@ pub fn parse_dqt<R>(buf: &mut BufReader<R>) -> Result<Vec<Array1<f64>>, DecodeEr
 where
     R: Read,
 {
-    let qt_length = buf.read_u16::<BigEndian>().expect("Could not read length");
+    let mut buf = buf;
+    let qt_length = read_u16_be(&mut buf).expect("Could not read  DQT length");
     let mut length_read: u16 = 0;
     // there may be more than one qt table
     let mut qt_tables = Vec::with_capacity(3);
     while qt_length > length_read {
-        let qt_info = buf.read_u8().expect("Could not read QT  information");
+        let qt_info = read_u8(&mut buf).expect("Could not read QT  information");
         // If the first bit is set,panic
         if ((qt_info >> 1) & 0x01) != 0 {
             // bit mathematics
@@ -142,7 +143,7 @@ where
             1 => {
                 // 16 bit quantization tables
                 let mut qt_values: Vec<u16> = vec![0; 64];
-                buf.read_u16_into::<BigEndian>(&mut qt_values)
+                read_u16_into(&mut buf,&mut qt_values)
                     .expect("Could not read 16 bit QT table to buffer\n");
 
                 length_read += 7 + precision_value as u16;
@@ -197,16 +198,17 @@ pub fn parse_start_of_frame<R>(
 where
     R: Read,
 {
+    let mut buf = buf;
     // Get length of the frame header
-    let length = buf.read_u16::<BigEndian>().unwrap();
+    let length = read_u16_be(&mut buf).unwrap();
     // usually 8, but can be 12 and 16
-    let dt_precision = buf.read_u8().unwrap();
+    let dt_precision = read_u8(&mut buf).unwrap();
     info.set_density(dt_precision);
     // read the image height , maximum is 65,536
-    let img_height = buf.read_u16::<BigEndian>().unwrap();
+    let img_height = read_u16_be(&mut buf).unwrap();
     info.set_height(img_height);
     // read image width
-    let img_width = buf.read_u16::<BigEndian>().unwrap();
+    let img_width = read_u16_be(&mut buf).unwrap();
 
     info.set_width(img_width);
     // Check image width is zero
@@ -214,7 +216,7 @@ where
         return Err(DecodeErrors::ZeroWidthError);
     }
 
-    let num_components = buf.read_u8().unwrap();
+    let num_components = read_u8(&mut buf).unwrap();
     // length should be equal to num components
     if length != u16::from(8 + 3 * num_components) {
         return Err(DecodeErrors::SofError(format!(
@@ -257,12 +259,12 @@ pub fn parse_sos<R>(buf: &mut BufReader<R>, _image_info: &ImageInfo) -> Result<(
 where
     R: Read,
 {
+    let mut buf = buf;
     // Scan header length
-    let _ls = buf
-        .read_u16::<BigEndian>()
+    let _ls = read_u16_be(&mut buf)
         .expect("Could not read start of scan length");
     // Number of components
-    let ns = buf.read_u8().unwrap();
+    let ns = read_u8(&mut buf).unwrap();
     if !(1..5).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
             "Number of components in start of scan should be less than 4 but more than 0. Found {}",
@@ -270,9 +272,10 @@ where
         )));
     }
     for _ in 0..ns {
-        let _component_id = buf.read_u8();
-        let _huffman_tbl = buf.read_u8();
+        let _component_id = read_u8(&mut buf);
+        let _huffman_tbl = read_u8(&mut buf);
     }
-    buf.read_u24::<BigEndian>().unwrap();
+    // 3 ignored bytes
+    buf.consume(3);
     Ok(())
 }
