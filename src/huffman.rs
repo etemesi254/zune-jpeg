@@ -1,72 +1,129 @@
-//! Parse Huffman tables
-//!
-//! This module implements a struct that is capable of parsing JPEG Huffman tables
-//!
-//!
+#![allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_lossless
+)]
+pub(crate) const FAST_BITS: usize = 9;
 
-use std::collections::HashMap;
-
-/// Parse a Huffman Entry and create a lookup table
-///
-/// ![Image of Huffman table](https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Huffman_tree_2.svg/220px-Huffman_tree_2.svg.png)
-///
-/// A Huffman lookup table usually consists of a binary tree with nodes which can contain a sub node
-/// or a leaf.
-/// The leaf contains the actual data, for our case that is a `u8`
-///
-/// To get actual data, we traverse the tree using bits until we reach a node.
-/// Due to the tendency of Huffman Coding allocating most repeating numbers with shorter codes Huffman
-/// tables become efficient for decoding, with worst case being `O(N)` where `N` is `16`
-///
-/// But I use a string,partly because I had a hard time implementing a Binary tree and partly because
-/// this implementation is `O(1)` since a request like `HuffmanTable::lookup("00100")` is finding out if
-/// `00100` exists in the `HashMap`
 #[allow(clippy::module_name_repetitions)]
-#[derive(Clone)]
 pub struct HuffmanTable {
-    pub(crate) lookup_table: HashMap<String, u8>,
+    pub(crate) fast: [u8; 1 << FAST_BITS],
+    pub(crate) code: [u16; 256],
+    pub(crate) values: Vec<u8>,
+    pub(crate) size: [u8; 256],
+    pub(crate) maxcode: [u32; 18],
+    pub(crate) delta: [i32; 17],
+    // table for decoding fast AC values
+    pub(crate) fast_ac: Option<[i16; 1 << FAST_BITS]>,
+}
+
+impl Default for HuffmanTable {
+    fn default() -> Self {
+        HuffmanTable {
+            // set 255 for non-spec acceleration table
+            // 255 means not set
+            fast: [255; 1 << FAST_BITS],
+            // others remain default
+            code: [0; 256],
+            values: Vec::with_capacity(256),
+            size: [0; 256],
+            maxcode: [0; 18],
+            delta: [0; 17],
+            fast_ac: None,
+        }
+    }
 }
 impl HuffmanTable {
-    /// Create a `HuffmanTable` from a Huffman entry in the JPEG
-    ///
-    /// # Arguments
-    /// - symbols:Number of symbols with codes of length 1..16,the sum(n) of these bytes is the total number of codes,
-    /// - data:  The symbols in order of increasing,code length ( n = total number of codes ).
-    ///
-    /// For help on Huffman tables watch [this](https://www.youtube.com/channel/UCyX0cdP8BoSVKddrdluBpyw)
-    pub fn from(symbols: [u8; 16], data: &[u8]) -> HuffmanTable {
-        let mut lookup_table: HashMap<String, u8> = HashMap::with_capacity(data.len());
-        let mut prev_sum = 0;
-        let mut i_sum = 0;
-        let mut lookup = 0;
-        for (pos, i) in symbols.iter().enumerate() {
-            i_sum += *i as usize;
-            for i in prev_sum..i_sum {
-                // $b change the value `lookup` to it's binary representation using `Binary` Trait see
-                // https://doc.rust-lang.org/std/fmt/trait.Binary.html
-
-                // :0>width:If the binary digit is smaller than how it's supposed to be, pad it with zeroes
-                // a good example being 00 which would be seen as 0,but in a binary tree would have been 2 nodes
-                lookup_table.insert(
-                    format!("{:0>width$b}", lookup, width = pos + 1),
-                    *data.get(i).unwrap(),
-                );
-                lookup += 1;
-            }
-            prev_sum += *i as usize;
-            // Add zero to the last digit by binary shifting
-            lookup <<= 1;
+    pub fn new(codes: &[u8; 16], data: Vec<u8>, is_ac: bool) -> HuffmanTable {
+        let mut table = HuffmanTable::default();
+        table.build_huffman(codes);
+        table.values = data;
+        if is_ac {
+            table.build_fast_ac();
         }
 
-        HuffmanTable { lookup_table }
+        table
     }
-    /// Lookup bits returning the corresponding value if the bit sequence represents a certain value
-    /// or `None` if otherwise
-    pub fn lookup(&self, value: &str) -> Option<&u8> {
-        // check for value
-        if value.len() > 16 {
-            panic!("Too long Huffman Code:{}", value);
+
+    fn build_huffman(&mut self, count: &[u8; 16]) {
+        //List of Huffman codes corresponding to lengths in HUFFSIZE
+        let mut code = 0_u32;
+
+        let mut k = 0;
+
+        // Generate a table of Huffman code sizes
+        // Figure C.1
+        for i in 0..16 {
+            for _ in 0..count[i] {
+                self.size[k] = (i + 1) as u8;
+                k += 1;
+            }
         }
-        return self.lookup_table.get(value);
+        // last size should be zero.
+        self.size[k] = 0;
+
+        // compute actual symbols
+        k = 0;
+        for j in 1..=16 {
+            // compute delta to add code to compute symbol id
+            self.delta[j] = k as i32 - code as i32;
+            if usize::from(self.size[k]) == j {
+                while usize::from(self.size[k]) == j {
+                    self.code[k] = code as u16;
+                    code += 1;
+                    k += 1;
+                }
+            }
+            // compute the largest code_a for this size , pre-shifted as needed later
+            self.maxcode[j] = code << (16 - j);
+            // shift up by 1(multiply by 2)
+            code <<= 1;
+        }
+        self.maxcode[16] = 0xffff_ffff;
+
+        // build a non spec acceleration table; 255 is flag for not accelerated
+        for i in 0..k {
+            let s = self.size[i] as usize;
+
+            if s <= (FAST_BITS as usize) {
+                let c = self.code[i] << (FAST_BITS - s);
+                let m = 1 << (FAST_BITS - s);
+                for j in 0..m {
+                    self.fast[(c + j) as usize] = i as u8;
+                }
+            }
+        }
+    }
+    ///  build a table that decodes both magnitude and value of small AC's in one go
+
+    fn build_fast_ac(&mut self) {
+        // Build a lookup table for small AC coefficients which both decodes the value and does the
+        // equivalent of receive_extend.
+        let mut fast_ac = [0; 1 << FAST_BITS];
+        for i in 0..1 << FAST_BITS {
+            let fast = self.fast[i];
+            if fast < 255 {
+                let rs = self.values[fast as usize];
+                let run = ((rs >> 4) & 15) as i32;
+                let magnitude_category = i32::from(rs & 15);
+                let len = i32::from(self.size[fast as usize]);
+                if magnitude_category != 0 && (len + magnitude_category <= FAST_BITS as i32) {
+                    // magnitude code ,followed by receive_extend code
+                    let mut k = (((i as i32) << len) & ((1 << FAST_BITS) - 1))
+                        >> (FAST_BITS - (magnitude_category) as usize);
+                    let m = 1 << (magnitude_category - 1);
+                    if k < m {
+                        k += (!0_i32 << magnitude_category) + 1;
+                    }
+                    // if the result is small enough fit in the fast_ac table
+                    if k >= -128 && k <= 127 {
+                        let r = ((k * 256) + (run * 16) + (len + magnitude_category)) as i16;
+                        fast_ac[i] = r;
+                    }
+                }
+            }
+        }
+        self.fast_ac = Some(fast_ac);
     }
 }
