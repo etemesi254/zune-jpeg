@@ -1,19 +1,23 @@
-//! Decode JPEG markers/segments
+//! Decode Decoder markers/segments
 //!
-//! This file deals with decoding header information in a JPEG file
+//! This file deals with decoding header information in a Decoder file
 //!
 //! A good guide on markers can be found [here](http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm)
 //!
 use std::io::{BufRead, BufReader, Read};
 
-use ndarray::Array1;
-use zune_traits::sync::ColorProfile;
-
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::image::ImageInfo;
-use crate::misc::{SOFMarkers, UN_ZIGZAG, read_u16_be, read_u8, read_u16_into};
+use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG};
+use std::convert::TryInto;
 
+use crate::components::Components;
+use crate::marker::Marker;
+
+///**B.2.4.2 Huffman table-specification syntax**
+/// ----------------------------------------------
+///
 /// Parse a Huffman Tree
 ///
 /// |Field                      |Size          |Description
@@ -28,41 +32,38 @@ use crate::misc::{SOFMarkers, UN_ZIGZAG, read_u16_be, read_u8, read_u16_into};
 /// |                           |              |which must be <= 256
 /// |Symbols                    |n bytes       |Table containing the symbols in order of increasing
 /// |                           |              |code length ( n = total number of codes ).
+///
+/// # Errors
+/// `HuffmanDecode` - Encountered errors with excessive length
 #[allow(clippy::similar_names)]
 pub fn parse_huffman<R>(
-    buf: &mut BufReader<R>,
-) -> Result<(Vec<HuffmanTable>, Vec<HuffmanTable>), DecodeErrors>
+    mut buf: &mut BufReader<R>,
+) -> Result<(Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>), DecodeErrors>
 where
     R: Read,
 {
-    // stupid error on read_u16
-    let mut buf = buf;
-    // This should be the first step in decoding
-
     // Read the length of the Huffman table
-
-    let dht_length = read_u16_be(&mut buf)
-        .expect("Could not read Huffman length from image")
-        - 2;
+    let dht_length = read_u16_be(&mut buf).expect("Could not read Huffman length from image") - 2;
+    // how much have we read
     let mut length_read: u16 = 0;
-    let mut dc_tables = vec![];
-    let mut ac_tables = vec![];
+    //Container for tables
+    let mut dc_tables = Vec::with_capacity(3);
+    let mut ac_tables = Vec::with_capacity(3);
     // A single DHT table may contain multiple HT's
     while length_read < dht_length {
         // HT information
-        let  ht_info = read_u8(&mut buf)
-            .expect("Could not read ht info to a buffer");
+        let ht_info = read_u8(&mut buf);
 
         // third bit indicates whether the huffman encoding is DC or AC type
         let dc_or_ac = (ht_info >> 4) & 0x01;
-        let _index = (ht_info & 0x0f) as usize;
+        // Indicate the position of this table, should be less than 4;
+        let index = (ht_info & 0x0f) as usize;
         // read the number of symbols
         let mut num_symbols: [u8; 16] = [0; 16];
         buf.read_exact(&mut num_symbols)
             .expect("Could not read bytes to the buffer");
-        // Soo this will panic if it overflows, which is nice since we were to already check if it does.
-        // It should not go above 255
         let symbols_sum: u16 = num_symbols.iter().map(|f| u16::from(*f)).sum();
+        // the sum should not be above 255
         if symbols_sum > 256 {
             return Err(DecodeErrors::HuffmanDecode(
                 "Encountered Huffman table with excessive length in DHT".to_string(),
@@ -72,14 +73,17 @@ where
         let mut symbols: Vec<u8> = vec![0; symbols_sum.into()];
         buf.read_exact(&mut symbols)
             .expect("Could not read symbols to the buffer \n");
-        length_read += 17 + symbols_sum as u16;
+        length_read += 17 + symbols_sum;
         match dc_or_ac {
-            0 => dc_tables.push(HuffmanTable::from(num_symbols, &symbols)),
-            _ => ac_tables.push(HuffmanTable::from(num_symbols, &symbols)),
+            0 => dc_tables.push((HuffmanTable::new(&num_symbols, symbols, false), index)),
+            _ => ac_tables.push((HuffmanTable::new(&num_symbols, symbols, true), index)),
         }
     }
     Ok((dc_tables, ac_tables))
 }
+///**B.2.4.1 Quantization table-specification syntax**
+/// --------------------------------------------------
+///
 /// Parse a DQT tree and carry out unzig-zaging to get the initial
 /// matrix after quantization
 ///
@@ -97,17 +101,24 @@ where
 ///
 /// # Errors
 /// - `PrecisionError` - Precision value is not zero or 1.
-pub fn parse_dqt<R>(buf: &mut BufReader<R>) -> Result<Vec<Array1<f64>>, DecodeErrors>
+///
+/// # Panics
+/// The library cannot yet handle 16-bit QT tables.
+/// Decoding an image with such tables will cause panic
+#[allow(clippy::cast_possible_truncation)]
+pub fn parse_dqt<R>(buf: &mut BufReader<R>) -> Result<Vec<([i16; 64], usize)>, DecodeErrors>
 where
     R: Read,
 {
     let mut buf = buf;
+    // read length
     let qt_length = read_u16_be(&mut buf).expect("Could not read  DQT length");
     let mut length_read: u16 = 0;
     // there may be more than one qt table
     let mut qt_tables = Vec::with_capacity(3);
+    // we don't un-zig-zag here we do it after dequantization
     while qt_length > length_read {
-        let qt_info = read_u8(&mut buf).expect("Could not read QT  information");
+        let qt_info = read_u8(&mut buf);
         // If the first bit is set,panic
         if ((qt_info >> 1) & 0x01) != 0 {
             // bit mathematics
@@ -121,40 +132,30 @@ where
         };
         // 0 = 8 bit otherwise 16 bit
         let precision = (qt_info >> 4) as usize;
+        // last 4 bits five us position
+        let table_position = (qt_info & 0x0f) as usize;
         let precision_value = 64 * (precision + 1);
 
         let dct_table = match precision {
             0 => {
-                let mut qt_values: Vec<u8> = vec![0; 64];
+                let mut qt_values = [0; 64];
                 buf.read_exact(&mut qt_values)
                     .expect("Could not read symbols to the buffer \n");
 
                 length_read += 7 + precision_value as u16;
-
-                // Map the array to floats for IDCT
-                let mut un_zig_zag = Array1::zeros(64);
-                (0..qt_values.len())
-                    // Okay move value in qt_values[len] to position UN_ZIG_ZAG[len] in the new array
-                    .for_each(|len| un_zig_zag[UN_ZIGZAG[len]] = f64::from(qt_values[len]));
-
-                // Return array
-                un_zig_zag
+                // carry out un zig-zag here
+                un_zig_zag(
+                    &qt_values
+                        .iter()
+                        .map(|a| i16::from(*a))
+                        .collect::<Vec<i16>>()
+                        .try_into()
+                        .unwrap(),
+                )
             }
             1 => {
                 // 16 bit quantization tables
-                let mut qt_values: Vec<u16> = vec![0; 64];
-                read_u16_into(&mut buf,&mut qt_values)
-                    .expect("Could not read 16 bit QT table to buffer\n");
-
-                length_read += 7 + precision_value as u16;
-
-                // Map array to floats for IDCT and un zig zag
-                let mut un_zig_zag = Array1::zeros(64);
-                (0..64)
-                    // move item at qt_values[len] to UNZIG_ZAG[len]
-                    .for_each(|len| un_zig_zag[UN_ZIGZAG[len]] = f64::from(qt_values[len]));
-                // Return array
-                un_zig_zag
+                unimplemented!("Support for 16 bit quantization table is not complete")
             }
             _ => {
                 return Err(DecodeErrors::DqtError(format!(
@@ -163,15 +164,16 @@ where
                 )));
             }
         };
-        qt_tables.push(dct_table);
+        qt_tables.push((dct_table, table_position));
         // Add table to DCT Table
     }
     return Ok(qt_tables);
 }
 
-/// Parse a START OF FRAME 0 segment
+/// Section:`B.2.2 Frame header syntax`
+///--------------------------------------
 ///
-/// See [here](https://www.w3.org/Graphics/JPEG/itu-t81.pdf) page 40
+/// Parse a START OF FRAME 0 segment
 ///
 /// | Field              |Size        |Description
 /// ---------------------|------------|-----------------
@@ -187,36 +189,42 @@ where
 /// |                    |            | sampling factors (1byte) (bit 0-3 vertical., 4-7 horizontal.),
 /// |                    |            | quantization table number (1 byte)).
 ///
+/// # Returns
+/// A vector containing components in the scan
 /// # Errors
-/// - `ZeroWidthError` - Width of the image is 0
+/// - `ZeroError` - Width of the image is 0
 /// - `SOFError` - Length of Start of Frame differs from expected
-pub fn parse_start_of_frame<R>(
+pub(crate) fn parse_start_of_frame<R>(
     buf: &mut BufReader<R>,
     sof: SOFMarkers,
     info: &mut ImageInfo,
-) -> Result<(), DecodeErrors>
+) -> Result<Vec<Components>, DecodeErrors>
 where
     R: Read,
 {
+    let info = info;
     let mut buf = buf;
     // Get length of the frame header
     let length = read_u16_be(&mut buf).unwrap();
     // usually 8, but can be 12 and 16
-    let dt_precision = read_u8(&mut buf).unwrap();
+    let dt_precision = read_u8(&mut buf);
+
     info.set_density(dt_precision);
     // read the image height , maximum is 65,536
     let img_height = read_u16_be(&mut buf).unwrap();
+
     info.set_height(img_height);
+
     // read image width
     let img_width = read_u16_be(&mut buf).unwrap();
 
     info.set_width(img_width);
-    // Check image width is zero
-    if img_width == 0 {
-        return Err(DecodeErrors::ZeroWidthError);
+    // Check image width or height is zero
+    if img_width == 0 || img_height == 0 {
+        return Err(DecodeErrors::ZeroError);
     }
 
-    let num_components = read_u8(&mut buf).unwrap();
+    let num_components = read_u8(&mut buf);
     // length should be equal to num components
     if length != u16::from(8 + 3 * num_components) {
         return Err(DecodeErrors::SofError(format!(
@@ -225,22 +233,28 @@ where
             length
         )));
     }
-    info.set_profile(ColorProfile::set(num_components));
     // set number of components
     info.components = num_components;
-    if (sof == SOFMarkers::ProgressiveDctHuffman || sof == SOFMarkers::ProgressiveDctArithmetic)
-        && num_components > 4
-    {
-        return Err(DecodeErrors::SofError(
-            format!("An Image encoded with Progressive DCT cannot have more than 4 components in the frame, image has {}",num_components
-        )));
-    }
 
-    buf.consume((3 * num_components) as usize);
+    //    if (sof == SOFMarkers::ProgressiveDctHuffman || sof == SOFMarkers::ProgressiveDctArithmetic)
+    //      && num_components > 4
+    // {
+    //    return Err(DecodeErrors::SofError(
+    //       format!("An Image encoded with Progressive DCT cannot have more than 4 components in the frame, image has {}",num_components
+    //  )));
+    //}
+    let mut components = Vec::with_capacity(num_components as usize);
+    let mut temp = [0; 3];
+    for _ in 0..num_components {
+        // read 3 bytes for each component
+        buf.read_exact(&mut temp)
+            .expect("Could not read  component data");
+        components.push(Components::from(temp).expect("Could not parse component data"))
+    }
 
     // Set the SOF marker
     info.set_sof_marker(sof);
-    Ok(())
+    Ok(components)
 }
 /// Parse a start of scan data
 ///
@@ -261,21 +275,94 @@ where
 {
     let mut buf = buf;
     // Scan header length
-    let _ls = read_u16_be(&mut buf)
-        .expect("Could not read start of scan length");
-    // Number of components
-    let ns = read_u8(&mut buf).unwrap();
+    let _ls = read_u16_be(&mut buf).expect("Could not read start of scan length");
+    // Number of image components in scan
+    let ns = read_u8(&mut buf);
+
     if !(1..5).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
             "Number of components in start of scan should be less than 4 but more than 0. Found {}",
             ns
         )));
     }
-    for _ in 0..ns {
-        let _component_id = read_u8(&mut buf);
-        let _huffman_tbl = read_u8(&mut buf);
-    }
     // 3 ignored bytes
-    buf.consume(3);
+    buf.consume((2 * ns as usize) + 3);
     Ok(())
+}
+pub fn parse_app<R>(
+    mut buf: &mut BufReader<R>,
+    marker: Marker,
+    info: &mut ImageInfo,
+) -> Result<(), DecodeErrors>
+where
+    R: Read,
+{
+    let length = read_u16_be(buf)? as usize;
+    let mut bytes_read = 2;
+
+    match marker {
+        Marker::APP(0) => {
+            debug!("Parsing start of APP 0 segment");
+            // The only thing we need is the x and y pixel densities here
+            // which are found 10 bytes away
+            buf.consume(8);
+            let x_density = read_u16_be(&mut buf).expect("Could not read x-density");
+            info.set_x(x_density);
+            let y_density = read_u16_be(&mut buf).expect("Could not read y-density");
+            info.set_y(y_density);
+            debug!("Pixel density acquired");
+        }
+        Marker::APP(1) => {
+            debug!("Parsing Exif data from APP(1)");
+            if length >= 6 {
+                let mut buffer = [0_u8; 6];
+                buf.read_exact(&mut buffer)
+                    .expect("Could not read Exif data");
+                bytes_read += 6;
+
+                // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
+                // 4.5.4 Basic Structure of Decoder Compressed Data
+                if &buffer == b"Exif\x00\x00" {
+                    let mut data = vec![0; (length - bytes_read) as usize];
+
+                    buf.read_exact(&mut data).expect("Could not read exif data");
+                }
+            }
+            debug!("Parsing APP(1) data complete")
+        }
+
+        _ => {}
+    }
+    Ok(())
+}
+/// ** B.2.4.5:Comment syntax**
+/// ------------------------------
+///
+/// Parse a comment section
+///
+/// |Parameter             |Size|Values|
+/// |----------------------|----|-------|
+/// |Comment Segment Length| 16|2-65,535|
+/// Comment byte           |8  | 0-255  |
+pub fn parse_com<R>(mut buf: &mut BufReader<R>)
+where
+    R: Read,
+{
+    let lc = read_u16_be(&mut buf).expect("Could not read comment length");
+    let mut buffer = vec![0; lc as usize];
+    buf.read_exact(&mut buffer)
+        .unwrap_or_else(|_| panic!("Could not read comment of length {}", lc));
+    // use lossy to prevent unwrap when sent weird data
+    let comment = String::from_utf8_lossy(&buffer);
+    // Print the comment
+    debug!("Comment: {}", comment);
+}
+
+/// Small utility function to print Un-zig-zagged quantization tables
+fn un_zig_zag(a: &[i16; 64]) -> [i16; 64] {
+    let mut output = [0; 64];
+    for i in 0..64 {
+        output[UN_ZIGZAG[i]] = a[i];
+    }
+    output
 }
