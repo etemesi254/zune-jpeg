@@ -1,65 +1,73 @@
-use crate::errors::DecodeErrors;
-use crate::huffman::HuffmanTable;
-use crate::huffman::FAST_BITS;
+//! # Performance optimizations
+//! - One bottleneck is `refill`/`refill_fast`, the fact that we have
+//! to check for `OxFF` byte during refills, which  most of the times doesn't exist
+//!  but it sometimes does. This makes it slow as it forces byte wise processing and branching during the hot path.
+//! There is this handy post [here] that talks about how we can avoid checks in the hot path, basically
+//! we remove `0x00` bytes before we reach the hot path, but I'm yet to think of faster ways to do that
+//!
+//! -
+//!
+//![here]:https://fgiesen.wordpress.com/2011/11/21/buffer-centric-io/
+
+use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
-use crate::misc::{read_u8, UN_ZIGZAG};
-use std::io::{BufReader, Read};
+use crate::misc::UN_ZIGZAG;
+use std::io::{Cursor};
 
-const BMASK: [u32; 17] = [
-    0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767, 65535,
-];
-// Entry n is (-1<<n) + 1
-const BIAS: [i32; 16] = [
-    0, -1, -3, -7, -15, -31, -63, -127, -255, -511, -1023, -2047, -4095, -8191, -16383, -32767,
-];
+// PS: Read this
+// This code is optimised for speed, like it's heavily optimised
+// I know 95% of whats goes on, (the merits of borrowing someone's code
+// but there is extensive use of macros and a lot of inlining
+//  A lot of things may not make sense(both to me and you), that's why there a lot of comments
+// and WTF! and ohh! moments
+// Enjoy.
 
-//Todo: Maybe instead of panicking on a failed refill, we zero out the rest of the MCU's data to create
-// a uniform grey in incomplete JPEG
+/// Maximum bits in the buffer
+/// This gives us the limit we shouldn't cross when refilling buffer
+/// because we use a u64 buffer capable of holding 64 bits we want to stop when we have more than
+/// 56 bits , eg if we have 57 and try to add another one,we get 65 which is
+/// more than what we can hold
+const MAX_BITS: u8 = 56;
 
-// Total debugging hours:32
-
-// @OPTIMIZE: Use a u64 as our bit buffer, cutting refills by half in the hot path
-
-/// A bitStream reader
-pub struct BitStream {
-    // our bit buffer
-    bits: u32,
-    // number of bits remaining
-    count: u8,
-    // marker encountered when reading bitstream
-    #[allow(dead_code)]
+/// A BitStream struct, capable of decoding compressed data from the data from image
+///
+/// # Fields and Meanings
+/// - `buffer`   : `u64`-> Stores bits from our compressed stream
+/// - `bits_left`: `u8`-> A counter telling us how many valid bits are in the buffer
+/// - `marker`   : `Option<Marker>`->Will store a marker if it's encountered in the stream
+pub(crate) struct BitStream {
+    buffer: u64,
+    bits_left: u8,
     marker: Option<Marker>,
 }
-
 impl BitStream {
-    /// Create a new bit-stream reader
-    pub const fn new() -> BitStream {
+    /// Create a new BitStream
+    ///
+    /// The buffer and bits_left values are initialized to 0
+    /// (it would be crazy to initialize to another value :>) )
+    pub(crate) const fn new() -> BitStream {
         BitStream {
-            bits: 0,
-            count: 0,
+            buffer: 0,
+            bits_left: 0,
             marker: None,
         }
     }
+    /// Refill the buffer up to MAX_BITS
+    #[inline(always)]
+    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) {
+        // load global variables into local stack
+        let mut bits_left = self.bits_left;
+        let mut buffer = self.buffer;
+        // Attempt to load ar least MAX_BITS into buffer
 
-    /// Refill the buffer
-    #[inline]
-    fn refill<R: Read>(&mut self, reader: &mut BufReader<R>) {
-        // count cannot go more than 56 bits if we were to add one more bit it would
-        // be 65,(more than bits can hold)
-
-        while self.count <= 24 {
-            // libjpeg-turbo unrolls this loop , see FILL_BUFFER_FAST function in jdhuff.c
+        while bits_left <= MAX_BITS {
+            // attempt to read a byte
             let byte = read_u8(reader);
+            // pre-execute most common case , add a byte and increment count
+            buffer = (buffer << 8) | u64::from(byte);
+            bits_left += 8;
 
-            // Add 8 bits in MSB order.
-            // Big Endian , top bits contain our stream, new bits added at the bottom.
-
-            // pre-execute most common case
-            self.bits |= u32::from(byte) << (24 - self.count);
-            // increment count
-            self.count += 8;
-
-            // need to check if byte is 0xff since that is a special case
+            // IF the byte read is 0xFF, check and discard stuffed zero byte
             if byte == 0xff {
                 // read next byte
                 let mut next_byte = read_u8(reader);
@@ -71,209 +79,296 @@ impl BitStream {
                         // consume fill bytes
                         next_byte = read_u8(reader);
                     }
-
                     if next_byte != 0x00 {
                         // if its a marker it indicates end of compressed data
                         // back out pre-execution and fill with zero bits
                         // we are removing 1 byte, te FF we added in pre-computation
-                        self.bits &= !0xf;
-                        self.count -= 8;
+                        buffer &= !0xf;
+                        bits_left -= 8;
 
                         self.marker = Some(Marker::from_u8(next_byte).unwrap())
+                        // should we suspend?
                     }
                     // if next_byte is zero we need to panic(jpeg-decoder does that)
                     // but i'll let it slide
                 }
             }
         }
+        // unload local variables
+        self.bits_left = bits_left;
+        self.buffer = buffer;
     }
-    ///Returns the next few bits in the buffer, without discarding them
-    #[inline]
-    const fn peek_bits(&self, count: u8) -> usize {
-        // we don't check if count is less than 16 since this is called after refill
-        // we also don't cover zero cases since its called with constant FAST_BITS
-        // which is a compile time constant
+    /// Refill the bit buffer by (a maximum of) 48 bits (4 bytes)
+    ///
+    /// # Arguments
+    ///  - `reader`:`&mut BufReader<R>`: A mutable reference to an underlying File/Memory buffer
+    ///containing a valid JPEG image
+    ///
+    /// # Performance
+    /// The code here is a lot(but hidden by macros) we move in a linear manner avoiding loops
+    /// (which suffer from branch mis-prediction) , we can only refill 48 bits safely without overriding
+    /// important bits in the buffer
+    ///
+    /// Because the code generated here is a lot, we might affect the instruction cache( yes it's not
+    /// data that is only cached)
+    ///
+    /// This function will only refill if `self.count` is less than 16
+    #[inline(always)]
+    fn refill_fast(&mut self, reader: &mut Cursor<Vec<u8>>) {
+        // Ps i know inline[always] is frowned upon
 
-        // shift right by count and mask top bits by bitwise AND
-        ((self.bits >> (32 - count)) & ((1 << count) - 1)) as usize
-    }
-    // Remove count bits from the stream without looking at them
-    #[inline]
-    fn consume_bits(&mut self, count: u8) {
-        debug_assert!(
-            count <= self.count,
-            "Cannot consume more bits  than is available in the current buffer"
-        );
+        // Macro version of refill
+        // Arguments
+        // buffer-> our io buffer, because rust macros cannot get values from the surrounding environment
+        // bits_left-> number of bits left to full refill
+        macro_rules! refill {
+            ($buffer:expr,$bits_left:expr) => {
+                // read a byte from the stream
+                let byte = read_u8(reader);
+                // append to the buffer
+                $buffer = ($buffer << 8) | u64::from(byte);
+                // Increment bits left
+                $bits_left += 8;
 
-        // shift up, removing top `count` bits
-        self.bits <<= count;
-        // remove count for bits consumed
-        self.count -= count;
-    }
-    pub fn decode<R>(
-        &mut self,
-        huff_tbl: &HuffmanTable,
-        stream: &mut BufReader<R>,
-    ) -> Result<u8, DecodeErrors>
-    where
-        R: Read,
-    {
-        if self.count < 16 {
-            self.refill(stream);
-        }
-        // look at the top FAST_BITS and determine what symbol ID it is,
-        // if the code is <= FAST_BITS
-        let mut c = self.peek_bits(FAST_BITS as u8);
-        let k = huff_tbl.fast[c as usize];
-        if k < 255 {
-            let s = huff_tbl.size[k as usize];
-            if s > self.count {
-                // more bits requested than supported
-                return Err(DecodeErrors::HuffmanDecode(format!(
-                    "Could not decode Huffman value,requested {} bits while buffer has {} bits",
-                    s, self.count
-                )));
-            }
-            // consume already read bits
-            self.consume_bits(s);
-
-            return Ok(huff_tbl.values[k as usize]);
-        }
-        // naive test is to shift the code_buffer down so k bits are
-        // valid, then test against maxcode. To speed this up, we've
-        // pre-shifted maxcode left so that it has (16-k) 0s at the
-        // end; in other words, regardless of the number of bits, it
-        // wants to be compared against something shifted to have 16;
-        // that way we don't need to shift inside the loop.
-        let temp = self.bits >> 16;
-
-        let mut k = FAST_BITS + 1;
-        loop {
-            if temp < huff_tbl.maxcode[k] {
-                break;
-            }
-            k += 1;
-        }
-
-        if k == 17 {
-            // Error code not found, revert the stream
-            self.count -= 16;
-            return Err(DecodeErrors::HuffmanDecode(
-                "Cannot decode Huffman value more than 16 bits needed to decode value k"
-                    .to_string(),
-            ));
-        }
-        if k > self.count as usize {
-            return Err(DecodeErrors::HuffmanDecode(
-                "Could not decode Huffman value".to_string(),
-            ));
-        }
-        // convert huffman code to symbol ID masking top `K` bits
-        c = (((self.bits >> (32 - k)) & BMASK[k]) as i32 + huff_tbl.delta[k]) as usize;
-        assert_eq!(
-            ((self.bits >> (32 - huff_tbl.size[c])) & BMASK[huff_tbl.size[c] as usize]),
-            u32::from(huff_tbl.code[c])
-        );
-
-        self.consume_bits(k as u8);
-
-        Ok(huff_tbl.values[c])
-    }
-    #[inline]
-    pub fn extend_receive<R: Read>(&mut self, n: u8, reader: &mut BufReader<R>) -> i16 {
-        if self.count < n {
-            // If we have less data in the buffer than requested refill
-
-            // Refill may sometimes fail, it will panic
-            self.refill::<R>(reader)
-        }
-
-        let (n, n_usize) = (i32::from(n), n as usize);
-        // F.2.4.3.1.1 Decoding the sign
-        // Decode the sign by checking the top MSb bit to see whether it is 1 or 0,
-        // 1 => negative, 0 => positive
-
-        // using two's complement bitwise not operator, if 0 it becomes 0 and if 1 becomes -1
-        // see https://stackoverflow.com/questions/6719316/can-i-turn-negative-number-to-positive-with-bitwise-operations-in-actionscript-3/6719341
-        let sign = !((self.bits >> 31) as i32) + 1;
-
-        //Circular shifts, when a bit falls off one end of the register it fills
-        // the vacated position at the other end
-        // see https://blog.regehr.org/archives/1063
-
-        let mut k = ((self.bits << n) | self.bits >> (-n & 31)) as i32;
-
-        self.bits = (k & !((BMASK[n_usize]) as i32)) as u32;
-
-        // zero out upper `n` bits
-        k &= BMASK[n_usize] as i32;
-        // subtract bits read;
-        self.count -= n as u8;
-
-        return (k + (BIAS[n_usize] as i32 & !sign)) as i16;
-    }
-
-    pub fn decode_ac<R: Read>(
-        &mut self,
-        stream: &mut BufReader<R>,
-        huff_ac: &HuffmanTable,
-        buffer: &mut [i16; 64],
-    ) -> Result<(), DecodeErrors> {
-        let mut k = 1;
-
-        while k < 64 {
-            if self.count < 16 {
-                // refill buffer if we are low on bits
-
-                // refill may sometimes fail, this is panicky code
-                self.refill::<R>(stream);
-            }
-
-            // peek `FAST_COUNT` bits
-            let c = self.peek_bits(FAST_BITS as u8);
-            // was passing as an array causing move, huge bottleneck
-            if let Some(fac) = &huff_ac.fast_ac {
-                let r = fac[c];
-                if r != 0 {
-                    // FAST ac path
-
-                    //Number of zero bits preceding the table
-                    k += (r >> 4) & 15;
-
-                    // combined length( the number of bits to read from the stream to decode this value)
-                    let s = (r & 15) as u8;
-
-                    self.consume_bits(s);
-
-                    let zig = UN_ZIGZAG[k as usize];
-
-                    buffer[zig] = r >> 8;
-
-                    k += 1;
-                } else {
-                    let rs = self.decode(huff_ac, stream)?;
-                    //  number of previous zeroes
-                    let s = rs & 15;
-                    // category bits
-                    let r = rs >> 4;
-                    if s == 0 {
-                        // end of block
-                        if rs != 0xf0 {
-                            break;
+                // Check for special case  of OxFF, to see if it's a stream or a marker
+                if byte == 0xff {
+                    // read next byte
+                    let mut next_byte = read_u8(reader);
+                    // Byte snuffing, if we encounter byte snuff, we skip the byte
+                    if next_byte != 0x00 {
+                        while next_byte == 0xFF {
+                            next_byte = read_u8(reader);
                         }
-                        k += 16;
+                        if next_byte != 0x00 {
+                            $buffer &= !0xf;
+                            $bits_left -= 8;
+                            // Should we suspend?
+                            self.marker = Some(Marker::from_u8(next_byte).unwrap())
+                        }
+                    };
+                }
+            };
+        }
+        // 16 bits is enough in the buffer for any use case, if count is less than that then run a lot of code
+
+        if self.bits_left <= 16 {
+            // 6 refills, a lot of code
+            refill!(self.buffer, self.bits_left);
+            refill!(self.buffer, self.bits_left);
+            refill!(self.buffer, self.bits_left);
+            refill!(self.buffer, self.bits_left);
+            refill!(self.buffer, self.bits_left);
+            refill!(self.buffer, self.bits_left);
+            // Note, we are not assured that all these macros will append a byte, eg if it finds a marker,
+            // it won't append it to the stream.
+        }
+    }
+    /// Decode a Minimum Code Unit(MCU) as quickly as possible
+    ///
+    ///# Performance
+    ///- We are using the same version of the Huffman Decoder from libjpeg-turbo/[jdhuff.h+jdhuff.c]
+    /// which is pretty fast(jokes its `super fast`...).
+    /// - The code is heavily inlined(this function itself is inlined)(I would not like to be that guy viewing disassembly info of this
+    /// function) and makes use of macros, so the resulting code the compiler receives probably spans too many lines
+    /// but all in favour of speed
+    /// - Also some of the things are `unsafe` but they are heavily tested( but if it breaks hit me up really fast)
+    /// # Expectations
+    /// The `block` should be initialized to zero
+    #[inline(always)]
+    pub fn decode_mcu_fast(
+        &mut self,
+        reader: &mut Cursor<Vec<u8>>,
+        dc_table: &HuffmanTable,
+        ac_table: &HuffmanTable,
+        block: &mut [i32; 64],
+        dc_prediction: &mut i32,
+    ) {
+        // Same macro as HUFF_DECODE_FAST in jdhuff.h 220(as time of writing)
+        // Sadly this is slow, about 2x slower than that implementation
+        // even though its a word to word implementation.
+        macro_rules! huff_decode_fast {
+            ($s:expr,$n_bits:expr,$table:expr) => {
+                // refill buffer, the check if its less than 16 will be done inside the function
+                // but since we use inline(always) we have a branch here which tells us if we
+                // refill
+                self.refill_fast(reader);
+                $s = self.peek_bits(HUFF_LOOKAHEAD);
+                // Lookup 8 bits in the stream and see if there is a corresponding byte
+
+                // SAFETY:this can never cause UB,because s cannot be more than 1<<HUFF_LOOKAHEAD
+                $s = $table.lookup[$s as usize];
+
+                $n_bits = $s >> HUFF_LOOKAHEAD;
+                // Pre-execute common case of nb <= HUFF_LOOKAHEAD
+                self.drop_bits($n_bits as u8);
+                $s &= ((1 << HUFF_LOOKAHEAD) - 1);
+                if $n_bits > i32::from(HUFF_LOOKAHEAD) {
+                    // if we don't get a hit in the first HUFF_LOOKAHEAD bits
+
+                    // equivalent of jpeg_huff_decode
+                    // don't use self.get_bits() here , we don't want to modify bits left
+                    $s = ((self.buffer >> self.bits_left) & ((1 << ($n_bits)) - 1)) as i32;
+                    while $s > $table.maxcode[$n_bits as usize] {
+                        // Read one bit from the buffer and append to s
+                        $s <<= 1;
+                        $s |= self.get_bits(1);
+                        $n_bits += 1;
+                    }
+                    // Greater than 16? probably corrupt image
+                    if $n_bits > 16 {
+                        $s = 0
                     } else {
-                        k += (r) as i16;
-                        let zig = UN_ZIGZAG[k as usize];
-                        let p = self.extend_receive(s, stream);
-                        buffer[zig] = p;
-                        k += 1;
+                        $s = i32::from(
+                            $table.values[($s + $table.offset[$n_bits as usize] & 0xFF) as usize],
+                        );
                     }
                 }
+            };
+        }
+        let (mut s, mut l, mut r);
+        huff_decode_fast!(s, l, dc_table);
+
+        if s != 0 {
+            self.refill_fast(reader);
+            r = self.get_bits(s as u8);
+            s = huff_extend(r, s);
+        }
+        // this should be changed with the upper coeff to deal with previous block
+        // its done outside of this loop
+        *dc_prediction += s;
+        block[0] = *dc_prediction;
+
+        // Decode AC coefficients
+        let mut k:usize = 1;
+        // Get fast AC table as a reference before we enter the hot path
+        let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
+        while k < 64 {
+            self.refill_fast(reader);
+            s = self.peek_bits(HUFF_LOOKAHEAD);
+            // SAFETY: S can never go above (1<<HUFF_LOOKAHEAD)
+
+            let v = {
+                #[cfg(feature = "perf")]
+                    {
+                        unsafe { *ac_lookup.get_unchecked(s as usize) }
+                    }
+                #[cfg(not(feature = "perf"))]
+                    {
+                        ac_lookup[s as usize]
+                    }
+            };
+            if v != 0 {
+                //  FAST AC path
+                k += ((v >> 4) & 15) as usize; // run
+                self.drop_bits((v & 15) as u8); // combined length
+                {
+                    #[cfg(feature = "perf")]
+                        {
+                            unsafe {
+                                *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k )) = v >> 8
+                            }
+                        }
+                    #[cfg(not(feature = "perf"))]
+                        {
+                            block[UN_ZIGZAG[k ]] = v >> 8;
+                        }
+                }
+                k += 1;
             } else {
-                return Err(DecodeErrors::Format("No Fast AC table found, this is a bug, please file an issue in the Github Page".to_string()));
+                // follow the normal route
+
+                s = {
+                    // SAFETY s can never go above 1<<HUFF_LOOKAHEAD
+                    #[cfg(feature = "perf")]
+                        {
+                            unsafe { *ac_table.lookup.get_unchecked(s as usize) }
+                        }
+                    #[cfg(not(feature = "perf"))]
+                        {
+                            ac_table.lookup[s as usize]
+                        }
+                };
+                l = s >> HUFF_LOOKAHEAD;
+                self.drop_bits(l as u8);
+                s &= (1 << HUFF_LOOKAHEAD) - 1;
+                if l > i32::from(HUFF_LOOKAHEAD) {
+                    s = ((self.buffer >> self.bits_left) & ((1 << (l)) - 1)) as i32;
+                    while s > ac_table.maxcode[l as usize] {
+                        s <<= 1;
+                        s |= self.get_bits(1);
+                        l += 1;
+                    }
+                    if l > 16 {
+                        s = 0
+                    } else {
+                        s = i32::from(
+                            ac_table.values[((s + ac_table.offset[l as usize]) & 0xFF) as usize],
+                        );
+                    }
+                };
+                r = s >> 4;
+                s &= 15;
+                if s != 0 {
+                    k += r as usize;
+                    self.refill_fast(reader);
+                    r = self.get_bits(s as u8);
+                    s = huff_extend(r, s);
+                    #[cfg(feature = "perf")]
+                        {
+                            unsafe {
+                                *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s;
+                            }
+                        }
+                    #[cfg(not(feature = "perf"))]
+                        {
+                            block[UN_ZIGZAG[k as usize]] = s;
+                        }
+                    // libjpeg-turbo doesn't do this, so why am I?
+                    k += 1;
+                } else {
+                    if r != 15 {
+                        break;
+                    }
+                    k += 15;
+                }
             }
         }
-        Ok(())
     }
+
+    /// Peek `look_ahead` bits ahead without discarding them from the buffer
+    ///
+    /// This is used in conjunction with a lookup table hence it is `const` ified
+    #[inline(always)]
+    const fn peek_bits(&self, look_ahead: u8) -> i32 {
+        ((self.buffer >> (self.bits_left - look_ahead)) & ((1 << look_ahead) - 1)) as i32
+    }
+    /// Discard the next `N` bits without checking
+    #[inline(always)]
+    fn drop_bits(&mut self, n: u8) {
+        self.bits_left -= n;
+    }
+    /// Read `n_bits` from the buffer  and discard them
+    #[inline(always)]
+    fn get_bits(&mut self, n_bits: u8) -> i32 {
+        let t = ((self.buffer >> (self.bits_left - n_bits)) & ((1 << n_bits) - 1)) as i32;
+        self.bits_left -= n_bits;
+        t
+    }
+}
+#[inline(always)]
+fn huff_extend(x: i32, s: i32) -> i32 {
+    // if x<s return x else return x+offset[s] where offset[s] = ( (-1<<s)+1)
+    (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
+}
+/// Read a byte from underlying file
+///
+/// Function is inlined (as always)
+#[inline(always)]
+fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u8
+
+{
+    let pos = reader.position();
+    reader.set_position(pos+1);
+    // if we have nothing left fill buffer with zeroes
+    *reader.get_ref().get(pos as usize).unwrap_or(&0)
 }
