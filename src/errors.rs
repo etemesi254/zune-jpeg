@@ -1,19 +1,22 @@
-//! Contains most common errors that may be encountered in decoding a JPEG image
+//! Contains most common errors that may be encountered in decoding a Decoder image
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+
 use crate::misc::{
     START_OF_FRAME_EXT_AR, START_OF_FRAME_EXT_SEQ, START_OF_FRAME_LOS_SEQ,
     START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT, START_OF_FRAME_PROG_DCT_AR,
 };
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+
 /// Common Decode errors
 #[allow(clippy::module_name_repetitions)]
 pub enum DecodeErrors {
+    Format(String),
     /// Illegal Magic Bytes
     IllegalMagicBytes(u16),
-    /// problems with the Huffman Tables in a JPEG file
+    /// problems with the Huffman Tables in a Decoder file
     HuffmanDecode(String),
     /// Image has zero width
-    ZeroWidthError,
+    ZeroError,
     /// Discrete Quantization Tables error
     DqtError(String),
     /// Start of scan errors
@@ -22,33 +25,44 @@ pub enum DecodeErrors {
     SofError(String),
     /// UnsupportedImages
     Unsupported(UnsupportedSchemes),
+    /// Unset tables
+    UnsetValues(String),
+    /// MCU errors
+    MCUError(String),
+    /// Exhausted data
+    ExhaustedData,
 }
 impl Debug for DecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            Self::Format(ref a) => write!(f, "{:?}", a),
             Self::HuffmanDecode(ref reason) => {
                 write!(f, "Error decoding huffman tables.Reason:{}", reason)
             }
-            Self::ZeroWidthError => write!(f, "Image width is set to zero, cannot continue"),
+            Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
             Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{}", reason),
             Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{}", reason),
             Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{}", reason),
             Self::IllegalMagicBytes(bytes) => {
                 write!(f, "Error parsing image. Illegal start bytes:{}", bytes)
             }
+            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {}", reason),
             Self::Unsupported(ref image_type) => {
                 write!(f, "{:?}", image_type)
             }
+            Self::ExhaustedData => write!(f, "Exhausted data in the image"),
+            Self::UnsetValues(ref values) => write!(f, "{}", values),
         }
     }
 }
 impl Display for DecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            Self::Format(ref a) => write!(f, "{}", a),
             Self::HuffmanDecode(ref reason) => {
                 write!(f, "Error decoding huffman tables.Reason:{}", reason)
             }
-            Self::ZeroWidthError => write!(f, "Image width is set to zero, cannot continue"),
+            Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
             Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{}", reason),
             Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{}", reason),
             Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{}", reason),
@@ -58,12 +72,15 @@ impl Display for DecodeErrors {
             Self::Unsupported(ref image_type) => {
                 write!(f, "{:?}", image_type)
             }
+            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {}", reason),
+            Self::ExhaustedData => write!(f, "Exhausted data in the image"),
+            Self::UnsetValues(ref values) => write!(f, "{}", values),
         }
     }
 }
 impl Error for DecodeErrors {}
 
-/// Contains Unsupported/Yet-to-be supported JPEG image encoding types.
+/// Contains Unsupported/Yet-to-be supported Decoder image encoding types.
 #[derive(Eq, PartialEq, Copy, Clone)]
 pub enum UnsupportedSchemes {
     /// SOF_1 Extended sequential DCT,Huffman coding
@@ -105,7 +122,9 @@ impl Debug for UnsupportedSchemes {
 }
 impl UnsupportedSchemes {
     #[must_use]
-    pub fn from_int(int: u16) -> Option<UnsupportedSchemes> {
+    pub fn from_int(int: u8) -> Option<UnsupportedSchemes> {
+        let int = u16::from_be_bytes([0xff, int]);
+
         match int {
             START_OF_FRAME_PROG_DCT => Some(Self::ProgressiveDctHuffman),
             START_OF_FRAME_PROG_DCT_AR => Some(Self::ProgressiveDctArithmetic),

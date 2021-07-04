@@ -4,7 +4,7 @@
 //!
 //! A good guide on markers can be found [here](http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm)
 //!
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, Read};
 
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
@@ -37,7 +37,7 @@ use crate::marker::Marker;
 /// `HuffmanDecode` - Encountered errors with excessive length
 #[allow(clippy::similar_names)]
 pub fn parse_huffman<R>(
-    mut buf: &mut BufReader<R>,
+    mut buf: &mut R,
 ) -> Result<(Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>), DecodeErrors>
 where
     R: Read,
@@ -59,8 +59,8 @@ where
         // Indicate the position of this table, should be less than 4;
         let index = (ht_info & 0x0f) as usize;
         // read the number of symbols
-        let mut num_symbols: [u8; 16] = [0; 16];
-        buf.read_exact(&mut num_symbols)
+        let mut num_symbols: [u8; 17] = [0; 17];
+        buf.read_exact(&mut num_symbols[1..17])
             .expect("Could not read bytes to the buffer");
         let symbols_sum: u16 = num_symbols.iter().map(|f| u16::from(*f)).sum();
         // the sum should not be above 255
@@ -75,8 +75,8 @@ where
             .expect("Could not read symbols to the buffer \n");
         length_read += 17 + symbols_sum;
         match dc_or_ac {
-            0 => dc_tables.push((HuffmanTable::new(&num_symbols, symbols, false), index)),
-            _ => ac_tables.push((HuffmanTable::new(&num_symbols, symbols, true), index)),
+            0 => dc_tables.push((HuffmanTable::new(&num_symbols, symbols, true), index)),
+            _ => ac_tables.push((HuffmanTable::new(&num_symbols, symbols, false), index)),
         }
     }
     Ok((dc_tables, ac_tables))
@@ -106,7 +106,7 @@ where
 /// The library cannot yet handle 16-bit QT tables.
 /// Decoding an image with such tables will cause panic
 #[allow(clippy::cast_possible_truncation)]
-pub fn parse_dqt<R>(buf: &mut BufReader<R>) -> Result<Vec<([i16; 64], usize)>, DecodeErrors>
+pub fn parse_dqt<R>(buf: &mut R) -> Result<Vec<([i32; 64], usize)>, DecodeErrors>
 where
     R: Read,
 {
@@ -147,8 +147,8 @@ where
                 un_zig_zag(
                     &qt_values
                         .iter()
-                        .map(|a| i16::from(*a))
-                        .collect::<Vec<i16>>()
+                        .map(|a| i32::from(*a))
+                        .collect::<Vec<i32>>()
                         .try_into()
                         .unwrap(),
                 )
@@ -195,7 +195,7 @@ where
 /// - `ZeroError` - Width of the image is 0
 /// - `SOFError` - Length of Start of Frame differs from expected
 pub(crate) fn parse_start_of_frame<R>(
-    buf: &mut BufReader<R>,
+    buf: &mut R,
     sof: SOFMarkers,
     info: &mut ImageInfo,
 ) -> Result<Vec<Components>, DecodeErrors>
@@ -269,9 +269,9 @@ where
 /// |                            |            | > bit 0..3 : AC table (0..3)
 /// |                            |            | bit 4..7 : DC table (0..3)
 /// | Ignorable Bytes            |3 bytes     |We have to skip 3 bytes.
-pub fn parse_sos<R>(buf: &mut BufReader<R>, _image_info: &ImageInfo) -> Result<(), DecodeErrors>
+pub fn parse_sos<R>(buf: &mut R, _image_info: &ImageInfo) -> Result<(), DecodeErrors>
 where
-    R: Read,
+    R: Read + BufRead,
 {
     let mut buf = buf;
     // Scan header length
@@ -290,12 +290,12 @@ where
     Ok(())
 }
 pub fn parse_app<R>(
-    mut buf: &mut BufReader<R>,
+    mut buf: &mut R,
     marker: Marker,
     info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
 where
-    R: Read,
+    R: Read + BufRead,
 {
     let length = read_u16_be(buf)? as usize;
     let mut bytes_read = 2;
@@ -344,9 +344,9 @@ where
 /// |----------------------|----|-------|
 /// |Comment Segment Length| 16|2-65,535|
 /// Comment byte           |8  | 0-255  |
-pub fn parse_com<R>(mut buf: &mut BufReader<R>)
+pub fn parse_com<R>(mut buf: &mut R)
 where
-    R: Read,
+    R: Read + BufRead,
 {
     let lc = read_u16_be(&mut buf).expect("Could not read comment length");
     let mut buffer = vec![0; lc as usize];
@@ -359,8 +359,8 @@ where
 }
 
 /// Small utility function to print Un-zig-zagged quantization tables
-fn un_zig_zag(a: &[i16; 64]) -> [i16; 64] {
-    let mut output = [0; 64];
+fn un_zig_zag<T: Default + Copy>(a: &[T; 64]) -> [T; 64] {
+    let mut output = [T::default(); 64];
     for i in 0..64 {
         output[UN_ZIGZAG[i]] = a[i];
     }

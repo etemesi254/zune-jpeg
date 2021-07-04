@@ -22,7 +22,7 @@ pub const START_OF_FRAME_LOS_SEQ_AR: u16 = 0xffcb;
 
 /// Undo run length encoding of coefficients by placing them in natural order
 #[rustfmt::skip]
-pub const UN_ZIGZAG: [usize; 64] = [
+pub const UN_ZIGZAG: [usize; 64+16] = [
     0,  1,  8,  16, 9,  2,  3, 10,
     17, 24, 32, 25, 18, 11, 4,  5,
     12, 19, 26, 33, 40, 48, 41, 34,
@@ -31,6 +31,9 @@ pub const UN_ZIGZAG: [usize; 64] = [
     29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46,
     53, 60, 61, 54, 47, 55, 62, 63,
+    // Prevent overflowing
+    63, 63, 63, 63, 63, 63, 63, 63,
+    63, 63, 63, 63, 63, 63, 63, 63
 ];
 
 /// Align data to a 16 byte boundary
@@ -84,8 +87,8 @@ impl ColorSpace {
     /// Number of channels (including unused alpha) in this color space
     pub const fn num_components(self) -> i32 {
         match self {
-            Self::RGB|Self::BGR| Self::YCbCr => 3,
-            Self::CMYK|Self::RGBA|Self::YCCK => 4,
+            Self::RGB | Self::BGR | Self::YCbCr => 3,
+            Self::CMYK | Self::RGBA | Self::YCCK => 4,
             Self::GRAYSCALE => 1,
         }
     }
@@ -217,7 +220,7 @@ where
 /// # Panics
 /// When the bytes cannot be read
 #[inline]
-pub fn read_u16_be<R>(reader: &mut BufReader<R>) -> Result<u16, DecodeErrors>
+pub fn read_u16_be<R>(reader: &mut R) -> Result<u16, DecodeErrors>
 where
     R: Read,
 {
@@ -264,6 +267,8 @@ where
     let mut c = [T::default(); 64];
     // using `i32::from` makes the generated assembly first convert before multiplying
     // which does not favour us at all
+
+    // Debug mode, rust WTF?:https://godbolt.org/z/YosGbenxP  (587 lines)
     for i in 0..c.len() {
         *c.get_mut(i).unwrap() = T::from(a.get(i).unwrap() * b.get(i).unwrap());
     }

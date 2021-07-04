@@ -1,212 +1,240 @@
+use std::fs::read;
+use std::io::{BufRead, Cursor, Read};
+use std::path::Path;
+
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
-use crate::huffman::HuffmanTable;
-use crate::markers::{parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
-use crate::misc::{
-    remove_ff0, SOFMarkers, END_OF_IMAGE, HUFFMAN_TABLE, QUANTIZATION_TABLE, START_OF_APP_MARKER,
-    START_OF_FRAME_BASE, START_OF_FRAME_EXT_AR, START_OF_FRAME_EXT_SEQ, START_OF_FRAME_LOS_SEQ,
-    START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT, START_OF_FRAME_PROG_DCT_AR, START_OF_IMAGE,
-    START_OF_SCAN,
+use crate::headers::{
+    parse_app, parse_com, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame,
 };
-use byteorder::{BigEndian, ReadBytesExt};
-use ndarray::Array1;
-use std::fs::{metadata, File};
-use std::io::{BufRead, BufReader, Read};
-use zune_traits::sync::{ColorProfile, ImageTrait};
-use zune_traits::image::Image;
-use std::path::{Path, PathBuf};
+use crate::huffman::HuffmanTable;
+use crate::marker::Marker;
+use crate::misc::{read_u16_be, read_u8, ColorSpace, SOFMarkers};
 
-#[derive(Clone,Default)]
+use crate::components::Components;
+
+use crate::color_convert::ycbcr_to_rgb;
+use crate::idct::dequantize_and_idct_int;
+use std::cell::Cell;
+
+/// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]
-pub struct JPEG {
+pub struct Decoder {
+    // Struct to hold image information from SOI
     pub(crate) info: ImageInfo,
-    pub(crate) qt_tables: Vec<Array1<f64>>,
-    pub(crate) dc_huffman_tables: Vec<HuffmanTable>,
-    pub(crate) ac_huffman_tables: Vec<HuffmanTable>,
+    //  Quantization tables
+    pub(crate) qt_tables: [Option<[i32; 64]>; 4],
+    // DC Huffman Tables
+    pub(crate) dc_huffman_tables: [Option<HuffmanTable>; 4],
+    // AC Huffman Tables
+    pub(crate) ac_huffman_tables: [Option<HuffmanTable>; 4],
+    // Image component
+    pub(crate) components: Cell<Vec<Components>>,
 
-    file_name: PathBuf,
+    // These two values are here for static initialization, these functions are found in the hot path
+    // and choosing the best function while dispatching is foolish(branch mis-predictions)
+
+    // Dequantize and idct function
+    // pass it through function pointer, to allow runtime dispatching for best method case
+    pub(crate) idct_func: Box<dyn FnMut(&mut [i32; 64], &[i32; 64])>,
+    // Color convert function will act on 8 values of YCbCr blocks
+    // This allows us to do AVX and SSE versions more easily( with some weird interleaving code)
+    pub(crate) color_convert_func: Box<dyn FnMut(&[i32], &[i32], &[i32], &mut [u8], usize)>,
 }
-
-impl JPEG {
-    pub fn new<P>(file: P) -> JPEG where P:AsRef<PathBuf>+Clone {
-        JPEG {
-            file_name: file.as_ref().to_owned(),
-            ..Self::default()
+impl Default for Decoder {
+    fn default() -> Self {
+        Decoder {
+            info: Default::default(),
+            qt_tables: [None, None, None, None],
+            dc_huffman_tables: [None, None, None, None],
+            ac_huffman_tables: [None, None, None, None],
+            components: Cell::new(vec![]),
+            idct_func: Box::new(dequantize_and_idct_int),
+            color_convert_func: Box::new(ycbcr_to_rgb),
         }
     }
+}
+impl Decoder {
     /// Get a mutable reference to the image info class
     fn get_mut_info(&mut self) -> &mut ImageInfo {
         &mut self.info
     }
-    fn add_qt(&mut self, table: Vec<Array1<f64>>) {
-        self.qt_tables.extend_from_slice(table.as_slice());
+    /// Add quantization tables to the struct
+    fn add_qt(&mut self, table: Vec<([i32; 64], usize)>) {
+        for (pos, value) in table.into_iter() {
+            // Once  a  quantization  table  has  been  defined  for  a  particular  destination,
+            // it  replaces  the  previous  tables  stored  in
+            // that destination  and  shall  be  used,  when  referenced,
+            self.qt_tables[value] = Some(pos);
+        }
     }
-    #[allow(clippy::needless_pass_by_value)]
-    fn add_huffman_tables(&mut self, table: (Vec<HuffmanTable>, Vec<HuffmanTable>)) {
-        self.dc_huffman_tables.extend_from_slice(table.0.as_slice());
-        self.ac_huffman_tables.extend_from_slice(table.1.as_slice());
+    /// Add Huffman Tables to the  decoder
+    fn add_huffman_tables(
+        &mut self,
+        table: (Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>),
+    ) {
+        table.0.into_iter().for_each(|(table, pos)| {
+            self.dc_huffman_tables[pos] = Some(table);
+        });
+        table.1.into_iter().for_each(|(table, pos)| {
+            self.ac_huffman_tables[pos] = Some(table);
+        });
     }
     /// Decode a buffer already in memory
     ///
-    /// The buffer should be a valid JPEG file, perhaps created by the command
+    /// The buffer should be a valid Decoder file, perhaps created by the command
     /// `std:::vec::read()`
     ///
     /// # Errors
-    /// If the image is not a valid JPEG file
-    pub fn decode_buffer(buf:&[u8]) -> Result<Image, DecodeErrors> {
-
-        let mut image = JPEG::default();
-        image.decode_internal(BufReader::new(buf))
+    /// If the image is not a valid Decoder file
+    pub fn decode_buffer(buf: &[u8]) -> Result<Vec<u8>, DecodeErrors> {
+        let mut image = Decoder::default();
+        image.decode_internal(Cursor::new(buf.to_vec()))
     }
-    /// Decode a JPEG file
+    /// Create a new Decoder instance
+    pub fn new() -> Decoder {
+        Decoder::default()
+    }
+    /// Decode a Decoder file
     ///
     /// # Errors
     ///  - `IllegalMagicBytes` - The first two bytes of the image are not `0xffd8`
     ///  - `UnsupportedImage`  - The image encoding scheme is not yet supported, for now we only support
     /// Baseline DCT which is suitable for most images out there
-    pub fn decode_file<P>(file: P) -> Result<Image, DecodeErrors> where P:AsRef<Path>+Clone{
-        let buffer = BufReader::new(File::open(file.clone()).expect("Could not open file"));
-        let mut decoder = JPEG {
-            file_name: file.as_ref().to_owned(),
-            // Let others be default
-            ..JPEG::default()
-        };
-        let pixels = decoder.decode_internal(buffer)?;
-        Ok(pixels)
-    }
-    fn decode_internal<R>(&mut self, buf: R) -> Result<Image, DecodeErrors>
+    pub fn decode_file<P>(file: P) -> Result<Vec<u8>, DecodeErrors>
     where
-        R: Read,
+        P: AsRef<Path> + Clone,
     {
-        let mut buf = BufReader::new(buf);
+        //Read to an in memory buffer
+        let buffer = Cursor::new(read(file).expect("Could not open file"));
+        let mut decoder = Decoder::default();
+        decoder.decode_internal(buffer)
+    }
+
+    /// Decode Decoder headers
+    ///
+    /// This routine takes care of parsing supported headers from a Decoder image
+    ///
+    /// # Supported Headers
+    ///  - APP(0)
+    ///  - SOF(O)
+    ///  - DQT -> Quantization tables
+    ///  - DHT -> Huffman tables
+    ///  - SOS -> Start of Scan
+    /// # Unsupported Headers
+    ///  - SOF(n) -> Decoder images which are not baseline
+    ///  - DAC -> Images using Arithmetic tables
+    fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
+    where
+        R: Read + BufRead,
+    {
+        let mut buf = buf;
+
         // First two bytes should indicate the image buff
-        let magic_bytes = buf
-            .read_u16::<BigEndian>()
-            .expect("Could not read first two magic bytes");
-        if magic_bytes != START_OF_IMAGE {
+        let magic_bytes = read_u16_be(&mut buf).expect("Could not read the first 2 bytes");
+        if magic_bytes != 0xffd8 {
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
         let mut last_byte = 0;
         loop {
             // read a byte
-            let m = buf.read_u8().unwrap_or_else(|err| {
-                panic!("Could not read values to buffer \n\t\t Reason: {}", err);
-            });
-            // create a u16 from the read byte and the previous read by
-            let marker = ((last_byte as u16) << 8) | m as u16;
+            let m = read_u8(&mut buf);
+            // Last byte should be 0xFF to confirm existence of a marker since markers look like OxFF(some marker data)
+            if last_byte == 0xFF {
+                let marker = Marker::from_u8(m);
 
-            // Check http://www.vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
-            // for meanings of the values below
-            match marker {
-                // There can be different SOF markers which mean different things
-                START_OF_FRAME_BASE => {
-                    let info = self.get_mut_info();
-                    let marker = SOFMarkers::BaselineDct;
-                    debug!("Image encoding scheme =`{:?}`", marker);
-                    parse_start_of_frame(&mut buf, marker, info)?;
-                }
-                // Yet to be supported encoding schemes
-                START_OF_FRAME_EXT_SEQ
-                | START_OF_FRAME_PROG_DCT
-                | START_OF_FRAME_PROG_DCT_AR
-                | START_OF_FRAME_LOS_SEQ_AR
-                | START_OF_FRAME_LOS_SEQ
-                | START_OF_FRAME_EXT_AR => {
-                    let feature = UnsupportedSchemes::from_int(marker).unwrap();
-                    return Err(DecodeErrors::Unsupported(feature));
-                }
-                START_OF_APP_MARKER => {
-                    debug!("Parsing start of APP 0 segment");
-                    // The only thing we need is the x and y pixel densities here
-                    // which are found 10 bytes away
-                    buf.consume(10);
-                    let info = self.get_mut_info();
-                    let x_density = buf
-                        .read_u16::<BigEndian>()
-                        .expect("Could not read x-pixel density");
-                    info.set_x(x_density);
-                    let y_density = buf
-                        .read_u16::<BigEndian>()
-                        .expect("Could not read y-pixel density");
-                    info.set_y(y_density);
-                    debug!("Pixel density acquired");
-                }
-                // Quantization table
-                QUANTIZATION_TABLE => {
-                    if self.info.sof.is_lossless() {
-                        warn!("A quantization table was found in a lossless encoded jpeg");
-                        continue;
+                // Check http://www.vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
+                // for meanings of the values below
+                if let Some(m) = marker {
+
+                    match m {
+                        Marker::SOF(0) => {
+                            let marker = SOFMarkers::BaselineDct;
+                            debug!("Image encoding scheme =`{:?}`", marker);
+                            // get components
+                            let mut p =
+                                parse_start_of_frame(&mut buf, marker, self.get_mut_info())?;
+                            // place the quantization tables in components
+                            for i in p.iter_mut() {
+                                let q = self.qt_tables[i.quantization_table_number as usize]
+                                    .as_ref()
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "No quantization table for component {:?}",
+                                            i.component_id
+                                        )
+                                    })
+                                    .clone();
+                                i.quantization_table = q;
+                            }
+
+                            // delete quantization tables, we'll extract them from the components when needed
+                            self.qt_tables = [None, None, None, None];
+
+                            self.components = Cell::new(p);
+                        }
+                        // Start of Frame Segments not supported
+                        Marker::SOF(v) => {
+                            let feature = UnsupportedSchemes::from_int(v);
+                            if let Some(feature) = feature {
+                                return Err(DecodeErrors::Unsupported(feature));
+                            }
+                            return Err(DecodeErrors::Format(
+                                "Unsupported image format".to_string(),
+                            ));
+                        }
+                        // APP(0) segment
+                        Marker::APP(_) => {
+                            parse_app(&mut buf, m, self.get_mut_info())?;
+                        }
+                        // Quantization tables
+                        Marker::DQT => {
+                            debug!("Extracting Quantization tables");
+                            let values = parse_dqt(&mut buf)?;
+
+                            self.add_qt(values);
+                            debug!("Quantization tables extracted");
+                        }
+                        // Huffman tables
+                        Marker::DHT => {
+                            debug!("Extracting Huffman table(s)");
+                            self.add_huffman_tables(parse_huffman(&mut buf)?);
+                            debug!("Finished extracting Huffman Table(s)")
+                        }
+                        // Start of Scan Data
+                        Marker::SOS => {
+                            debug!("Parsing start of scan");
+                            parse_sos(&mut buf, &self.info)?;
+                            debug!("Finished parsing start of scan");
+                            // break after reading the start of scan.
+                            // what follows is the image data
+                            break;
+                        }
+
+                        Marker::DAC | Marker::DNL => {
+                            return Err(DecodeErrors::Format(format!(
+                                "Parsing of the following header `{:?}` is not supported,\
+                                cannot continue",
+                                m
+                            )))
+                        }
+                        _ => {
+                            warn!(
+                                "Capabilities for processing marker `{:?} not implemented",
+                                m
+                            );
+                        }
                     }
-                    self.add_qt(parse_dqt(&mut buf)?);
-                    debug!("Quantization tables extracted");
                 }
-                HUFFMAN_TABLE => {
-                    self.add_huffman_tables(parse_huffman(&mut buf)?);
-                    debug!("Finished extracting Huffman Table(s)")
-                }
-                // Start of Scan
-                START_OF_SCAN => {
-                    debug!("Parsing start of scan");
-                    parse_sos(&mut buf, &self.info)?;
-                    debug!("Finished parsing start of scan");
-                    // break after reading the start of scan.
-                    // what follows is the image data
-                    break;
-                }
-                _ => (),
             }
-            if marker == END_OF_IMAGE {
-                break;
-            }
-            last_byte = marker
+            last_byte = m;
         }
-
-        let data = remove_ff0(buf);
-        Ok(self.decode_scan_data_ycbcr(&data))
-
+        Ok(())
     }
-}
-impl ImageTrait for JPEG {
-
-    fn width(&self) -> u32 {
-        u32::from(self.info.width)
-    }
-    fn height(&self) -> u32 {
-        u32::from(self.info.height)
-    }
-
-    fn decode(&mut self) {
-        let buffer = BufReader::new(
-            File::open(self.file_name.clone())
-                .unwrap_or_else(|_| panic!("Could not open file {}", self.file_name.to_str().unwrap())),
-        );
-        self.decode_internal(buffer)
-            .unwrap_or_else(|f| panic!("Error decoding image {}\n{}", self.file_name.to_str().unwrap(), f));
-    }
-    fn color_profile(&self) -> ColorProfile {
-        self.info.color_profile
-    }
-
-    fn pixel_density(&self) -> (u16, u16) {
-        (self.info.x_density as u16, self.info.x_density as u16)
-    }
-
-    fn pretty_print(&self) {
-        let meta = metadata(self.file_name.clone())
-            .unwrap_or_else(|_| panic!("Could not get image data {}", self.file_name.clone().to_str().unwrap()));
-        // I override this, because I CAN
-        println!("+--------------------------------------------------------+");
-        println!("Image File             : {}", self.file_name.to_str().unwrap());
-        println!("Image Size             : {:?} bytes", meta.len());
-        println!("Image Width            : {:?}", self.width());
-        println!("Image Height           : {:?}", self.height());
-        println!(
-            "Pixel Density          : {:?}x{:?} DPI",
-            self.pixel_density().0,
-            self.pixel_density().1
-        );
-        println!("Dimensions             : {:?} pixels", self.dimensions());
-        println!("Color Profile          : {:?}", self.color_profile());
-        println!("+-------------------------------------------------------+");
+    fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors>
+    {
+        let mut buf = buf;
+        self.decode_headers(&mut buf)?;
+        self.decode_mcu_ycbcr(&mut buf)
     }
 }
 
@@ -220,14 +248,13 @@ pub struct ImageInfo {
     pub height: u16,
     /// PixelDensity
     pub pixel_density: u8,
-    /// Colour profile
-    pub color_profile: ColorProfile,
     /// Start of frame markers
     pub sof: SOFMarkers,
     /// Horizontal sample
     pub x_density: u16,
     /// Vertical sample
     pub y_density: u16,
+    /// Number of components
     pub(crate) components: u8,
 }
 impl ImageInfo {
@@ -242,12 +269,6 @@ impl ImageInfo {
     /// Found in the start of frame
     pub fn set_height(&mut self, height: u16) {
         self.height = height
-    }
-    /// Set the image profile
-    ///
-    /// Found in the start of Frame data
-    pub fn set_profile(&mut self, profile: ColorProfile) {
-        self.color_profile = profile
     }
     /// Set the image density
     ///
