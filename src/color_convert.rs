@@ -166,3 +166,51 @@ pub unsafe fn clamp_sse(a: &mut Aligned16<[i32; 4]>) {
     _mm_store_si128(a.0.as_mut_ptr() as *mut _, min_v);
 }
 
+union YmmRegister {
+    // both are 32 when using std::mem::size_of
+    array: [i32; 8],
+    mm256: __m256i,
+}
+
+/// Convert YCBCR to RGB using AVX instructions
+///
+///  # Note
+///**IT IS THE RESPONSIBILITY OF THE CALLER TO CALL THIS IN CPUS SUPPORTING AVX2
+/// OTHERWISE THIS IS UB**
+///
+/// *Peace*
+///
+/// This library itself will ensure that it's never called in CPU's not supporting AVX2
+///
+/// # Arguments
+/// - `y`,`cb`,`cr`: A reference of 8 i32's
+/// - `out`: The output  array where we store our converted items
+/// - `offset`: The position from 0 where we write these RGB values
+#[cfg(feature = "perf")]
+pub fn ycbcr_to_rgb_avx2(y: &[i32], cb: &[i32], cr: &[i32], out: &mut [u8], offset: usize) {
+    // we can't make the function unsafe and use target feature
+    // because the signature won't match the other functions
+    unsafe {
+        // load data into memory
+        // for contemporary processors , unaligned loads should not be slower than aligned loads
+        // when using avx2
+        let y_c = _mm256_loadu_si256(y.as_ptr() as *const _);
+        let cb_c = _mm256_loadu_si256(cb.as_ptr() as *const _);
+        let cr_c = _mm256_loadu_si256(cr.as_ptr() as *const _);
+
+        // AVX version of integer version in https://stackoverflow.com/questions/4041840/function-to-convert-ycbcr-to-rgb
+
+        // Cb = Cb-128;
+        let cb_r = _mm256_sub_epi32(cb_c, _mm256_set1_epi32(128));
+        // cr = Cb -128;
+        let cr_r = _mm256_sub_epi32(cr_c, _mm256_set1_epi32(128));
+
+        // Calculate Y->R
+        // r = Y + 45 * Cr / 32
+        // 45*cr
+        let r1 = _mm256_mullo_epi32(_mm256_set1_epi32(45), cr_r);
+        // r1>>5
+        let r2 = _mm256_srai_epi32(r1, 5);
+        //y+r2
+
+        let r = YmmRegister { mm256: clamp_avx(_mm256_add_epi32(y_c, r2)) };
