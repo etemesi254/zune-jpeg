@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
-use crate::errors::DecodeErrors;
 use std::fmt;
 use std::io::{BufReader, Read};
+
+use crate::errors::DecodeErrors;
 
 /// Start of baseline DCT Huffman coding
 pub const START_OF_FRAME_BASE: u16 = 0xffc0;
@@ -22,11 +23,11 @@ pub const START_OF_FRAME_LOS_SEQ_AR: u16 = 0xffcb;
 
 /// Undo run length encoding of coefficients by placing them in natural order
 #[rustfmt::skip]
-pub const UN_ZIGZAG: [usize; 64+16] = [
-    0,  1,  8,  16, 9,  2,  3, 10,
-    17, 24, 32, 25, 18, 11, 4,  5,
+pub const UN_ZIGZAG: [usize; 64 + 16] = [
+    0, 1, 8, 16, 9, 2, 3, 10,
+    17, 24, 32, 25, 18, 11, 4, 5,
     12, 19, 26, 33, 40, 48, 41, 34,
-    27, 20, 13, 6,  7,  14, 21, 28,
+    27, 20, 13, 6, 7, 14, 21, 28,
     35, 42, 49, 56, 57, 50, 43, 36,
     29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46,
@@ -42,26 +43,28 @@ pub const UN_ZIGZAG: [usize; 64+16] = [
 pub struct Aligned16<T: ?Sized>(pub T);
 
 impl<T> Default for Aligned16<T>
-where
-    T: Default,
+    where
+        T: Default,
 {
     fn default() -> Self {
         Aligned16(T::default())
     }
 }
+
 /// Align data to a 16 byte boundary
 #[repr(align(32))]
 #[derive(Clone)]
 pub struct Aligned32<T: ?Sized>(pub T);
 
 impl<T> Default for Aligned32<T>
-where
-    T: Default,
+    where
+        T: Default,
 {
     fn default() -> Self {
         Aligned32(T::default())
     }
 }
+
 /// Color conversion types
 ///
 /// This enumerates over supported color conversion types the image can decode
@@ -83,6 +86,7 @@ pub enum ColorSpace {
     /// opaque alpha channel
     RGBA,
 }
+
 impl ColorSpace {
     /// Number of channels (including unused alpha) in this color space
     pub const fn num_components(self) -> i32 {
@@ -101,6 +105,7 @@ impl Default for ColorSpace {
         ColorSpace::RGB
     }
 }
+
 /// Markers that identify different Start of Image markers
 /// They identify the type of encoding and whether the file use lossy(DCT) or lossless
 /// compression and whether we use Huffman or arithmetic coding schemes
@@ -122,11 +127,13 @@ pub enum SOFMarkers {
     /// Lossless ( sequential), arithmetic coding
     LosslessArithmetic,
 }
+
 impl Default for SOFMarkers {
     fn default() -> Self {
         Self::BaselineDct
     }
 }
+
 impl SOFMarkers {
     /// Check if a certain marker is sequential DCT or not
     pub fn is_sequential_dct(self) -> bool {
@@ -161,6 +168,7 @@ impl SOFMarkers {
         }
     }
 }
+
 impl fmt::Debug for SOFMarkers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
@@ -194,8 +202,8 @@ impl fmt::Debug for SOFMarkers {
 #[inline]
 #[allow(clippy::unused_io_amount)]
 pub fn read_u8<R>(reader: &mut R) -> u8
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut tmp = [0; 1];
     // if there is no more data fill with zero
@@ -205,6 +213,7 @@ where
 
     tmp[0]
 }
+
 /// Read two `u8`'s from a buffer and create a `u16` from the bytes in BigEndian order.
 ///
 /// The first 8 bytes of the u16 are made by the first u8 read, and the second one make the last 8
@@ -221,8 +230,8 @@ where
 /// When the bytes cannot be read
 #[inline]
 pub fn read_u16_be<R>(reader: &mut R) -> Result<u16, DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut tmp: [u8; 2] = [0, 0];
     if reader.read(&mut tmp).expect("could not read from data") != 2 {
@@ -240,8 +249,8 @@ where
 /// - buf: A mutable reference to a slice containing u16's
 #[inline]
 pub fn read_u16_into<R>(reader: &mut BufReader<R>, buf: &mut [u16]) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut reader = reader;
 
@@ -250,6 +259,7 @@ where
     }
     Ok(())
 }
+
 /// Multiply elements in two vectors
 ///
 /// # Arguments
@@ -260,8 +270,8 @@ where
 /// Another vector containing multiplied coefficients
 #[inline]
 pub fn dequantize<T>(a: &[i16; 64], b: &[i16; 64]) -> [T; 64]
-where
-    T: Copy + Default + From<i16>,
+    where
+        T: Copy + Default + From<i16>,
 {
     // some decoders put this inside IDCT, i prefer it here
     let mut c = [T::default(); 64];
