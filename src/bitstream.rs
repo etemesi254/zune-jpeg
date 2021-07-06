@@ -38,7 +38,7 @@ const MAX_BITS: u8 = 56;
 pub(crate) struct BitStream {
     buffer: u64,
     bits_left: u8,
-    marker: Option<Marker>,
+    pub marker: Option<Marker>,
 }
 impl BitStream {
     /// Create a new BitStream
@@ -175,7 +175,7 @@ impl BitStream {
     /// # Expectations
     /// The `block` should be initialized to zero
     #[inline(always)]
-    pub fn decode_mcu_fast(
+    pub fn decode_fast(
         &mut self,
         reader: &mut Cursor<Vec<u8>>,
         dc_table: &HuffmanTable,
@@ -353,6 +353,14 @@ impl BitStream {
         let t = ((self.buffer >> (self.bits_left - n_bits)) & ((1 << n_bits) - 1)) as i32;
         self.bits_left -= n_bits;
         t
+    }
+    /// Reset the stream if we have a restart marker
+    ///
+    /// Restart markers indicate drop those bits in the stream and zero out everything
+    pub  fn reset(&mut self){
+        self.bits_left = 0;
+        self.marker = None;
+        self.buffer = 0;
     }
 }
 #[inline(always)]
