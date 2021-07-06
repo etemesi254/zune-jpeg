@@ -1,20 +1,24 @@
+use std::cell::Cell;
 use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
 
-use crate::errors::{DecodeErrors, UnsupportedSchemes};
-use crate::headers::{
-    parse_app, parse_com, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame,
-};
-use crate::huffman::HuffmanTable;
-use crate::marker::Marker;
-use crate::misc::{read_u16_be, read_u8, ColorSpace, SOFMarkers};
+use crate::color_convert::{ycbcr_to_rgb};
+
+
+#[cfg(feature = "perf")]
+use crate::color_convert::ycbcr_to_rgb_avx2;
+
 
 use crate::components::Components;
-
-use crate::color_convert::ycbcr_to_rgb;
+use crate::errors::{DecodeErrors, UnsupportedSchemes};
+use crate::headers::{
+    parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame,
+};
+use crate::huffman::HuffmanTable;
 use crate::idct::dequantize_and_idct_int;
-use std::cell::Cell;
+use crate::marker::Marker;
+use crate::misc::{ColorSpace, read_u16_be, read_u8, SOFMarkers};
 
 /// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]
@@ -40,9 +44,10 @@ pub struct Decoder {
     // This allows us to do AVX and SSE versions more easily( with some weird interleaving code)
     pub(crate) color_convert_func: Box<dyn FnMut(&[i32], &[i32], &[i32], &mut [u8], usize)>,
 }
+
 impl Default for Decoder {
     fn default() -> Self {
-        Decoder {
+        let mut d = Decoder {
             info: Default::default(),
             qt_tables: [None, None, None, None],
             dc_huffman_tables: [None, None, None, None],
@@ -53,6 +58,7 @@ impl Default for Decoder {
         }
     }
 }
+
 impl Decoder {
     /// Get a mutable reference to the image info class
     fn get_mut_info(&mut self) -> &mut ImageInfo {
@@ -101,8 +107,8 @@ impl Decoder {
     ///  - `UnsupportedImage`  - The image encoding scheme is not yet supported, for now we only support
     /// Baseline DCT which is suitable for most images out there
     pub fn decode_file<P>(file: P) -> Result<Vec<u8>, DecodeErrors>
-    where
-        P: AsRef<Path> + Clone,
+        where
+            P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file).expect("Could not open file"));
@@ -124,8 +130,8 @@ impl Decoder {
     ///  - SOF(n) -> Decoder images which are not baseline
     ///  - DAC -> Images using Arithmetic tables
     fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
-    where
-        R: Read + BufRead,
+        where
+            R: Read + BufRead,
     {
         let mut buf = buf;
 
@@ -145,7 +151,6 @@ impl Decoder {
                 // Check http://www.vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
                 // for meanings of the values below
                 if let Some(m) = marker {
-
                     match m {
                         Marker::SOF(0) => {
                             let marker = SOFMarkers::BaselineDct;
@@ -215,11 +220,11 @@ impl Decoder {
                                 "Parsing of the following header `{:?}` is not supported,\
                                 cannot continue",
                                 m
-                            )))
+                            )));
                         }
                         _ => {
                             warn!(
-                                "Capabilities for processing marker `{:?} not implemented",
+                                "Capabilities for processing marker \"{:?}\" not implemented",
                                 m
                             );
                         }
@@ -236,7 +241,36 @@ impl Decoder {
         self.decode_headers(&mut buf)?;
         self.decode_mcu_ycbcr(&mut buf)
     }
+    /// Initialize the most appropriate functions for
+    ///
+    fn init(&mut self) {
+        // Set color convert function
+        #[cfg(feature = "perf")]
+            {
+                debug!("Performance mode on,expect 🚀🚀 speeds");
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                    {
+                        if is_x86_feature_detected!("avx2") {
+                            debug!("Using AVX color conversion function");
+                            self.color_convert_func = Box::new(ycbcr_to_rgb_avx2);
+                        }
+                    }
+                #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+                    {
+                        // use the slower version which doesn't depend on  platform specific
+                        // intrinsics
+                        debug!("Using Table lookup color conversion function");
+                        self.color_convert_func = Box::new(ycbcr_to_rgb);
+                    }
+            }
+        #[cfg(not(feature = "perf"))]
+            {
+                debug!("Using safer(and slower) color conversion functions");
+                self.color_convert_func = Box::new(ycbcr_to_rgb)
+            }
+    }
 }
+
 
 /// A struct representing Image Information
 #[derive(Default, Clone)]
@@ -257,6 +291,7 @@ pub struct ImageInfo {
     /// Number of components
     pub(crate) components: u8,
 }
+
 impl ImageInfo {
     /// Set width of the image
     ///
