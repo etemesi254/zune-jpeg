@@ -16,11 +16,10 @@ pub struct HuffmanTable {
     /// top  bits above HUFF_LOOKAHEAD (8) contain the code length.
     ///
     /// Lower (8) bits contain the symbol in order of increasing code length.
-    ///
-    /// Okay this is clever
     pub(crate) lookup: [i32; 1 << HUFF_LOOKAHEAD],
 
-
+    /// A table which can be used to decode small AC coefficients and
+    /// do an equivalent of receive_extend
     pub(crate) ac_lookup: Option<[i32; 1 << HUFF_LOOKAHEAD]>,
 
     /// Directly represent contents of a JPEG DHT marker

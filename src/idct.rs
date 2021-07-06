@@ -1,7 +1,7 @@
 #![allow(
-    clippy::excessive_precision,
-    clippy::unreadable_literal,
-    clippy::module_name_repetitions,
+clippy::excessive_precision,
+clippy::unreadable_literal,
+clippy::module_name_repetitions,
 )]
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
@@ -17,7 +17,6 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 #[inline(always)]
 #[allow(arithmetic_overflow)]
 pub fn dequantize_and_idct_int(vector: &mut [i32; 64], qt_table: &[i32; 64]) {
-
     let mut i = 0;
     // Putting this in a separate function makes it really bad
     // because the compiler fails to see that it can be auto_vectorised so i'll leave it here
@@ -138,9 +137,9 @@ pub fn dequantize_and_idct_int(vector: &mut [i32; 64], qt_table: &[i32; 64]) {
         t3 *= 6149;
 
         let p1 = p5.wrapping_add(p1.wrapping_mul(-3865));
-        let p2 = p5.wrapping_add( p2.wrapping_mul( -10497));
-        let p3 = p3.wrapping_mul( -8034);
-        let p4 = p4.wrapping_mul( -1597);
+        let p2 = p5.wrapping_add(p2.wrapping_mul(-10497));
+        let p3 = p3.wrapping_mul(-8034);
+        let p4 = p4.wrapping_mul(-1597);
 
         t3 += p1 + p4;
         t2 += p2 + p3;
@@ -167,18 +166,21 @@ pub fn dequantize_and_idct_int(vector: &mut [i32; 64], qt_table: &[i32; 64]) {
 fn f2f(x: f32) -> i32 {
     (x * 4096.0 + 0.5) as i32
 }
+
 #[inline(always)]
 /// Multiply a number by 4096
 fn fsh(x: i32) -> i32 {
-    x<<12
+    x << 12
 }
+
 #[inline]
-fn clamp(a:i32) -> i32 {
+fn clamp(a: i32) -> i32 {
     a.max(0).min(255)
 }
+
 #[inline]
 fn dequantize(a: i32, b: i32) -> i32 {
-    a*b
+    a * b
 }
 
 //--------------------------------------------------
