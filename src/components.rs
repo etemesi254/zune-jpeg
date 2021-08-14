@@ -1,15 +1,18 @@
 use crate::errors::DecodeErrors;
+use crate::misc::Aligned32;
 
 /// Component Data from start of frame
 #[derive(Clone)]
 pub(crate) struct Components {
     pub component_id: ComponentID,
-    vertical_sample: u8,
-    horizontal_sample: u8,
+    pub vertical_sample: usize,
+    pub horizontal_sample: usize,
+    pub dc_table_pos: usize,
+    pub ac_table_pos: usize,
     //Quantization table number
     pub quantization_table_number: u8,
     // Specifies quantization table to use with this component
-    pub quantization_table: [i32; 64],
+    pub quantization_table: Aligned32<[i32; 64]>,
     // dc prediction for the component
     pub dc_pred: i32,
 }
@@ -30,9 +33,9 @@ impl Components {
         };
 
         // first 4 bits are vertical sample, we discard bottom 4 bits by a right shift.
-        let vertical_sample = a[1] >> 4;
+        let vertical_sample = (a[1] >> 4) as usize;
         // last 4 bits are horizontal samples, we get bottom n bits
-        let horizontal_sample = a[1] & 0x0f;
+        let horizontal_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
         debug!("\n\tComponent ID:{:?},\n\tVertical Sample:{}\n\tHorizontal Sample:{},\n\tquantization Table destinator:{}",
@@ -43,7 +46,9 @@ impl Components {
             vertical_sample,
             horizontal_sample,
             quantization_table_number,
-            quantization_table: [0; 64],
+            dc_table_pos: quantization_table_number as usize,
+            ac_table_pos: quantization_table_number as usize,
+            quantization_table: Aligned32([0; 64]),
             dc_pred: 0,
         })
     }
