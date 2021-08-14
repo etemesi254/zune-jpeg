@@ -10,6 +10,7 @@ use std::arch::x86::*;
 use std::arch::x86_64::*;
 
 use crate::misc::Aligned32;
+#[cfg(feature = "x86")]
 use crate::unsafe_utils::YmmRegister;
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
