@@ -31,6 +31,7 @@ pub union YmmRegister {
 /// - `y`,`cb`,`cr`: A reference of 8 i32's
 /// - `out`: The output  array where we store our converted items
 /// - `offset`: The position from 0 where we write these RGB values
+#[inline(always)]
 pub fn ycbcr_to_rgb_avx2(
     y1: &[i16],
     y2: &[i16],
@@ -130,7 +131,7 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     };
     return (r, g, b);
 }
-
+#[inline(always)]
 pub fn ycbcr_to_rgba(
     y1: &[i16],
     y2: &[i16],
@@ -176,7 +177,7 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     _mm256_storeu_si256(out.as_mut_ptr().offset(pos).cast() , g);
     _mm256_storeu_si256(out.as_mut_ptr().offset(pos + 16).cast(), h);
 }
-
+#[inline(always)]
 pub fn ycbcr_to_rgbx(
     y1: &[i16],
     y2: &[i16],
@@ -240,7 +241,6 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i {
     let min_s = _mm256_set1_epi16(0);
     // Highest value
     let max_s = _mm256_set1_epi16(255);
-    // epi16 works better here than epi32
     let max_v = _mm256_max_epi16(reg, min_s); //max(a,0)
     let min_v = _mm256_min_epi16(max_v, max_s); //min(max(a,0),255)
     return min_v;
