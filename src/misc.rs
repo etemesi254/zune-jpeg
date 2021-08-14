@@ -43,22 +43,22 @@ pub const UN_ZIGZAG: [usize; 64 + 16] = [
 pub struct Aligned16<T: ?Sized>(pub T);
 
 impl<T> Default for Aligned16<T>
-    where
-        T: Default,
+where
+    T: Default,
 {
     fn default() -> Self {
         Aligned16(T::default())
     }
 }
 
-/// Align data to a 16 byte boundary
-#[repr(align(32))]
+/// Align data to a 32 byte boundary
+#[repr(align(64))]
 #[derive(Clone)]
 pub struct Aligned32<T: ?Sized>(pub T);
 
 impl<T> Default for Aligned32<T>
-    where
-        T: Default,
+where
+    T: Default,
 {
     fn default() -> Self {
         Aligned32(T::default())
@@ -82,23 +82,26 @@ pub enum ColorSpace {
     YCCK,
     /// Blue/Green/Red
     BGR,
-    /// R,G,B,A colorspace, we set the fourth channel as 255 to represent an
+    /// R,G,B,A output_colorspace, we set the fourth channel as 255 to represent an
     /// opaque alpha channel
     RGBA,
+    /// R,G,B,X output color space,
+    /// the X will be randomly chosen(probably will be B channel)
+    RGBX,
 }
 
 impl ColorSpace {
     /// Number of channels (including unused alpha) in this color space
-    pub const fn num_components(self) -> i32 {
+    pub const fn num_components(self) -> usize {
         match self {
             Self::RGB | Self::BGR | Self::YCbCr => 3,
-            Self::CMYK | Self::RGBA | Self::YCCK => 4,
+            Self::CMYK | Self::RGBA | Self::RGBX | Self::YCCK => 4,
             Self::GRAYSCALE => 1,
         }
     }
 }
 impl Default for ColorSpace {
-    ///Set default colorspace as RGB
+    ///Set default output_colorspace as RGB
     ///
     /// This is the common behaviour for all (sane) Decoder images
     fn default() -> Self {
@@ -202,8 +205,8 @@ impl fmt::Debug for SOFMarkers {
 #[inline]
 #[allow(clippy::unused_io_amount)]
 pub fn read_u8<R>(reader: &mut R) -> u8
-    where
-        R: Read,
+where
+    R: Read,
 {
     let mut tmp = [0; 1];
     // if there is no more data fill with zero
@@ -230,8 +233,8 @@ pub fn read_u8<R>(reader: &mut R) -> u8
 /// When the bytes cannot be read
 #[inline]
 pub fn read_u16_be<R>(reader: &mut R) -> Result<u16, DecodeErrors>
-    where
-        R: Read,
+where
+    R: Read,
 {
     let mut tmp: [u8; 2] = [0, 0];
     if reader.read(&mut tmp).expect("could not read from data") != 2 {
@@ -249,13 +252,13 @@ pub fn read_u16_be<R>(reader: &mut R) -> Result<u16, DecodeErrors>
 /// - buf: A mutable reference to a slice containing u16's
 #[inline]
 pub fn read_u16_into<R>(reader: &mut BufReader<R>, buf: &mut [u16]) -> Result<(), DecodeErrors>
-    where
-        R: Read,
+where
+    R: Read,
 {
     let mut reader = reader;
 
     for i in buf {
-        *i = read_u16_be(&mut reader)?
+        *i = read_u16_be(&mut reader)?;
     }
     Ok(())
 }
@@ -270,8 +273,8 @@ pub fn read_u16_into<R>(reader: &mut BufReader<R>, buf: &mut [u16]) -> Result<()
 /// Another vector containing multiplied coefficients
 #[inline]
 pub fn dequantize<T>(a: &[i16; 64], b: &[i16; 64]) -> [T; 64]
-    where
-        T: Copy + Default + From<i16>,
+where
+    T: Copy + Default + From<i16>,
 {
     // some decoders put this inside IDCT, i prefer it here
     let mut c = [T::default(); 64];
