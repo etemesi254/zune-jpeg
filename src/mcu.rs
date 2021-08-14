@@ -1,131 +1,107 @@
-use std::io::{Cursor};
+use std::io::Cursor;
 
+use crate::{ColorSpace, Decoder};
 use crate::bitstream::BitStream;
-use crate::components::ComponentID;
-use crate::errors::DecodeErrors;
-use crate::misc::Aligned32;
-use crate::worker::{dequantize_idct_component, upsample_color_convert_ycbcr};
-use crate::Decoder;
-
+use crate::marker::Marker;
 
 impl Decoder {
     /// Decode data from MCU's
-    pub(crate) fn decode_mcu_ycbcr(
-        &mut self,
-        reader: &mut Cursor<Vec<u8>>,
-    ) -> Result<Vec<u8>, DecodeErrors> {
-        let mcu_width = (self.info.width + 7) / 8;
+    #[rustfmt::skip]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    pub(crate) fn decode_mcu_ycbcr(&mut self, reader: &mut Cursor<Vec<u8>>) -> Vec<u8> {
+        let mcu_width = ((self.info.width + 7) / 8) as usize;
         let mcu_height = (self.info.height + 7) / 8;
 
-        // Create a BitStream
+        // A bitstream instance, which will do bit-wise decoding for us
         let mut stream = BitStream::new();
+        // Size of our output image(width*height)
+        let capacity = usize::from(self.info.width) * usize::from(self.info.height) as usize;
 
-        // We only deal with YCbCr here so we can definitely do this
-        // DC table for Y(Luminance)
-        let dc_table_y = self
-            .dc_huffman_tables
-            .get(0)
-            .expect("No DC table for Y component was found")
-            .as_ref()
-            .expect("No DC table was initialized for Y component");
-        // DC table for Cb and Cr
-        let dc_table_cb_cr = self
-            .dc_huffman_tables
-            .get(1)
-            .expect("No DC table for Y component was found")
-            .as_ref()
-            .expect("No DC table was initialized for Y component");
-        // Ac table for Y component
-        let ac_table_y = self
-            .ac_huffman_tables
-            .get(0)
-            .expect("No DC table for Y component was found")
-            .as_ref()
-            .expect("No DC table was initialized for Y component");
-        // AC table for Cb and Cr
-        let ac_table_cb_cr = self
-            .ac_huffman_tables
-            .get(1)
-            .expect("No DC table for Y component was found")
-            .as_ref()
-            .expect("No DC table was initialized for Y component");
-        let capacity =
-            usize::from(self.info.width) * usize::from(self.info.height) as usize;
+        let component_capacity = usize::from(mcu_width) * 64;
 
-        let component_capacity = usize::from(mcu_width+1)*64;
         // The following contains containers for unprocessed values
         // by unprocessed we mean they haven't been dequantized and inverse DCT carried on them
-        let mut y_u_component: Vec<i32> = Vec::with_capacity(component_capacity);
-        let mut cb_u_component: Vec<i32> = Vec::with_capacity(component_capacity);
-        let mut cr_u_component: Vec<i32> = Vec::with_capacity(component_capacity);
+
+        // for those pointers storing unprocessed items, zero them out here
+        // num_components cannot go above MAX_COMPONENTS(currently all are at a max of 4)
+        for (pos, comp) in self.components.iter().enumerate() {
+            // multiply be vertical and horizontal sample , it  should be 1*1 for non-sampled images
+            self.mcu_block[pos] = vec![0; component_capacity * comp.vertical_sample * comp.horizontal_sample];
+        }
         let mut position = 0;
-        let mut global_channel = vec![0; capacity * 3];
-        let (y_qt, cb_qt, cr_qt) = {
-            let y = self
-                .components
-                .get_mut()
-                .iter()
-                .find(|x| x.component_id == ComponentID::Y)
-                .unwrap()
-                .quantization_table;
-            let cb = self
-                .components
-                .get_mut()
-                .iter()
-                .find(|x| x.component_id == ComponentID::Cb)
-                .unwrap()
-                .quantization_table;
-            let cr = self
-                .components
-                .get_mut()
-                .iter()
-                .find(|x| x.component_id == ComponentID::Cr)
-                .unwrap()
-                .quantization_table;
-            (y, cb, cr)
-        };
-        for _ in 0..mcu_height {
-            // Drop all values inside the unprocessed vec since they will be passed
-            // This makes it cheaper to clone (less elements) and reduce memory usage
-            y_u_component.clear();
-            cb_u_component.clear();
-            cr_u_component.clear();
-            for _ in 0..mcu_width {
-                for component in &mut self.components.get_mut().iter_mut() {
-                    let (dc_table, ac_table, values) = match component.component_id {
-                        ComponentID::Y => (dc_table_y, ac_table_y, &mut y_u_component),
-                        ComponentID::Cb => (dc_table_cb_cr, ac_table_cb_cr, &mut cb_u_component),
-                        ComponentID::Cr => (dc_table_cb_cr, ac_table_cb_cr, &mut cr_u_component),
-                    };
-                    let mut c = Aligned32([0; 64]);
-                    // decode the MCU
-                    stream.decode_mcu_fast(
-                        reader,
-                        dc_table,
-                        ac_table,
-                        &mut c.0,
-                        &mut component.dc_pred,
-                    );
-                    values.extend(c.0.iter());
+        let mut global_channel = vec![0; capacity * self.output_colorspace.num_components()];
+        if self.interleaved {
+            for _ in 0..self.mcu_y {
+                for _ in 0..self.mcu_x {
+                    // Scan  an interleaved mcu... process scan_n components in order
 
                 }
             }
-            // Carry out dequantization and idct by calling the function at idct_func
-            dequantize_idct_component(&mut y_u_component, &y_qt, &mut self.idct_func);
-            dequantize_idct_component(&mut cb_u_component, &cb_qt, &mut self.idct_func);
-            dequantize_idct_component(&mut cr_u_component, &cr_qt, &mut self.idct_func);
+        }
+        // Non-Interleaved MCUs
+        // Carry out decoding in trivial scanline order
+        else {
 
-            upsample_color_convert_ycbcr(
-                &Aligned32(y_u_component.as_ref()),
-                &Aligned32(cb_u_component.as_ref()),
-                &Aligned32(cr_u_component.as_ref()),
-                &mut self.color_convert_func,
-                position,
-                &mut Aligned32(&mut global_channel).0,
-            );
-            position += usize::from(mcu_width << 3)
+            for _ in 0..mcu_height {
+                for i in 0..mcu_width {
+                    // iterate over components, for non interleaved scans
+                    for position in 0..self.input_colorspace.num_components() {
+                        let component = &mut self.components[position];
+
+                        let dc_table = self.dc_huffman_tables[component.dc_table_pos].as_ref().
+                            unwrap_or_else(|| panic!("Could not get DC table for component {:?}", component.component_id));
+                        let ac_table = self.ac_huffman_tables[component.ac_table_pos].as_ref().
+                            unwrap_or_else(|| panic!("Could not get DC table for component {:?}", component.component_id));
+
+                        let mut tmp = [0; 64];
+                        // decode the MCU
+                       if  !(stream.decode_fast(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)){
+                           // if false we should read stream and see what marker is stored there
+                           let marker = stream.marker.unwrap();
+                           // okay check if marker is a rst
+                           match marker {
+                               Marker::RST(_)=>{
+                                   // reset stream
+                                    stream.reset();
+                                   // Initialize dc predictions to zero for all components
+                                   self.components.iter_mut().for_each(|x| x.dc_pred=0);
+
+                               }
+                               // pass through
+                               _=>{
+                                   warn!("Marker {:?} found in bitstream, ignoring it",marker)
+                               }
+                           }
+                       }
+                        // Write to 64 elements the region containing unprocessed items
+                        self.mcu_block[position][(i * 64)..(i * 64 + 64)].copy_from_slice(&tmp);
+                    }
+                }
+                // carry out IDCT
+                (0..self.input_colorspace.num_components()).into_iter().for_each(|i| {
+                    (self.idct_func)(self.mcu_block[i].as_mut_slice(), &self.components[i].quantization_table);
+                });
+
+                // upsample and color convert
+                match (self.input_colorspace, self.output_colorspace) {
+
+                    // YCBCR to RGB(A) colorspace conversion.
+                    (ColorSpace::YCbCr, _) => {
+                        self.color_convert_ycbcr(position, &mut global_channel);
+                    }
+                    (ColorSpace::GRAYSCALE, ColorSpace::GRAYSCALE) => {
+                        // for grayscale to grayscale we copy first MCU block(which should contain the MCU blocks) to the other
+                        let x: &Vec<i16> = self.mcu_block[0].as_ref();
+                        global_channel = x.iter().map(|c| *c as u8).collect();
+                    }
+                    // For the other components we do nothing(currently)
+                    _ => {}
+                }
+                position += usize::from(mcu_width << 3);
+            }
         }
 
-        Ok(global_channel)
+        debug!("Finished decoding image");
+        global_channel
     }
 }
