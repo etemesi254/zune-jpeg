@@ -1,3 +1,4 @@
+#![allow(clippy::similar_names)]
 use std::convert::TryFrom;
 
 use crate::errors::DecodeErrors;
@@ -50,7 +51,7 @@ impl HuffmanTable {
     /// This routine performs some validation checks on the table
     fn make_derived_table(&mut self, is_dc: bool) -> Result<(), DecodeErrors> {
         // build a list of code size
-        let mut size = [0;257];
+        let mut size = [0; 257];
         // Huffman code lengths
         let mut huff_code: [u32; 257] = [0; 257];
 
@@ -106,7 +107,7 @@ impl HuffmanTable {
         }
         self.offset[17] = 0;
         // we ensure that decode terminates
-        self.maxcode[17] = 0xFF_FFF;
+        self.maxcode[17] = 0x000F_FFFF;
 
         /*
          * Compute lookahead tables to speed up decoding.
@@ -136,7 +137,7 @@ impl HuffmanTable {
 
         // build an ac table that does an equivalent of decode and receive_extend
         if !is_dc {
-            let mut fast = [255;1<<HUFF_LOOKAHEAD];
+            let mut fast = [255; 1 << HUFF_LOOKAHEAD];
             for i in 0..num_symbols {
                 let s = size[i];
                 if s <= HUFF_LOOKAHEAD {
