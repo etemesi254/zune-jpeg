@@ -1,7 +1,5 @@
-#![allow(clippy::needless_return)]
-#![warn(clippy::correctness, clippy::perf, clippy::pedantic)]
-#![allow(arithmetic_overflow)]
-
+#![allow(clippy::needless_return,clippy::similar_names)]
+#![warn(clippy::correctness, clippy::perf, clippy::pedantic,clippy::inline_always)]
 #[macro_use]
 extern crate log;
 
@@ -20,13 +18,7 @@ mod mcu;
 mod misc;
 
 mod color_convert;
+mod unsafe_utils;
 mod worker;
 
-#[test]
-fn decode_jpeg() {
-    let image =
-        Decoder::decode_file("/home/caleb/IMG_7376.jpg")
-            .unwrap();
-    println!("{:?}", &image.len());
-    println!("{:?}", &image[0..63]);
-}
+
