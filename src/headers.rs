@@ -4,16 +4,16 @@
 //!
 //! A good guide on markers can be found [here](http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm)
 //!
+use std::convert::TryInto;
 use std::io::{BufRead, Read};
 
+use crate::{ColorSpace, Decoder};
+use crate::components::Components;
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::image::ImageInfo;
-use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG};
-use std::convert::TryInto;
-
-use crate::components::Components;
 use crate::marker::Marker;
+use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 /// ----------------------------------------------
@@ -39,8 +39,8 @@ use crate::marker::Marker;
 pub fn parse_huffman<R>(
     mut buf: &mut R,
 ) -> Result<(Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     // Read the length of the Huffman table
     let dht_length = read_u16_be(&mut buf).expect("Could not read Huffman length from image") - 2;
@@ -81,6 +81,7 @@ where
     }
     Ok((dc_tables, ac_tables))
 }
+
 ///**B.2.4.1 Quantization table-specification syntax**
 /// --------------------------------------------------
 ///
@@ -107,8 +108,8 @@ where
 /// Decoding an image with such tables will cause panic
 #[allow(clippy::cast_possible_truncation)]
 pub fn parse_dqt<R>(buf: &mut R) -> Result<Vec<([i32; 64], usize)>, DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut buf = buf;
     // read length
@@ -197,28 +198,33 @@ where
 pub(crate) fn parse_start_of_frame<R>(
     buf: &mut R,
     sof: SOFMarkers,
-    info: &mut ImageInfo,
+    img: &mut Decoder,
 ) -> Result<Vec<Components>, DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
-    let info = info;
     let mut buf = buf;
     // Get length of the frame header
     let length = read_u16_be(&mut buf).unwrap();
     // usually 8, but can be 12 and 16
     let dt_precision = read_u8(&mut buf);
+    if dt_precision != 8 {
+        error!(
+            "The library can only parse 8-bit images, the image has {} bits",
+            dt_precision
+        )
+    }
 
-    info.set_density(dt_precision);
+    img.info.set_density(dt_precision);
     // read the image height , maximum is 65,536
     let img_height = read_u16_be(&mut buf).unwrap();
 
-    info.set_height(img_height);
+    img.info.set_height(img_height);
 
     // read image width
     let img_width = read_u16_be(&mut buf).unwrap();
 
-    info.set_width(img_width);
+    img.info.set_width(img_width);
     // Check image width or height is zero
     if img_width == 0 || img_height == 0 {
         return Err(DecodeErrors::ZeroError);
@@ -234,7 +240,7 @@ where
         )));
     }
     // set number of components
-    info.components = num_components;
+    img.info.components = num_components;
 
     //    if (sof == SOFMarkers::ProgressiveDctHuffman || sof == SOFMarkers::ProgressiveDctArithmetic)
     //      && num_components > 4
@@ -245,17 +251,21 @@ where
     //}
     let mut components = Vec::with_capacity(num_components as usize);
     let mut temp = [0; 3];
+
     for _ in 0..num_components {
         // read 3 bytes for each component
         buf.read_exact(&mut temp)
             .expect("Could not read  component data");
-        components.push(Components::from(temp).expect("Could not parse component data"))
+        let component = Components::from(temp).expect("Could not parse component data");
+
+        components.push(component)
     }
 
     // Set the SOF marker
-    info.set_sof_marker(sof);
+    img.info.set_sof_marker(sof);
     Ok(components)
 }
+
 /// Parse a start of scan data
 ///
 /// |Field                       |Size      |Description
@@ -269,33 +279,48 @@ where
 /// |                            |            | > bit 0..3 : AC table (0..3)
 /// |                            |            | bit 4..7 : DC table (0..3)
 /// | Ignorable Bytes            |3 bytes     |We have to skip 3 bytes.
-pub fn parse_sos<R>(buf: &mut R, _image_info: &ImageInfo) -> Result<(), DecodeErrors>
-where
-    R: Read + BufRead,
+pub fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
+    where
+        R: Read + BufRead,
 {
     let mut buf = buf;
     // Scan header length
-    let _ls = read_u16_be(&mut buf).expect("Could not read start of scan length");
+    let ls = read_u16_be(&mut buf).expect("Could not read start of scan length");
+
     // Number of image components in scan
     let ns = read_u8(&mut buf);
-
+    if ls != u16::from(6 + 2 * ns) {
+        return Err(DecodeErrors::SosError("Bad SOS length,corrupt jpeg".to_string()));
+    }
     if !(1..5).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
             "Number of components in start of scan should be less than 4 but more than 0. Found {}",
             ns
         )));
     }
-    // 3 ignored bytes
-    buf.consume((2 * ns as usize) + 3);
+    // If ns is 1, means image is grayscale,lets change to that
+    match ns {
+        1 => image.input_colorspace = ColorSpace::GRAYSCALE,
+        _ => {}
+    }
+    // Collect the component spec parameters
+    if image.info.sof == SOFMarkers::ProgressiveDctHuffman {
+        for _ in 0..ns {}
+    } else {
+        // Ignore per component details, for baseline DCT, we probably don't need
+        // them
+        buf.consume((2 * ns as usize) + 3);
+    }
     Ok(())
 }
+
 pub fn parse_app<R>(
     mut buf: &mut R,
     marker: Marker,
     info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
-where
-    R: Read + BufRead,
+    where
+        R: Read + BufRead,
 {
     let length = read_u16_be(buf)? as usize;
     let mut bytes_read = 2;
@@ -334,28 +359,6 @@ where
         _ => {}
     }
     Ok(())
-}
-/// ** B.2.4.5:Comment syntax**
-/// ------------------------------
-///
-/// Parse a comment section
-///
-/// |Parameter             |Size|Values|
-/// |----------------------|----|-------|
-/// |Comment Segment Length| 16|2-65,535|
-/// Comment byte           |8  | 0-255  |
-pub fn parse_com<R>(mut buf: &mut R)
-where
-    R: Read + BufRead,
-{
-    let lc = read_u16_be(&mut buf).expect("Could not read comment length");
-    let mut buffer = vec![0; lc as usize];
-    buf.read_exact(&mut buffer)
-        .unwrap_or_else(|_| panic!("Could not read comment of length {}", lc));
-    // use lossy to prevent unwrap when sent weird data
-    let comment = String::from_utf8_lossy(&buffer);
-    // Print the comment
-    debug!("Comment: {}", comment);
 }
 
 /// Small utility function to print Un-zig-zagged quantization tables
