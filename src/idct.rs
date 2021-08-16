@@ -12,6 +12,7 @@ use std::arch::x86_64::*;
 use crate::misc::Aligned32;
 #[cfg(feature = "x86")]
 use crate::unsafe_utils::YmmRegister;
+use std::process::exit;
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
@@ -377,10 +378,14 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         //okay begin cool stuff
         macro_rules! permute_store {
             ($x:tt,$y:tt,$index:tt,$out:tt) => {
-                let a = _mm256_packus_epi32($x,$y);
+                let a = _mm256_packs_epi32($x,$y);
                 // Clamp the values after packing, we can clamp more values at once
                 let b = clamp_avx(a);
-                let c =_mm256_permute4x64_epi64::<242>(b);
+                // /Undo shuffling,
+                // Magic number 216 is what does it for us..
+                let c =_mm256_permute4x64_epi64::<{shuffle(3,1,2,0)}>(b);
+              //  let c =_mm256_permute4x64_epi64::<242>(c);
+
                 _mm256_storeu_si256(($out)[$index..$index+16].as_mut_ptr().cast(),c);
             };
         }
@@ -389,6 +394,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         permute_store!((row2.mm256), (row2.mm256), 16, vector);
         permute_store!((row4.mm256), (row3.mm256), 32, vector);
         permute_store!((row6.mm256), (row4.mm256), 48, vector);
+
     }
 }
 #[cfg(feature = "x86")]
@@ -466,6 +472,7 @@ unsafe fn transpose(
 /// A copy of _MM_SHUFFLE() that doesn't require
 /// a nightly compiler
 #[inline]
+#[cfg(feature = "x86")]
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
