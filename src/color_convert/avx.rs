@@ -79,12 +79,14 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     cr1: &[i16],
     cr2: &[i16],
 ) -> (YmmRegister, YmmRegister, YmmRegister) {
-    // we can't make the function unsafe and use target feature
-    // because the signature won't match the other functions
 
-    let y_c = _mm256_loadu2_m128i(y1.as_ptr().cast(), y2.as_ptr().cast());
-    let cb_c = _mm256_loadu2_m128i(cb1.as_ptr().cast(), cb2.as_ptr().cast());
-    let cr_c = _mm256_loadu2_m128i(cr1.as_ptr().cast(), cr2.as_ptr().cast());
+    // Load values into a register
+    //
+    // dst[127:0] := MEM[loaddr+127:loaddr]
+    // dst[255:128] := MEM[hiaddr+127:hiaddr]
+    let y_c = _mm256_loadu2_m128i(y2.as_ptr().cast(), y1.as_ptr().cast());
+    let cb_c = _mm256_loadu2_m128i(cb2.as_ptr().cast(), cb1.as_ptr().cast());
+    let cr_c = _mm256_loadu2_m128i(cr2.as_ptr().cast(), cr1.as_ptr().cast());
 
     // AVX version of integer version in https://stackoverflow.com/questions/4041840/function-to-convert-ycbcr-to-rgb
 
