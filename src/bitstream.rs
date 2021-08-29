@@ -1,4 +1,9 @@
-#![allow(clippy::if_not_else,clippy::similar_names)]
+#![allow(
+    clippy::if_not_else,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::doc_markdown
+)]
 //! # Performance optimizations
 //! - One bottleneck is `refill`/`refill_fast`, the fact that we have
 //! to check for `OxFF` byte during refills, which  most of the times doesn't exist
@@ -12,7 +17,6 @@
 
 use std::io::Cursor;
 
-use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
@@ -35,12 +39,8 @@ pub(crate) struct BitStream {
     buffer: u64,
     bits_left: u8,
     pub marker: Option<Marker>,
-    // Optional fields that should be set by a progressive image
-    pub successive_high: i32,
-    pub successive_low: i32,
-    // End  of buffer run
-    pub eob_run: u8,
 }
+
 impl BitStream {
     /// Create a new BitStream
     ///
@@ -51,71 +51,7 @@ impl BitStream {
             buffer: 0,
             bits_left: 0,
             marker: None,
-            successive_high: 0,
-            successive_low: 0,
-            eob_run: 0,
         }
-    }
-    /// Create a new BitStream with options
-    /// for progressive decoding
-    ///
-    /// This should only be called for progressive images to transfer
-    /// data from image struct to the bitstream instance.
-    pub(crate) fn new_with_options(successive_high:i32, successive_low:i32,
-                                   eob_run:u8) -> BitStream {
-        BitStream{
-            buffer:0,
-            bits_left:0,
-            marker:None,
-            successive_high,
-            successive_low,
-            eob_run
-        }
-    }
-    /// Refill the buffer up to needed `bits`
-    #[inline(always)]
-    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>, bits: u8)->bool {
-        //  Attempt to load at least `bits` bit into the buffer
-        while self.bits_left <= bits {
-            // attempt to read a byte
-            let byte = read_u8(reader);
-            // pre-execute most common case , add a byte and increment count
-            self.buffer = (self.buffer << 8) | u64::from(byte);
-            self.bits_left += 8;
-
-            // IF the byte read is 0xFF, check and discard stuffed zero byte
-            if byte == 0xff {
-                // read next byte
-                let mut next_byte = read_u8(reader);
-                // Byte snuffing, if we encounter byte snuff, we skip the byte
-                if next_byte != 0x00 {
-                    // Section B.1.1.2
-                    // "Any marker may optionally be preceded by any number of fill bytes, which are bytes assigned code X’FF’."
-                    while next_byte == 0xFF {
-                        // consume fill bytes
-                        next_byte = read_u8(reader);
-                    }
-                    if next_byte != 0x00 {
-                        // if its a marker it indicates end of compressed data
-                        // back out pre-execution and fill with zero bits
-                        // we are removing 1 byte, te FF we added in pre-computation
-                        self.buffer &= !0xf;
-                        self.bits_left -= 8;
-
-                        self.marker = Some(Marker::from_u8(next_byte).unwrap());
-                        // suspend
-                        // we should probably return a bool indicating
-                        // whether it succeeded
-                        return false;
-                    }
-                    // if next_byte is zero we need to panic(jpeg-decoder does that)
-                    // but i'll let it slide
-                }
-            }
-        }
-        // Okay everything is good
-        return true;
-
     }
     /// Refill the bit buffer by (a maximum of) 48 bits (4 bytes)
     ///
@@ -125,15 +61,15 @@ impl BitStream {
     ///
     /// # Performance
     /// The code here is a lot(but hidden by macros) we move in a linear manner avoiding loops
-    /// (which suffer from branch mis-prediction) , we can only refill 48 bits safely without overriding
+    /// (which suffer from branch mis-prediction) , we can only refill 32 bits safely without overriding
     /// important bits in the buffer
     ///
     /// Because the code generated here is a lot, we might affect the instruction cache( yes it's not
     /// data that is only cached)
     ///
-    /// This function will only refill if `self.count` is less than 16
+    /// This function will only refill if `self.count` is less than 32
     #[inline(always)]
-    fn refill_fast(&mut self, reader: &mut Cursor<Vec<u8>>) ->bool{
+    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool {
         // Ps i know inline[always] is frowned upon
 
         // Macro version of refill
@@ -142,16 +78,19 @@ impl BitStream {
         // bits_left-> number of bits left to full refill
 
         macro_rules! refill {
-            ($buffer:expr,$bits_left:expr) => {
+            ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
-                let byte = read_u8(reader);
+                $byte = read_u8(reader);
+
                 // append to the buffer
-                $buffer = ($buffer << 8) | u64::from(byte);
+                // JPEG is a MSB type buffer so that means we append this
+                // to the lower end (0..8) of the buffer and push the rest bits above..
+                $buffer = ($buffer << 8) | u64::from($byte);
                 // Increment bits left
                 $bits_left += 8;
 
                 // Check for special case  of OxFF, to see if it's a stream or a marker
-                if byte == 0xff {
+                if $byte == 0xff {
                     // read next byte
                     let mut next_byte = read_u8(reader);
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
@@ -161,6 +100,7 @@ impl BitStream {
                             next_byte = read_u8(reader);
                         }
                         if next_byte != 0x00 {
+                            // Undo the byte append and return
                             $buffer &= !0xf;
                             $bits_left -= 8;
                             self.marker = Some(Marker::from_u8(next_byte).unwrap());
@@ -175,13 +115,15 @@ impl BitStream {
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
         if self.bits_left <= 32 {
+            // This server two reasons,
+            // 1: Make clippy shut up
+            // 2: Favour register reuse
+            let mut byte;
             // 4 refills, if all succeed the stream should contain enough bits to decode a value
-            refill!(self.buffer, self.bits_left);
-            refill!(self.buffer, self.bits_left);
-            refill!(self.buffer, self.bits_left);
-            refill!(self.buffer, self.bits_left);
-            // Note, we are not assured that all these macros will append a byte, eg if it finds a marker,
-            // it won't append it to the stream.
+            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
         }
         return true;
     }
@@ -195,7 +137,11 @@ impl BitStream {
     /// - The main problems are memory bottlenecks
     /// # Expectations
     /// The `block` should be initialized to zero
-    #[allow(clippy::many_single_char_names)]
+    #[allow(
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     #[inline(always)]
     pub fn decode_fast(
         &mut self,
@@ -204,8 +150,7 @@ impl BitStream {
         ac_table: &HuffmanTable,
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
-    ) -> bool
-    {
+    ) -> bool {
         // Same macro as HUFF_DECODE_FAST in jdhuff.h 220(as time of writing)
         // Sadly this is slow, about 2x slower than that implementation
         // even though its a word to word implementation.
@@ -214,8 +159,8 @@ impl BitStream {
                 // refill buffer, the check if its less than 16 will be done inside the function
                 // but since we use inline(always) we have a branch here which tells us if we
                 // refill
-                self.refill_fast(reader);
-                $s = self.peek_bits(HUFF_LOOKAHEAD);
+                self.refill(reader);
+                $s = self.peek_bits::<HUFF_LOOKAHEAD>();
                 // Lookup 8 bits in the stream and see if there is a corresponding byte
 
                 $s = $table.lookup[$s as usize];
@@ -248,6 +193,7 @@ impl BitStream {
             };
         }
         let (mut s, mut l, mut r);
+
         huff_decode_fast!(s, l, dc_table);
 
         if s != 0 {
@@ -256,26 +202,29 @@ impl BitStream {
         }
         // Update DC prediction
         *dc_prediction += s;
-        block[0] = *dc_prediction as i16;
 
+        block[0] = *dc_prediction as i16;
         // Decode AC coefficients
         let mut k: usize = 1;
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
         while k < 64 {
             // Found RST marker?
-            if !self.refill_fast(reader){
+            if !self.refill(reader) {
                 // found a marker , stop processing
-                 return false;
+                // The caller handles restart markers for us, it will call the necessary
+                // routines
+                return false;
             };
-            s = self.peek_bits(HUFF_LOOKAHEAD);
+            s = self.peek_bits::<HUFF_LOOKAHEAD>();
             let v = ac_lookup[s as usize];
             if v != 0 {
                 //  FAST AC path
                 k += ((v >> 4) & 15) as usize; // run
-                self.drop_bits((v & 15) as u8); // combined length
+                self.drop_bits((v & 15) as u8);
+                // combined length
                 {
-                    block[UN_ZIGZAG[k]] = (v >> 8) as i16;
+                    block[UN_ZIGZAG[k]] = v >> 8;
                 }
                 k += 1;
             } else {
@@ -291,7 +240,7 @@ impl BitStream {
                         l += 1;
                     }
                     if l > 16 {
-                        s = 0
+                        s = 0;
                     } else {
                         s = i32::from(
                             ac_table.values[((s + ac_table.offset[l as usize]) & 0xFF) as usize],
@@ -319,11 +268,11 @@ impl BitStream {
     }
 
     /// Peek `look_ahead` bits ahead without discarding them from the buffer
-    ///
-    /// This is used in conjunction with a lookup table hence it is `const` ified
     #[inline(always)]
-    const fn peek_bits(&self, look_ahead: u8) -> i32 {
-        ((self.buffer >> (self.bits_left - look_ahead)) & ((1 << look_ahead) - 1)) as i32
+    #[allow(clippy::cast_possible_truncation)]
+    const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32 {
+        // This is the same as a bit extract instruction and the overhead is the same
+        ((self.buffer >> (self.bits_left - LOOKAHEAD)) & ((1 << LOOKAHEAD) - 1)) as i32
     }
     /// Discard the next `N` bits without checking
     #[inline(always)]
@@ -332,6 +281,7 @@ impl BitStream {
     }
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
+    #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32 {
         let t = ((self.buffer >> (self.bits_left - n_bits)) & ((1 << n_bits) - 1)) as i32;
         self.bits_left -= n_bits;
@@ -345,71 +295,6 @@ impl BitStream {
         self.marker = None;
         self.buffer = 0;
     }
-    fn decode_mcu_dc(
-        &mut self,
-        reader: &mut Cursor<Vec<u8>>,
-        dc_table: &HuffmanTable,
-        last_dc_value: &mut i32,
-        block: &mut [i32; 64],
-    ) -> Result<(), DecodeErrors>
-    {
-        self.refill_fast(reader);
-
-        let look = self.peek_bits(HUFF_LOOKAHEAD);
-
-        // Decode a single block of coefficients
-
-        // Section F.2.2.1: Decode the Dc coefficient difference
-
-        let mut s;
-        // this should not panic because  look can never go above 1<<HUFF_LOOKAHEAD
-        let n_bits = dc_table.lookup[look as usize] >> HUFF_LOOKAHEAD;
-        if n_bits <= i32::from(HUFF_LOOKAHEAD) {
-            self.drop_bits(n_bits as u8);
-            s = dc_table.lookup[look as usize] & ((1 << HUFF_LOOKAHEAD) - 1);
-        } else {
-            s = self.huff_decode(n_bits, reader, dc_table)
-        }
-        if s != 0 {
-            let r = self.get_bits(s as u8);
-            s = huff_extend(r, s);
-        }
-        // Convert DC difference to actual value
-        if (*last_dc_value >= 0 && s > i32::MAX - *last_dc_value)
-            || (*last_dc_value < 0 && s < i32::MIN - *last_dc_value)
-        {
-            return Err(DecodeErrors::HuffmanDecode(
-                "Bad DC coefficient".to_string(),
-            ));
-        }
-        *last_dc_value = s + *last_dc_value;
-        // scale and output coefficient
-        block[0] = *last_dc_value << self.successive_low;
-        return Ok(());
-    }
-
-    #[inline]
-    fn huff_decode(&mut self, n_bits: i32, buf: &mut Cursor<Vec<u8>>, table: &HuffmanTable) -> i32 {
-        // We already know how long the code is,
-        // grab those bits
-        self.refill(buf, n_bits as u8);
-        let mut code = self.get_bits(n_bits as u8);
-        // collect the rest of the code
-        // as per figure F.!6
-        let mut l = n_bits as usize;
-        self.refill_fast(buf);
-        while code > table.maxcode[l] {
-            code <<= 1;
-            code |= self.get_bits(1);
-            l += 1;
-        }
-        return table.values[(code as usize + (table.offset[l]) as usize)] as i32;
-    }
-    pub fn decode_mcu_progressive(&mut self, reader: &mut Cursor<Vec<u8>>) {
-        // refill buffer
-        // We should check that the  bitstream  returns true
-    }
-    pub fn decode_mcu_ac_progressive() {}
 }
 
 #[inline(always)]
@@ -422,6 +307,7 @@ fn huff_extend(x: i32, s: i32) -> i32 {
 ///
 /// Function is inlined (as always)
 #[inline(always)]
+#[allow(clippy::cast_possible_truncation)]
 fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u8 {
     let pos = reader.position();
     reader.set_position(pos + 1);
