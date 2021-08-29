@@ -1,25 +1,38 @@
 #![allow(clippy::module_name_repetitions)]
 #![cfg(feature = "x86")]
+
 #[cfg(target_arch = "x86")]
-use std::arch::x86::*;
+use std::arch::x86::{
+    __m128i, _mm_add_epi16, _mm_loadu_si128, _mm_max_epi16, _mm_min_epi16, _mm_mullo_epi16,
+    _mm_set1_epi16, _mm_srai_epi16, _mm_sub_epi16,
+};
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use std::arch::x86_64::{
+    __m128i, _mm_add_epi16, _mm_loadu_si128, _mm_max_epi16, _mm_min_epi16, _mm_mullo_epi16,
+    _mm_set1_epi16, _mm_srai_epi16, _mm_sub_epi16,
+};
 
 union XmmRegister {
     array: [i16; 8],
     reg: __m128i,
 }
 
-pub fn ycbcr_to_rgb_sse(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], offset: usize) {
+pub fn ycbcr_to_rgb_sse(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], offset: &mut usize) {
     unsafe {
         // we can't merge ycbcr to
-        ycbcr_to_rgb_sse41(y, cb, cr, out, offset)
+        ycbcr_to_rgb_sse41(y, cb, cr, out, offset);
     }
 }
 
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn ycbcr_to_rgb_sse41(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], offset: usize) {
+unsafe fn ycbcr_to_rgb_sse41(
+    y: &[i16],
+    cb: &[i16],
+    cr: &[i16],
+    out: &mut [u8],
+    offset: &mut usize,
+) {
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -78,7 +91,7 @@ unsafe fn ycbcr_to_rgb_sse41(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], 
         reg: clamp_sse(_mm_add_epi16(b2, y)),
     };
 
-    let mut pos = offset;
+    let pos = offset;
     // We add items to the array in trivial order
     // though thanks to the awesome technology that is RUST and LLVM, it is still vectorised
     // with some cool blend and broadcast instructions
@@ -88,10 +101,10 @@ unsafe fn ycbcr_to_rgb_sse41(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], 
         // Safety
         // -    Array is pre initialized and the way this is called ensures
         // it will never go out op bounds
-        *out.get_unchecked_mut(pos) = r.array[i] as u8;
-        *out.get_unchecked_mut(pos + 1) = g.array[i] as u8;
-        *out.get_unchecked_mut(pos + 2) = b.array[i] as u8;
-        pos += 3;
+        *out.get_unchecked_mut(*pos) = r.array[i] as u8;
+        *out.get_unchecked_mut(*pos + 1) = g.array[i] as u8;
+        *out.get_unchecked_mut(*pos + 2) = b.array[i] as u8;
+        *pos += 3;
     }
 }
 
@@ -108,11 +121,6 @@ unsafe fn ycbcr_to_rgb_sse41(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], 
 #[target_feature(enable = "sse2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub unsafe fn clamp_sse(a: __m128i) -> __m128i {
-    #[cfg(target_arch = "x86")]
-    use std::arch::x86::*;
-    #[cfg(target_arch = "x86_64")]
-    use std::arch::x86_64::*;
-
     // the lowest value
     let min: __m128i = _mm_set1_epi16(0);
     // Highest value
