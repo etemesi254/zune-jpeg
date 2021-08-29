@@ -7,13 +7,13 @@
 use std::convert::TryInto;
 use std::io::{BufRead, Read};
 
-use crate::{ColorSpace, Decoder};
 use crate::components::Components;
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::image::ImageInfo;
 use crate::marker::Marker;
 use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG};
+use crate::{ColorSpace, Decoder};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 /// ----------------------------------------------
@@ -39,8 +39,8 @@ use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG};
 pub fn parse_huffman<R>(
     mut buf: &mut R,
 ) -> Result<(Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>), DecodeErrors>
-    where
-        R: Read,
+where
+    R: Read,
 {
     // Read the length of the Huffman table
     let dht_length = read_u16_be(&mut buf).expect("Could not read Huffman length from image") - 2;
@@ -108,8 +108,8 @@ pub fn parse_huffman<R>(
 /// Decoding an image with such tables will cause panic
 #[allow(clippy::cast_possible_truncation)]
 pub fn parse_dqt<R>(buf: &mut R) -> Result<Vec<([i32; 64], usize)>, DecodeErrors>
-    where
-        R: Read,
+where
+    R: Read,
 {
     let mut buf = buf;
     // read length
@@ -200,8 +200,8 @@ pub(crate) fn parse_start_of_frame<R>(
     sof: SOFMarkers,
     img: &mut Decoder,
 ) -> Result<Vec<Components>, DecodeErrors>
-    where
-        R: Read,
+where
+    R: Read,
 {
     let mut buf = buf;
     // Get length of the frame header
@@ -212,7 +212,7 @@ pub(crate) fn parse_start_of_frame<R>(
         error!(
             "The library can only parse 8-bit images, the image has {} bits",
             dt_precision
-        )
+        );
     }
 
     img.info.set_density(dt_precision);
@@ -258,7 +258,7 @@ pub(crate) fn parse_start_of_frame<R>(
             .expect("Could not read  component data");
         let component = Components::from(temp).expect("Could not parse component data");
 
-        components.push(component)
+        components.push(component);
     }
 
     // Set the SOF marker
@@ -280,8 +280,8 @@ pub(crate) fn parse_start_of_frame<R>(
 /// |                            |            | bit 4..7 : DC table (0..3)
 /// | Ignorable Bytes            |3 bytes     |We have to skip 3 bytes.
 pub fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
-    where
-        R: Read + BufRead,
+where
+    R: Read + BufRead,
 {
     let mut buf = buf;
     // Scan header length
@@ -290,7 +290,9 @@ pub fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors
     // Number of image components in scan
     let ns = read_u8(&mut buf);
     if ls != u16::from(6 + 2 * ns) {
-        return Err(DecodeErrors::SosError("Bad SOS length,corrupt jpeg".to_string()));
+        return Err(DecodeErrors::SosError(
+            "Bad SOS length,corrupt jpeg".to_string(),
+        ));
     }
     if !(1..5).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
@@ -299,9 +301,8 @@ pub fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors
         )));
     }
     // If ns is 1, means image is grayscale,lets change to that
-    match ns {
-        1 => image.input_colorspace = ColorSpace::GRAYSCALE,
-        _ => {}
+    if ns == 1 {
+        image.input_colorspace = ColorSpace::GRAYSCALE;
     }
     // Collect the component spec parameters
     if image.info.sof == SOFMarkers::ProgressiveDctHuffman {
@@ -319,8 +320,8 @@ pub fn parse_app<R>(
     marker: Marker,
     info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
-    where
-        R: Read + BufRead,
+where
+    R: Read + BufRead,
 {
     let length = read_u16_be(buf)? as usize;
     let mut bytes_read = 2;
@@ -353,7 +354,7 @@ pub fn parse_app<R>(
                     buf.read_exact(&mut data).expect("Could not read exif data");
                 }
             }
-            debug!("Parsing APP(1) data complete")
+            debug!("Parsing APP(1) data complete");
         }
 
         _ => {}
