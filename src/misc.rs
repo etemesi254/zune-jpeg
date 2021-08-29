@@ -92,6 +92,7 @@ pub enum ColorSpace {
 
 impl ColorSpace {
     /// Number of channels (including unused alpha) in this color space
+    #[must_use]
     pub const fn num_components(self) -> usize {
         match self {
             Self::RGB | Self::BGR | Self::YCbCr => 3,
@@ -217,7 +218,7 @@ where
     tmp[0]
 }
 
-/// Read two `u8`'s from a buffer and create a `u16` from the bytes in BigEndian order.
+/// Read two `u8`'s from a buffer and create a `u16` from the bytes in Big Endian order.
 ///
 /// The first 8 bytes of the u16 are made by the first u8 read, and the second one make the last 8
 /// ```text
