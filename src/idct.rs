@@ -1,18 +1,26 @@
-#![allow(clippy::excessive_precision,
-clippy::unreadable_literal,
-clippy::module_name_repetitions,
-unused_parens,unused_imports
+#![allow(
+    clippy::excessive_precision,
+    clippy::unreadable_literal,
+    clippy::module_name_repetitions,
+    unused_parens,
+    unused_imports
 )]
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use std::arch::x86_64::{
+    __m256i, _mm256_cvtepi16_epi32, _mm256_load_si256, _mm256_max_epi16, _mm256_min_epi16,
+    _mm256_or_si256, _mm256_packs_epi32, _mm256_permute2x128_si256, _mm256_permute4x64_epi64,
+    _mm256_set1_epi16, _mm256_slli_epi32, _mm256_srai_epi32, _mm256_store_si256,
+    _mm256_testz_si256, _mm256_unpackhi_epi32, _mm256_unpackhi_epi64, _mm256_unpacklo_epi32,
+    _mm256_unpacklo_epi64, _mm_load_si128, _mm_loadu_si128,
+};
+use std::process::exit;
 
 use crate::misc::Aligned32;
 #[cfg(feature = "x86")]
 use crate::unsafe_utils::YmmRegister;
-use std::process::exit;
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
@@ -25,7 +33,6 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 ///  - qt_table: A quantization table fro the MCU
 ///
 /// [`stbi_image.h`]:https://github.com/nothings/stb/blob/c9064e317699d2e495f36ba4f9ac037e88ee371a/stb_image.h#L2356
-#[inline(always)]
 #[allow(arithmetic_overflow)]
 pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64]>) {
     let mut tmp = [0; 64];
@@ -176,18 +183,20 @@ pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64
 }
 
 #[inline]
+#[allow(clippy::cast_possible_truncation)]
 /// Multiply a number by 4096
 fn f2f(x: f32) -> i32 {
     (x * 4096.0 + 0.5) as i32
 }
 
-#[inline(always)]
+#[inline]
 /// Multiply a number by 4096
 fn fsh(x: i32) -> i32 {
     x << 12
 }
 
 #[inline]
+#[allow(clippy::cast_possible_truncation)]
 fn clamp(a: i32) -> i16 {
     a.max(0).min(255) as i16
 }
@@ -212,11 +221,13 @@ pub fn dequantize_and_idct_avx2(vector: &mut [i16], qt_table: &Aligned32<[i32; 6
     unsafe {
         // We don't call this method directly because we need to flag the code function with #[target_feature]
         // so that the compiler does do weird stuff with it
-        dequantize_and_idct_int_avx2(vector, qt_table)
+        dequantize_and_idct_int_avx2(vector, qt_table);
     }
 }
+
 #[cfg(feature = "x86")]
 #[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[i32; 64]>) {
     // since QT tables are reused, we can lift them from the loop and multiply them inside
     // This is still slow because cache misses
@@ -235,25 +246,25 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         // We sign extend i16's to i32's and calculate them with extended precision and later reduce
         // them to i16's when we are done carrying out IDCT
         let mut row0 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[0..=7].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[0..=7].as_ptr().cast())),
         };
         let mut row1 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[8..=15].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[8..=15].as_ptr().cast())),
         };
         let mut row2 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[16..=23].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[16..=23].as_ptr().cast())),
         };
         let mut row3 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[24..=31].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[24..=31].as_ptr().cast())),
         };
         let mut row4 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[32..=39].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[32..=39].as_ptr().cast())),
         };
         let mut row5 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[40..=47].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[40..=47].as_ptr().cast())),
         };
         let mut row6 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[48..=55].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[48..=55].as_ptr().cast())),
         };
         let mut row7 = YmmRegister {
             mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[56..=63].as_ptr().cast())),
@@ -341,29 +352,33 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
             if v == 1 {
                 // AC terms all zero, idct is DC term + bias (and clamped to 255)
 
-                let x = _mm256_set1_epi16((((vector[0]*(qt_table.0[0]) as i16)>>3) + 128).max(0).min(255));
+                let x = _mm256_set1_epi16(
+                    (((vector[0] * (qt_table.0[0]) as i16) >> 3) + 128)
+                        .max(0)
+                        .min(255),
+                );
                 // store
-                _mm256_storeu_si256(vector[0..16].as_mut_ptr().cast(), x);
-                _mm256_storeu_si256(vector[16..32].as_mut_ptr().cast(), x);
-                _mm256_storeu_si256(vector[32..48].as_mut_ptr().cast(), x);
-                _mm256_storeu_si256(vector[48..64].as_mut_ptr().cast(), x);
+                _mm256_store_si256(vector[0..16].as_mut_ptr().cast(), x);
+                _mm256_store_si256(vector[16..32].as_mut_ptr().cast(), x);
+                _mm256_store_si256(vector[32..48].as_mut_ptr().cast(), x);
+                _mm256_store_si256(vector[48..64].as_mut_ptr().cast(), x);
                 // Go to the next coefficient block
                 continue;
             }
-
-            // multiply with qt tables
-            row0 *= qt_row0;
-            row1 *= qt_row1;
-            row2 *= qt_row2;
-            row3 *= qt_row3;
-            row4 *= qt_row4;
-            row5 *= qt_row5;
-            row6 *= qt_row6;
-            row7 *= qt_row7;
-
-            // Process rows if the check fails
-            dct_pass!(512, 10);
         }
+        // multiply with qt tables
+        row0 *= qt_row0;
+        row1 *= qt_row1;
+        row2 *= qt_row2;
+        row3 *= qt_row3;
+        row4 *= qt_row4;
+        row5 *= qt_row5;
+        row6 *= qt_row6;
+        row7 *= qt_row7;
+
+        // Process rows
+        dct_pass!(512, 10);
+
         transpose(
             &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
         );
@@ -378,25 +393,24 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         //okay begin cool stuff
         macro_rules! permute_store {
             ($x:tt,$y:tt,$index:tt,$out:tt) => {
-                let a = _mm256_packs_epi32($x,$y);
+                let a = _mm256_packs_epi32($x, $y);
                 // Clamp the values after packing, we can clamp more values at once
                 let b = clamp_avx(a);
                 // /Undo shuffling,
                 // Magic number 216 is what does it for us..
-                let c =_mm256_permute4x64_epi64::<{shuffle(3,1,2,0)}>(b);
-              //  let c =_mm256_permute4x64_epi64::<242>(c);
-
-                _mm256_storeu_si256(($out)[$index..$index+16].as_mut_ptr().cast(),c);
+                let c = _mm256_permute4x64_epi64(b, shuffle(3, 1, 2, 0));
+                // Store back,the memory is aligned to a 32 byte boundary
+                _mm256_store_si256(($out)[$index..$index + 16].as_mut_ptr().cast(), c);
             };
         }
-
+        // Pack and write the values back to the array
         permute_store!((row0.mm256), (row1.mm256), 0, vector);
         permute_store!((row2.mm256), (row2.mm256), 16, vector);
         permute_store!((row4.mm256), (row3.mm256), 32, vector);
         permute_store!((row6.mm256), (row4.mm256), 48, vector);
-
     }
 }
+
 #[cfg(feature = "x86")]
 #[inline]
 #[target_feature(enable = "avx2")]
@@ -405,11 +419,11 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i {
     let min_s = _mm256_set1_epi16(0);
     // Highest value
     let max_s = _mm256_set1_epi16(255);
-    // epi16 works better here than epi32
     let max_v = _mm256_max_epi16(reg, min_s); //max(a,0)
     let min_v = _mm256_min_epi16(max_v, max_s); //min(max(a,0),255)
     return min_v;
 }
+
 #[cfg(feature = "x86")]
 type Reg = YmmRegister;
 
@@ -418,7 +432,7 @@ type Reg = YmmRegister;
 /// This was translated from [here](https://newbedev.com/transpose-an-8x8-float-using-avx-avx2)
 ///
 #[cfg(feature = "x86")]
-#[allow(unused_parens)]
+#[allow(unused_parens, clippy::too_many_arguments)]
 #[target_feature(enable = "avx2")]
 unsafe fn transpose(
     v0: &mut Reg,
