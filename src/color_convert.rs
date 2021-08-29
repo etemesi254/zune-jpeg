@@ -1,6 +1,11 @@
-#![allow(clippy::many_single_char_names,
-clippy::similar_names, clippy::cast_possible_truncation,
-clippy::cast_sign_loss, clippy::cast_possible_wrap,clippy::too_many_arguments)]
+#![allow(
+    clippy::many_single_char_names,
+    clippy::similar_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::too_many_arguments
+)]
 
 //! YUV to RGB Conversion
 //!
@@ -15,7 +20,7 @@ clippy::cast_sign_loss, clippy::cast_possible_wrap,clippy::too_many_arguments)]
 use std::cmp::{max, min};
 
 #[cfg(feature = "x86")]
-pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2,ycbcr_to_rgba,ycbcr_to_rgbx};
+pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba, ycbcr_to_rgbx};
 #[cfg(feature = "x86")]
 pub use crate::color_convert::sse::ycbcr_to_rgb_sse;
 
@@ -72,39 +77,47 @@ const CB_B: [i32; 256] = ALL_TABLES.3;
 /// - We still use lookup tables but we bounds-check(even though we know
 /// it can never panic_)
 /// - We use a slow version of clamping, that is possible of clamping 1 value at a time
-pub fn ycbcr_to_rgb(y: &[i16], cb: &[i16], cr: &[i16], output: &mut [u8], pos: usize) {
-    let mut pos = pos;
+pub fn ycbcr_to_rgb(y: &[i16], cb: &[i16], cr: &[i16], output: &mut [u8], pos: &mut usize) {
+    let pos = pos;
     for (y, (cb, cr)) in y.iter().zip(cb.iter().zip(cr.iter())) {
         let r = y + CR_R[*cr as usize] as i16;
         let g = y - ((CB_G[*cb as usize] + CR_G[*cr as usize]) >> 5) as i16;
         let b = y + (CB_B[*cb as usize]) as i16;
-        output[pos] = clamp(r);
-        output[pos + 1] = clamp(g);
-        output[pos + 2] = clamp(b);
-        pos += 3;
+        output[*pos] = clamp(r);
+        output[*pos + 1] = clamp(g);
+        output[*pos + 2] = clamp(b);
+        *pos += 3;
     }
 }
 
-pub fn ycbcr_to_rgb_16(y: &[i16], y2: &[i16], cb: &[i16], cb2: &[i16], cr: &[i16], cr2: &[i16], output: &mut [u8], pos: usize) {
-    let mut pos = pos;
+pub fn ycbcr_to_rgb_16(
+    y: &[i16],
+    y2: &[i16],
+    cb: &[i16],
+    cb2: &[i16],
+    cr: &[i16],
+    cr2: &[i16],
+    output: &mut [u8],
+    pos: &mut usize,
+) {
     // first mcu
     for (y, (cb, cr)) in y.iter().zip(cb.iter().zip(cr.iter())) {
         let r = y + CR_R[*cr as usize] as i16;
         let g = y - ((CB_G[*cb as usize] + CR_G[*cr as usize]) >> 5) as i16;
         let b = y + (CB_B[*cb as usize]) as i16;
-        output[pos] = clamp(r);
-        output[pos + 1] = clamp(g);
-        output[pos + 2] = clamp(b);
-        pos += 3;
+        output[*pos] = clamp(r);
+        output[*pos + 1] = clamp(g);
+        output[*pos + 2] = clamp(b);
+        *pos += 3;
     }
     // Second MCU
     for (y, (cb, cr)) in y2.iter().zip(cb2.iter().zip(cr2.iter())) {
         let r = y + CR_R[*cr as usize] as i16;
         let g = y - ((CB_G[*cb as usize] + CR_G[*cr as usize]) >> 5) as i16;
         let b = y + (CB_B[*cb as usize]) as i16;
-        output[pos] = clamp(r);
-        output[pos + 1] = clamp(g);
-        output[pos + 2] = clamp(b);
-        pos += 3;
+        output[*pos] = clamp(r);
+        output[*pos + 1] = clamp(g);
+        output[*pos + 2] = clamp(b);
+        *pos += 3;
     }
 }
