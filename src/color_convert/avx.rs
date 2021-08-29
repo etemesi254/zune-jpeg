@@ -1,10 +1,15 @@
 #![cfg(feature = "x86")]
-#![allow(clippy::wildcard_imports,clippy::cast_possible_truncation,clippy::too_many_arguments)]
+#![allow(
+    clippy::wildcard_imports,
+    clippy::cast_possible_truncation,
+    clippy::too_many_arguments,
+    clippy::inline_always
+)]
+
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
-
 
 pub union YmmRegister {
     // both are 32 when using std::mem::size_of
@@ -40,11 +45,10 @@ pub fn ycbcr_to_rgb_avx2(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: usize,
+    offset: &mut usize,
 ) {
     unsafe {
         let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
-        let mut pos = offset;
         // This is badly vectorised in AVX2,
         // With it extracting values from ymm to xmm registers
         // Hence it might be a tad slower than sse(9 more instructions)
@@ -54,10 +58,10 @@ pub fn ycbcr_to_rgb_avx2(
             // Safety
             // -    Array is pre initialized and the way this is called ensures
             // it will never go out of bounds
-            *out.get_unchecked_mut(pos) = r.array[i] as u8;
-            *out.get_unchecked_mut(pos + 1) = g.array[i] as u8;
-            *out.get_unchecked_mut(pos + 2) = b.array[i] as u8;
-            pos += 3;
+            *out.get_unchecked_mut(*offset) = r.array[i] as u8;
+            *out.get_unchecked_mut(*offset + 1) = g.array[i] as u8;
+            *out.get_unchecked_mut(*offset + 2) = b.array[i] as u8;
+            *offset += 3;
         }
     }
 }
@@ -79,7 +83,6 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     cr1: &[i16],
     cr2: &[i16],
 ) -> (YmmRegister, YmmRegister, YmmRegister) {
-
     // Load values into a register
     //
     // dst[127:0] := MEM[loaddr+127:loaddr]
@@ -133,6 +136,7 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     };
     return (r, g, b);
 }
+
 #[inline(always)]
 pub fn ycbcr_to_rgba(
     y1: &[i16],
@@ -142,7 +146,7 @@ pub fn ycbcr_to_rgba(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: usize,
+    offset: &mut usize,
 ) {
     unsafe { ycbcr_to_rgba_unsafe(y1, y2, cb1, cb2, cr1, cr2, out, offset) }
 }
@@ -157,11 +161,10 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: usize,
+    offset: &mut usize,
 ) {
     let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
     // set alpha channel to 255 for opaque
-    let pos = offset as isize;
 
     // And no these comments were not from me pressing the keyboard
 
@@ -176,9 +179,12 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     let h = _mm256_unpackhi_epi8(e, f);
 
     // Store
-    _mm256_storeu_si256(out.as_mut_ptr().offset(pos).cast() , g);
-    _mm256_storeu_si256(out.as_mut_ptr().offset(pos + 16).cast(), h);
+    // Use streaming instructions to prevent polluting the cache
+    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize).cast(), g);
+    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize + 32).cast(), h);
+    *offset += 64;
 }
+
 #[inline(always)]
 pub fn ycbcr_to_rgbx(
     y1: &[i16],
@@ -188,7 +194,7 @@ pub fn ycbcr_to_rgbx(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: usize,
+    offset: &mut usize,
 ) {
     unsafe { ycbcr_to_rgbx_unsafe(y1, y2, cb1, cb2, cr1, cr2, out, offset) }
 }
@@ -204,14 +210,13 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: usize,
+    offset: &mut usize,
 ) {
     let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
 
-    let pos = offset as isize;
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r.mm256, g.mm256); //aaaaa_bbbbb_aaaaa_bbbbbb
-                                                   // Set alpha channel to random things, Mostly i see it using the b values
+                                                   // Set alpha channel to random things, Mostly I see it using the b values
     let d = _mm256_packus_epi16(b.mm256, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
                                                                     // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
@@ -227,8 +232,9 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     //      because this function will be called on a 1: Pre-initialized array(see decode_mcu)
     //      2: The function will be expected to write 24 values to the MCU's so pos+16 will not refer
     //          to the end of the array
-    _mm256_storeu_si256(out.as_mut_ptr().offset(pos).cast(), g);
-    _mm256_storeu_si256(out.as_mut_ptr().offset(pos + 16).cast(), h);
+    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize).cast(), g);
+    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize + 32).cast(), h);
+    *offset += 64;
 }
 
 /// Clamp values between 0 and 255
