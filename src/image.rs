@@ -14,10 +14,40 @@ use crate::huffman::HuffmanTable;
 use crate::idct::dequantize_and_idct_avx2;
 use crate::idct::dequantize_and_idct_int;
 use crate::marker::Marker;
-use crate::misc::{Aligned32, ColorSpace, read_u16_be, read_u8, SOFMarkers};
+use crate::misc::{read_u16_be, read_u8, Aligned32, ColorSpace, SOFMarkers};
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
+
+/// Color conversion function that can convert YcbCr colorspace to RGB(A/X) for 16 values
+///
+/// The following are guarantees to the following functions
+///
+/// 1. The `&[i16]` slices passed contain 8 items
+///
+/// 2. The slices passed are in the following order
+///     `y,y,cb,cb,cr,cr`
+///
+/// 3. `&mut [u8]` is zero initialized
+///
+/// 4. `&mut usize` points to the position in the array where new values should be used
+///
+/// The pointer should
+/// 1. Carry out color conversion
+/// 2. Update `&mut usize` with the new position
+type ColorConvert16Ptr =
+    dyn FnMut(&[i16], &[i16], &[i16], &[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
+
+/// Color convert function  that can convert YCbCr colorspace to RGB(A/X) for 8 values
+///
+/// The following are guarantees to the values passed by the following functions
+///
+/// 1. The `&[i16]` slices passed contain 8 items
+/// 2. Slices are passed in the following order
+///     'y,cb,cr'
+///
+/// The other guarantees are the same as `ColorConvert16Ptr`
+type ColorConvertPtr = dyn FnMut(&[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
 
 /// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]
@@ -45,7 +75,6 @@ pub struct Decoder {
     pub(crate) mcu_y: usize,
     // Is the image interleaved?
     pub(crate) interleaved: bool,
-
     // Image input colorspace
     pub(crate) input_colorspace: ColorSpace,
     // Image output_colorspace
@@ -57,18 +86,15 @@ pub struct Decoder {
     // Dequantize and idct function
     pub(crate) idct_func: Box<dyn FnMut(&mut [i16], &Aligned32<[i32; 64]>) + Send + Sync>,
     // Color convert function will act on 8 values of YCbCr blocks
-    pub(crate) color_convert:
-    Box<dyn FnMut(&[i16], &[i16], &[i16], &mut [u8], usize) + Send + Sync>,
+    pub(crate) color_convert: Box<ColorConvertPtr>,
     // Color convert function which acts on 16 YcbCr values
-    pub(crate) color_convert_16: Box<
-        dyn FnMut(&[i16], &[i16], &[i16], &[i16], &[i16], &[i16], &mut [u8], usize) + Send + Sync,
-    >,
+    pub(crate) color_convert_16: Box<ColorConvert16Ptr>,
 }
 
 impl Default for Decoder {
     fn default() -> Self {
         let mut d = Decoder {
-            info: Default::default(),
+            info: ImageInfo::default(),
             qt_tables: [None, None, None, None],
             dc_huffman_tables: [None, None, None, None],
             ac_huffman_tables: [None, None, None, None],
@@ -102,7 +128,7 @@ impl Decoder {
     }
     /// Add quantization tables to the struct
     fn add_qt(&mut self, table: Vec<([i32; 64], usize)>) {
-        for (pos, value) in table.into_iter() {
+        for (pos, value) in table {
             // Once  a  quantization  table  has  been  defined  for  a  particular  destination,
             // it  replaces  the  previous  tables  stored  in
             // that destination  and  shall  be  used,  when  referenced,
@@ -132,6 +158,7 @@ impl Decoder {
         self.decode_internal(Cursor::new(buf.to_vec()))
     }
     /// Create a new Decoder instance
+    #[must_use]
     pub fn new() -> Decoder {
         Decoder::default()
     }
@@ -142,8 +169,8 @@ impl Decoder {
     ///  - `UnsupportedImage`  - The image encoding scheme is not yet supported, for now we only support
     /// Baseline DCT which is suitable for most images out there
     pub fn decode_file<P>(&mut self, file: P) -> Result<Vec<u8>, DecodeErrors>
-        where
-            P: AsRef<Path> + Clone,
+    where
+        P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file).expect("Could not open file"));
@@ -164,8 +191,8 @@ impl Decoder {
     ///  - SOF(n) -> Decoder images which are not baseline
     ///  - DAC -> Images using Arithmetic tables
     fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
-        where
-            R: Read + BufRead,
+    where
+        R: Read + BufRead,
     {
         let mut buf = buf;
 
@@ -192,7 +219,7 @@ impl Decoder {
                             // get components
                             let mut p = parse_start_of_frame(&mut buf, marker, self)?;
                             // place the quantization tables in components
-                            for component in p.iter_mut() {
+                            for component in &mut p {
                                 // compute interleaved image info
                                 self.h_max = max(self.h_max, component.horizontal_sample);
                                 self.v_max = max(self.v_max, component.vertical_sample);
@@ -249,7 +276,7 @@ impl Decoder {
                         Marker::DHT => {
                             debug!("Extracting Huffman table(s)");
                             self.add_huffman_tables(parse_huffman(&mut buf)?);
-                            debug!("Finished extracting Huffman Table(s)")
+                            debug!("Finished extracting Huffman Table(s)");
                         }
                         // Start of Scan Data
                         Marker::SOS => {
@@ -291,68 +318,83 @@ impl Decoder {
     fn init(&mut self) {
         // Set color convert function
         #[cfg(feature = "x86")]
+        {
+            debug!("Running on x86 ARCH using accelerated decoding routines");
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             {
-                debug!("Running on x86 ARCH using accelerated decoding routines");
-                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                    {
-                        if is_x86_feature_detected!("avx2") {
-                            debug!("Detected AVX code support");
-
-                            debug!("Using AVX optimised IDCT");
-                            self.idct_func = Box::new(dequantize_and_idct_avx2);
-                            match self.output_colorspace {
-                                ColorSpace::RGB => {
-                                    self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
-                                }
-                                ColorSpace::RGBA => self.color_convert_16 = Box::new(ycbcr_to_rgba),
-                                ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
-                                _ => {}
-                            }
-                        }
-                        // sse color conversion is faster because how avx spills data during writing,
-                        // until I(or someone else) fixes that i'll prefer sse
-                        // Also more machines support sse than avx
-                        if is_x86_feature_detected!("sse4.1") {
-                            debug!("Using SSE color conversion function");
-                            self.color_convert = Box::new(ycbcr_to_rgb_sse);
-                        }
-                    }
-                #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-                    {
-                        // use the slower version which doesn't depend on  platform specific
-                        // intrinsics
-                        debug!("Using Table lookup color conversion function");
-                        self.color_convert_func = Box::new(ycbcr_to_rgb);
-                    }
-            }
-        #[cfg(not(feature = "x86"))]
-            {
-                debug!("Using safer(and slower) color conversion functions");
-                self.color_convert = Box::new(ycbcr_to_rgb)
-            }
-    }
-    /// Set the output colorspace
-    pub fn set_output_colorspace(&mut self, colorspace: ColorSpace) {
-        self.output_colorspace = colorspace;
-        // change color convert function
-
-        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "x86"))]
-            {
-                // Check for avx2 feature set on x86 cpu's
                 if is_x86_feature_detected!("avx2") {
-                    // set appropriate color space
+                    debug!("Detected AVX code support");
+
+                    debug!("Using AVX optimised IDCT");
+                    self.idct_func = Box::new(dequantize_and_idct_avx2);
                     match self.output_colorspace {
                         ColorSpace::RGB => {
-                            {
-                                self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
-                            }
+                            self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
                         }
                         ColorSpace::RGBA => self.color_convert_16 = Box::new(ycbcr_to_rgba),
                         ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
                         _ => {}
                     }
                 }
+                // sse color conversion is faster because how avx spills data during writing,
+                // until I(or someone else) fixes that i'll prefer sse
+                // Also more machines support sse than avx
+                if is_x86_feature_detected!("sse4.1") {
+                    debug!("Using SSE color conversion function");
+                    self.color_convert = Box::new(ycbcr_to_rgb_sse);
+                }
             }
+            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+            {
+                // use the slower version which doesn't depend on  platform specific
+                // intrinsics
+                debug!("Using Table lookup color conversion function");
+                self.color_convert_func = Box::new(ycbcr_to_rgb);
+            }
+        }
+        #[cfg(not(feature = "x86"))]
+        {
+            debug!("Using safer(and slower) color conversion functions");
+            self.color_convert = Box::new(ycbcr_to_rgb);
+        }
+    }
+    /// Set the output colorspace
+    ///
+    /// # Currently Works on x86_64 CPU's with avx2 instruction set
+    /// Now that that's cleared,  the following options exist
+    ///
+    ///- ColorSpace::RGBX-> Set it to RGB_X where X is anything between 0 and 255
+    /// (cool for playing with alpha channels)
+    ///
+    /// -ColorSpace::RGBA -> Set is to RGB_A where A is the alpha channel , useful for converting JPEG
+    /// images to PNG images
+    pub fn set_output_colorspace(&mut self, colorspace: ColorSpace) {
+        self.output_colorspace = colorspace;
+        // change color convert function
+
+        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "x86"))]
+        {
+            // Check for avx2 feature set on x86 cpu's
+            if is_x86_feature_detected!("avx2") {
+                // set appropriate color space
+                match self.output_colorspace {
+                    ColorSpace::RGB => {
+                        self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
+                    }
+                    ColorSpace::RGBA => self.color_convert_16 = Box::new(ycbcr_to_rgba),
+                    ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
+                    _ => {}
+                }
+            }
+        }
+    }
+    #[must_use]
+    pub fn width(&self) -> u16 {
+        self.info.width
+    }
+    #[must_use]
+    pub fn height(&self) -> u16 {
+        self.info.height
     }
 }
 
@@ -387,19 +429,19 @@ impl ImageInfo {
     ///
     /// Found in the start of frame
     pub fn set_height(&mut self, height: u16) {
-        self.height = height
+        self.height = height;
     }
     /// Set the image density
     ///
     /// Found in the start of frame
     pub fn set_density(&mut self, density: u8) {
-        self.pixel_density = density
+        self.pixel_density = density;
     }
     /// Set image Start of frame marker
     ///
     /// found in the Start of frame header
     pub fn set_sof_marker(&mut self, marker: SOFMarkers) {
-        self.sof = marker
+        self.sof = marker;
     }
     /// Set image x-density(dots per pixel)
     ///
@@ -411,6 +453,6 @@ impl ImageInfo {
     ///
     /// Found in the APP(0) marker
     pub fn set_y(&mut self, sample: u16) {
-        self.y_density = sample
+        self.y_density = sample;
     }
 }
