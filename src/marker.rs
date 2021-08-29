@@ -1,3 +1,4 @@
+#![allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Marker {
     /// Start Of Frame markers
@@ -54,7 +55,10 @@ pub enum Marker {
 
 impl Marker {
     pub fn from_u8(n: u8) -> Option<Marker> {
-        use self::Marker::*;
+        use self::Marker::{
+            JPGn, APP, COM, DAC, DHP, DHT, DNL, DQT, DRI, EOI, EXP, JPG, RES, RST, SOF, SOI, SOS,
+            TEM,
+        };
         match n {
             0x01 => Some(TEM),
             0x02..=0xBF => Some(RES),
