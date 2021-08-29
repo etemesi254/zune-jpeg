@@ -1,6 +1,5 @@
 //! This module provides unsafe ways to do some things
 //!
-#![cfg(feature = "x86")]
 #![allow(clippy::wildcard_imports)]
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
@@ -9,7 +8,7 @@ use std::arch::x86_64::*;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
 #[derive(Clone, Copy)]
-pub union YmmRegister {
+pub struct YmmRegister {
     pub(crate) mm256: __m256i,
 }
 
@@ -120,4 +119,53 @@ impl MulAssign<__m256i> for YmmRegister {
             self.mm256 = _mm256_mullo_epi32(self.mm256, rhs);
         }
     }
+}
+
+use std::alloc::*;
+use std::mem::*;
+
+/// Allocate a Vec<T> with a ALIGN byte boundary and zero its content
+///
+/// # Invariants the caller must uphold
+///  - Do not reallocate a vector created from here
+///     reallocation causes it to change its alignment to `mem::align_of::<T>()`
+///     which might not be the same as `ALIGN`
+///  - Do not use a smaller alignment than a type, please consult `mem::size_of<T>()` for sizes
+///  - Do not use this function when drunk, doing so may cause the universe to implode
+///
+/// # Why?
+/// - Most AVX and SSE instructions require memory allocated to a certain byte boundary
+/// this allows us to use streaming stores and streaming loads where it makes sense
+///
+/// - Also aligned loads are faster than unaligned loads
+///
+///  # Returns
+///  A `Vec<T>` which should contain space for at least `capacity` items
+///
+/// The size allocated is actually `mem::size_of::<T>()*capacity`
+///
+///# Examples
+///```
+/// fn check(){
+///    unsafe{
+///        // align a vec of i32 to a 32 byte boundary with all elements initialized to 0
+///        let vector = align_zero_alloc::<i32,32>(200);
+///        assert!(vector,vec![0;200]);
+///    }
+/// }
+///```
+pub(crate) unsafe fn align_zero_alloc<T, const ALIGNMENT: usize>(capacity: usize) -> Vec<T>
+where
+    T: Default + Copy,
+{
+    // Create a new layout, with alignment Align
+    let layout = Layout::from_size_align(capacity * size_of::<T>(), ALIGNMENT).unwrap();
+    // Call alloc_zeroed, this returns zeroed memory
+    let ptr = alloc_zeroed(layout);
+    // Call Vec to handle pointer stuff
+    // Safety variants checked..
+    //  1:ptr is not allocated via string/ Vec<T> but via alloc which both
+    // structs use internally
+    // 2: Length and capacity are the same
+    Vec::<T>::from_raw_parts(ptr.cast(), capacity, capacity)
 }
