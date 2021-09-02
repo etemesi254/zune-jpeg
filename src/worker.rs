@@ -15,7 +15,7 @@ impl Decoder {
 
         // slice into 128(2 mcu's)
         //println!("{}",mcu_len);
-        let mcu_count = (mcu_len - 1) / 2;
+        let mcu_count = (mcu_len - 1) >> 1;
         // check if we have an MCU remaining
         let remainder = ((mcu_len - 1) % 2) != 0;
         let mcu_width = usize::from(self.info.width) * self.output_colorspace.num_components();
@@ -27,17 +27,23 @@ impl Decoder {
             for _ in 0..mcu_count {
                 //This isn't cache efficient as it hops around too much
 
-                // 8 pixels of the first  MCU
-                let y_c = &self.mcu_block[0][pos..pos + 8];
-                let cb_c = &self.mcu_block[1][pos..pos + 8];
-                let cr_c = &self.mcu_block[2][pos..pos + 8];
-                //  8 pixels of the second MCU
-                let y1_c = &self.mcu_block[0][pos + 64..pos + 72];
-                let cb2_c = &self.mcu_block[1][pos + 64..pos + 72];
-                let cr2_c = &self.mcu_block[2][pos + 64..pos + 72];
-                // Call color convert function
-                (self.color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, output, position);
-                // increase pos by 128, skip 2 MCU's
+                // SAFETY
+                // 1. mcu_block is initialized, (note not assigned) with zeroes
+                // enough to ensure that this is unsafe,
+                // The bounds here can never go above the length
+                unsafe {
+                    // remove some cmp instructions that were slowing us down
+                    let y_c = self.mcu_block[0].get_unchecked(pos..pos + 8);
+                    let cb_c = self.mcu_block[1].get_unchecked(pos..pos + 8);
+                    let cr_c = &self.mcu_block[2].get_unchecked(pos..pos + 8);
+                    //  8 pixels of the second MCU
+                    let y1_c = &self.mcu_block[0].get_unchecked(pos + 64..pos + 72);
+                    let cb2_c = &self.mcu_block[1].get_unchecked(pos + 64..pos + 72);
+                    let cr2_c = &self.mcu_block[2].get_unchecked(pos + 64..pos + 72);
+                    // Call color convert function
+                    (self.color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, output, position);
+                    // increase pos by 128, skip 2 MCU's
+                }
                 pos += 128;
             }
 
