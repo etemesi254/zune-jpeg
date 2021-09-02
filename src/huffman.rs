@@ -11,6 +11,8 @@ pub struct HuffmanTable {
     /// largest code of length k
     pub(crate) maxcode: [i32; 18],
     /// offset for codes of length k
+    /// Answers the question, where do code-lengths of length k end
+    /// Element 0 is unused
     pub(crate) offset: [i32; 18],
     /// lookup table for fast decoding
     ///
@@ -35,8 +37,8 @@ pub struct HuffmanTable {
 impl HuffmanTable {
     pub fn new(codes: &[u8; 17], values: Vec<u8>, is_dc: bool) -> HuffmanTable {
         let mut p = HuffmanTable {
-            maxcode: Default::default(),
-            offset: Default::default(),
+            maxcode: [0; 18],
+            offset: [0; 18],
             lookup: [0; 1 << HUFF_LOOKAHEAD],
             bits: codes.to_owned(),
             values,
@@ -49,7 +51,7 @@ impl HuffmanTable {
     /// Compute derived values for a Huffman table
     ///
     /// This routine performs some validation checks on the table
-    #[allow(clippy::cast_possible_truncation,clippy::cast_possible_wrap,clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     fn make_derived_table(&mut self, is_dc: bool) -> Result<(), DecodeErrors> {
         // build a list of code size
         let mut size = [0; 257];
@@ -104,7 +106,6 @@ impl HuffmanTable {
                 p += usize::from(self.bits[l]);
                 // maximum code of length l
                 self.maxcode[l] = huff_code[p - 1] as i32;
-
             }
         }
         self.offset[17] = 0;
@@ -177,6 +178,7 @@ impl HuffmanTable {
                     }
                 }
             }
+
             self.ac_lookup = Some(fast_ac);
         }
 
