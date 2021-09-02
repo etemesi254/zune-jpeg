@@ -1,8 +1,8 @@
 #![allow(
-    clippy::if_not_else,
-    clippy::similar_names,
-    clippy::inline_always,
-    clippy::doc_markdown
+clippy::if_not_else,
+clippy::similar_names,
+clippy::inline_always,
+clippy::doc_markdown
 )]
 //! # Performance optimizations
 //! - One bottleneck is `refill`/`refill_fast`, the fact that we have
@@ -17,7 +17,7 @@
 
 use std::io::Cursor;
 
-use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
+use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -37,6 +37,7 @@ use crate::misc::UN_ZIGZAG;
 /// - `marker`   : `Option<Marker>`->Will store a marker if it's encountered in the stream
 pub(crate) struct BitStream {
     buffer: u64,
+    lsb_buffer:u64,
     bits_left: u8,
     pub marker: Option<Marker>,
 }
@@ -49,6 +50,7 @@ impl BitStream {
     pub(crate) const fn new() -> BitStream {
         BitStream {
             buffer: 0,
+            lsb_buffer:0,
             bits_left: 0,
             marker: None,
         }
@@ -85,7 +87,11 @@ impl BitStream {
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
                 // to the lower end (0..8) of the buffer and push the rest bits above..
-                $buffer = ($buffer << 8) | u64::from($byte);
+                $buffer = ($buffer << 8) | $byte;
+
+                //$lsb_byte |= $byte << ( 56 - $bits_left);
+                //println!("{:b},{}",$byte,56-$bits_left);
+
                 // Increment bits left
                 $bits_left += 8;
 
@@ -102,8 +108,9 @@ impl BitStream {
                         if next_byte != 0x00 {
                             // Undo the byte append and return
                             $buffer &= !0xf;
+                          //  $lsb_byte <<= 8;
                             $bits_left -= 8;
-                            self.marker = Some(Marker::from_u8(next_byte).unwrap());
+                            self.marker = Some(Marker::from_u8(next_byte as u8).unwrap());
                             // if we get a marker, we return immediately, and hope
                             // that the bits stored are enough to finish MCU decoding with no hassle
                             return false;
@@ -120,10 +127,29 @@ impl BitStream {
             // 2: Favour register reuse
             let mut byte;
             // 4 refills, if all succeed the stream should contain enough bits to decode a value
-            refill!(self.buffer, byte, self.bits_left);
-            refill!(self.buffer, byte, self.bits_left);
-            refill!(self.buffer, byte, self.bits_left);
-            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer,byte, self.bits_left);
+            refill!(self.buffer,byte, self.bits_left);
+            refill!(self.buffer,byte, self.bits_left);
+            refill!(self.buffer,byte, self.bits_left);
+
+            // Construct an lsb buffer cheaply by shifting the msb buffer up to 64
+            // This epiphany came to me in my sleep
+            //
+            // The reason it works is because an MSB buffer can be seen as an lsb buffer with the zeros
+            // preceding,
+            // Take for example
+            // a=255
+            // for MSB, this looks like a=000000000001111111
+            // for LSB it is            a=111111100000000000
+            // so to create an LSB bit-buffer, shift the MSB by number of bits
+            //
+            // LSB buffer allows some things like peek_bits to be const folded into a `bextr` instruction
+            // because it no longer depends on bits left leading to a 4% improvement in a really optimized decoder.
+            //
+            // Bextr: https://software.intel.com/content/www/us/en/develop/documentation/cpp-compiler-developer-guide-and-reference/top/compiler-reference/intrinsics/intrinsics-for-intel-advanced-vector-extensions-2/intrinsics-for-operations-to-manipulate-integer-data-at-bit-granularity/bextr-u32-64.html
+            self.lsb_buffer =self.buffer<<(64-self.bits_left);
+
+
         }
         return true;
     }
@@ -138,9 +164,9 @@ impl BitStream {
     /// # Expectations
     /// The `block` should be initialized to zero
     #[allow(
-        clippy::many_single_char_names,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
     )]
     #[inline(always)]
     pub fn decode_fast(
@@ -159,7 +185,9 @@ impl BitStream {
                 // refill buffer, the check if its less than 16 will be done inside the function
                 // but since we use inline(always) we have a branch here which tells us if we
                 // refill
-                self.refill(reader);
+                if !self.refill(reader){
+                    return false;
+                };
                 $s = self.peek_bits::<HUFF_LOOKAHEAD>();
                 // Lookup 8 bits in the stream and see if there is a corresponding byte
 
@@ -195,14 +223,12 @@ impl BitStream {
         let (mut s, mut l, mut r);
 
         huff_decode_fast!(s, l, dc_table);
-
         if s != 0 {
             r = self.get_bits(s as u8);
             s = huff_extend(r, s);
         }
         // Update DC prediction
         *dc_prediction += s;
-
         block[0] = *dc_prediction as i16;
         // Decode AC coefficients
         let mut k: usize = 1;
@@ -217,14 +243,17 @@ impl BitStream {
                 return false;
             };
             s = self.peek_bits::<HUFF_LOOKAHEAD>();
-            let v = ac_lookup[s as usize];
+            // Safety:
+            //     S can never go past 1<<HUFF_LOOKAHEAD and lookup table is 1<<HUFF_LOOKAHEAD
+            let v = unsafe { *ac_lookup.get_unchecked(s as usize) };
             if v != 0 {
                 //  FAST AC path
                 k += ((v >> 4) & 15) as usize; // run
                 self.drop_bits((v & 15) as u8);
-                // combined length
-                {
-                    block[UN_ZIGZAG[k]] = v >> 8;
+                // Safety:
+                //  UN_ZIGZAG cannot go past 63 and k can never go past 85
+                unsafe {
+                    *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k)) = v >> 8;
                 }
                 k += 1;
             } else {
@@ -253,12 +282,15 @@ impl BitStream {
                     k += r as usize;
                     r = self.get_bits(s as u8);
                     s = huff_extend(r, s);
-                    block[UN_ZIGZAG[k as usize]] = s as i16;
-                    // libjpeg-turbo doesn't do this, so why am I?
+                    // Safety
+                    // 1: K can never go beyond 85 (everything that increments k keeps that guarantee)
+                    // 2: K
+                    unsafe{*block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16};
+
                     k += 1;
                 } else {
                     if r != 15 {
-                        break;
+                        return true;
                     }
                     k += 15;
                 }
@@ -272,19 +304,22 @@ impl BitStream {
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32 {
         // This is the same as a bit extract instruction and the overhead is the same
-        ((self.buffer >> (self.bits_left - LOOKAHEAD)) & ((1 << LOOKAHEAD) - 1)) as i32
+        ((self.lsb_buffer >> (64 - LOOKAHEAD)) & ((1 << LOOKAHEAD) - 1)) as i32
     }
     /// Discard the next `N` bits without checking
     #[inline(always)]
     fn drop_bits(&mut self, n: u8) {
         self.bits_left -= n;
+        // remove top n bits  in lsb buffer
+        self.lsb_buffer<<=n;
     }
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32 {
-        let t = ((self.buffer >> (self.bits_left - n_bits)) & ((1 << n_bits) - 1)) as i32;
+        let t = ((self.lsb_buffer >> (64 - n_bits)) & ((1 << n_bits) - 1)) as i32;
         self.bits_left -= n_bits;
+        self.lsb_buffer<<=n_bits;
         t
     }
     /// Reset the stream if we have a restart marker
@@ -294,6 +329,7 @@ impl BitStream {
         self.bits_left = 0;
         self.marker = None;
         self.buffer = 0;
+        self.lsb_buffer = 0;
     }
 }
 
@@ -308,9 +344,9 @@ fn huff_extend(x: i32, s: i32) -> i32 {
 /// Function is inlined (as always)
 #[inline(always)]
 #[allow(clippy::cast_possible_truncation)]
-fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u8 {
+fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64{
     let pos = reader.position();
     reader.set_position(pos + 1);
     // if we have nothing left fill buffer with zeroes
-    *reader.get_ref().get(pos as usize).unwrap_or(&0)
+    *reader.get_ref().get(pos as usize).unwrap_or(&0) as u64
 }
