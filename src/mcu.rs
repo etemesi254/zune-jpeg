@@ -1,10 +1,9 @@
 use std::io::Cursor;
 
+use crate::{ColorSpace, Decoder};
 use crate::bitstream::BitStream;
 use crate::marker::Marker;
 use crate::unsafe_utils::align_zero_alloc;
-use crate::{ColorSpace, Decoder};
-
 
 const DCT_SIZE: usize = 64;
 
@@ -12,7 +11,7 @@ impl Decoder {
     /// Decode data from MCU's
     #[rustfmt::skip]
     #[allow(clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,clippy::cast_sign_loss,clippy::similar_names)]
+    clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::similar_names)]
     pub(crate) fn decode_mcu_ycbcr(&mut self, reader: &mut Cursor<Vec<u8>>) -> Vec<u8> {
         let mcu_width = ((self.info.width + 7) / 8) as usize;
         let mcu_height = ((self.info.height + 7) / 8) as usize;
@@ -32,8 +31,8 @@ impl Decoder {
         for (pos, comp) in self.components.iter().enumerate() {
             // multiply be vertical and horizontal sample , it  should be 1*1 for non-sampled images
             self.mcu_block[pos] =
-                unsafe{
-                    align_zero_alloc::<i16,32>( component_capacity * comp.vertical_sample * comp.horizontal_sample)
+                unsafe {
+                    align_zero_alloc::<i16, 32>(component_capacity * comp.vertical_sample * comp.horizontal_sample)
                 };
         }
         let mut position = 0;
@@ -48,18 +47,42 @@ impl Decoder {
         // Non-Interleaved MCUs
         // Carry out decoding in trivial scanline order
         else {
+            // check that dc and AC tables exist
+            // We can do this outside and for the inner loop, use unsafe
+            for i in 0..self.input_colorspace.num_components() {
+                let _ = &self.dc_huffman_tables.get(self.components[i].dc_table_pos).as_ref()
+                    .expect("No DC table for a component")
+                    .as_ref()
+                    .expect("No DC table for a component");
+                let _ = &self.ac_huffman_tables.get(self.components[i].ac_table_pos).as_ref()
+                    .expect("No Ac table for component")
+                    .as_ref()
+                    .expect("No AC table for a component");
+            }
             for _ in 0..mcu_height {
                 'label: for i in 0..mcu_width {
                     // iterate over components, for non interleaved scans
                     for pos in 0..self.input_colorspace.num_components() {
                         let component = &mut self.components[pos];
-
-                        let dc_table = self.dc_huffman_tables[component.dc_table_pos].as_ref().
-                            unwrap_or_else(|| panic!("Could not get DC table for component {:?}", component.component_id));
-                        let ac_table = self.ac_huffman_tables[component.ac_table_pos].as_ref().
-                            unwrap_or_else(|| panic!("Could not get DC table for component {:?}", component.component_id));
+                        // The checks were performed above, before we get to the hot loop
+                        // Basically, the decoder will panic ( see where the else statement starts)
+                        // so these `un-safes` are safe
+                        let dc_table = unsafe {
+                            self.dc_huffman_tables
+                                .get_unchecked(component.dc_table_pos)
+                                .as_ref()
+                                .unwrap_or_else(|| std::hint::unreachable_unchecked())
+                        };
+                        let ac_table = unsafe {
+                            self.ac_huffman_tables
+                                .get_unchecked(component.ac_table_pos)
+                                .as_ref()
+                                .unwrap_or_else(|| std::hint::unreachable_unchecked())
+                        };
                         let mut tmp = [0; DCT_SIZE];
                         // decode the MCU
+                        // if false
+                        // if true
                         if !(stream.decode_fast(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)) {
                             // if false we should read stream and see what marker is stored there
                             //
@@ -71,14 +94,15 @@ impl Decoder {
                                 Marker::RST(_) => {
                                     // For RST marker, we need to reset stream and initialize predictions to
                                     // zero
-
-                                    // reset stream
+                                     // reset stream
                                     stream.reset();
                                     // Initialize dc predictions to zero for all components
                                     self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                                   // continue;
                                 }
                                 // Okay encountered end of Image break to IDCT and color convert.
                                 Marker::EOI => {
+
                                     debug!("EOI marker found, wrapping up here ");
 
                                     break 'label;
@@ -95,7 +119,6 @@ impl Decoder {
                 }
                 // carry out IDCT
                 (0..self.input_colorspace.num_components()).into_iter().for_each(|i| {
-
                     (self.idct_func)(self.mcu_block[i].as_mut_slice(), &self.components[i].quantization_table);
                 });
 
@@ -104,7 +127,6 @@ impl Decoder {
 
                     // YCBCR to RGB(A) colorspace conversion.
                     (ColorSpace::YCbCr, _) => {
-
                         self.color_convert_ycbcr(&mut position, &mut global_channel, mcu_width);
                     }
                     (ColorSpace::GRAYSCALE, ColorSpace::GRAYSCALE) => {
@@ -122,7 +144,7 @@ impl Decoder {
 
         debug!("Finished decoding image");
         // Global channel may be over allocated for uneven images, shrink it back
-        global_channel.truncate(usize::from(self.width())*usize::from(self.height())*self.output_colorspace.num_components());
+        global_channel.truncate(usize::from(self.width()) * usize::from(self.height()) * self.output_colorspace.num_components());
         global_channel
     }
 }
