@@ -136,6 +136,64 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     };
     return (r, g, b);
 }
+/// A baseline implementation of YCbCr to RGB conversion which does not carry out clamping
+///
+/// This is used by the `ycbcr_to_rgba` and `ycbcr_to_rgbx` conversion routines
+pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
+    y1: &[i16],
+    y2: &[i16],
+    cb1: &[i16],
+    cb2: &[i16],
+    cr1: &[i16],
+    cr2: &[i16],
+) -> (__m256i,__m256i,__m256i) {
+    // Load values into a register
+    //
+    // dst[127:0] := MEM[loaddr+127:loaddr]
+    // dst[255:128] := MEM[hiaddr+127:hiaddr]
+    let y_c = _mm256_loadu2_m128i(y2.as_ptr().cast(), y1.as_ptr().cast());
+    let cb_c = _mm256_loadu2_m128i(cb2.as_ptr().cast(), cb1.as_ptr().cast());
+    let cr_c = _mm256_loadu2_m128i(cr2.as_ptr().cast(), cr1.as_ptr().cast());
+
+    // AVX version of integer version in https://stackoverflow.com/questions/4041840/function-to-convert-ycbcr-to-rgb
+
+    // Cb = Cb-128;
+    let cb_r = _mm256_sub_epi16(cb_c, _mm256_set1_epi16(128));
+    // cr = Cb -128;
+    let cr_r = _mm256_sub_epi16(cr_c, _mm256_set1_epi16(128));
+
+    // Calculate Y->R
+    // r = Y + 45 * Cr / 32
+    // 45*cr
+    let r1 = _mm256_mullo_epi16(_mm256_set1_epi16(45), cr_r);
+    // r1>>5
+    let r2 = _mm256_srai_epi16::<5>(r1);
+    //y+r2
+
+    let r = _mm256_add_epi16(y_c, r2);
+
+    // g = Y - (11 * Cb + 23 * Cr) / 32 ;
+
+    // 11*cb
+    let g1 = _mm256_mullo_epi16(_mm256_set1_epi16(11), cb_r);
+    // 23*cr
+    let g2 = _mm256_mullo_epi16(_mm256_set1_epi16(23), cr_r);
+    //(11 * Cb + 23 * Cr)
+    let g3 = _mm256_add_epi16(g1, g2);
+    // (11 * Cb + 23 * Cr) / 32
+    let g4 = _mm256_srai_epi16::<5>(g3);
+    // Y - (11 * Cb + 23 * Cr) / 32 ;
+    let g = _mm256_sub_epi16(y_c, g4);
+
+    // b = Y + 113 * Cb / 64
+    // 113 * cb
+    let b1 = _mm256_mullo_epi16(_mm256_set1_epi16(113), cb_r);
+    //113 * Cb / 64
+    let b2 = _mm256_srai_epi16::<6>(b1);
+    // b = Y + 113 * Cb / 64 ;
+    let b = clamp_avx(_mm256_add_epi16(b2, y_c));
+    return (r, g, b);
+}
 
 #[inline(always)]
 pub fn ycbcr_to_rgba(
@@ -163,14 +221,14 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     out: &mut [u8],
     offset: &mut usize,
 ) {
-    let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
+    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y1, y2, cb1, cb2, cr1, cr2);
     // set alpha channel to 255 for opaque
 
     // And no these comments were not from me pressing the keyboard
 
     // Pack the integers into u8's using signed saturation.
-    let c = _mm256_packus_epi16(r.mm256, g.mm256); //aaaaa_bbbbb_aaaaa_bbbbbb
-    let d = _mm256_packus_epi16(b.mm256, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
+    let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
+    let d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
                                                                   // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
@@ -184,7 +242,14 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize + 32).cast(), h);
     *offset += 64;
 }
-
+/// YCbCr to RGBX conversion
+///
+/// The X in RGBX stands for `anything`, the compiler will make X anything it sees fit, although
+/// most implementations use
+///
+/// This is meant to match libjpeg-turbo RGBX conversion and since its
+/// a 4 way interleave instead of a three way interleave, the code is simple
+/// to vectorize hence this is faster than YcbCr -> RGB conversion
 #[inline(always)]
 pub fn ycbcr_to_rgbx(
     y1: &[i16],
@@ -212,12 +277,12 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     out: &mut [u8],
     offset: &mut usize,
 ) {
-    let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
+    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y1, y2, cb1, cb2, cr1, cr2);
 
     // Pack the integers into u8's using signed saturation.
-    let c = _mm256_packus_epi16(r.mm256, g.mm256); //aaaaa_bbbbb_aaaaa_bbbbbb
+    let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
                                                    // Set alpha channel to random things, Mostly I see it using the b values
-    let d = _mm256_packus_epi16(b.mm256, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
+    let d = _mm256_packus_epi16(b, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
                                                                     // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
