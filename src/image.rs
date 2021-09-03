@@ -3,7 +3,7 @@ use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
 
-use crate::color_convert::{ycbcr_to_rgb, ycbcr_to_rgb_16};
+use crate::color_convert::{ycbcr_to_rgb, ycbcr_to_rgb_16, ycbcr_to_rgb_sse_16};
 #[cfg(feature = "x86")]
 use crate::color_convert::{ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse, ycbcr_to_rgba, ycbcr_to_rgbx};
 use crate::components::Components;
@@ -15,6 +15,7 @@ use crate::idct::dequantize_and_idct_avx2;
 use crate::idct::dequantize_and_idct_int;
 use crate::marker::Marker;
 use crate::misc::{read_u16_be, read_u8, Aligned32, ColorSpace, SOFMarkers};
+use crate::color_convert::sse::ycbcr_to_rgba_sse_16;
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
@@ -334,6 +335,21 @@ impl Decoder {
                         ColorSpace::RGBA => self.color_convert_16 = Box::new(ycbcr_to_rgba),
                         ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
                         _ => {}
+                    }
+                }
+                else if is_x86_feature_detected!("avx2"){
+                    debug!("No support for avx2 switching to sse");
+                    debug!("Using sse color convert functions");
+                        match self.output_colorspace {
+                            ColorSpace::RGB =>{
+                                self.color_convert_16 = Box::new(ycbcr_to_rgb_sse_16);
+                        }
+                            ColorSpace::RGBA|ColorSpace::RGBX=>{
+                                // Ideally I make RGBA  and RGBX the same because 255 for an alpha channel is still random...
+                                self.color_convert_16 = Box::new(ycbcr_to_rgba_sse_16);
+                            }
+
+                            _=>{}
                     }
                 }
                 // sse color conversion is faster because how avx spills data during writing,
