@@ -245,6 +245,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         //
         // We sign extend i16's to i32's and calculate them with extended precision and later reduce
         // them to i16's when we are done carrying out IDCT
+
         let mut row0 = YmmRegister {
             mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[0..=7].as_ptr().cast())),
         };

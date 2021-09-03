@@ -36,9 +36,14 @@ use crate::misc::UN_ZIGZAG;
 /// - `bits_left`: `u8`-> A counter telling us how many valid bits are in the buffer
 /// - `marker`   : `Option<Marker>`->Will store a marker if it's encountered in the stream
 pub(crate) struct BitStream {
+    /// A MSB type buffer that is used for some certain operations
     buffer: u64,
-    lsb_buffer:u64,
+    /// A LSB type buffer that is used to accelerate some operations like
+    /// peek_bits and get_bits.
+    lsb_buffer: u64,
+    /// Tell us the bits left the two buffer
     bits_left: u8,
+    /// Did we find a marker during decoding?
     pub marker: Option<Marker>,
 }
 
@@ -50,7 +55,7 @@ impl BitStream {
     pub(crate) const fn new() -> BitStream {
         BitStream {
             buffer: 0,
-            lsb_buffer:0,
+            lsb_buffer: 0,
             bits_left: 0,
             marker: None,
         }
@@ -147,9 +152,7 @@ impl BitStream {
             // because it no longer depends on bits left leading to a 4% improvement in a really optimized decoder.
             //
             // Bextr: https://software.intel.com/content/www/us/en/develop/documentation/cpp-compiler-developer-guide-and-reference/top/compiler-reference/intrinsics/intrinsics-for-intel-advanced-vector-extensions-2/intrinsics-for-operations-to-manipulate-integer-data-at-bit-granularity/bextr-u32-64.html
-            self.lsb_buffer =self.buffer<<(64-self.bits_left);
-
-
+            self.lsb_buffer = self.buffer << (64 - self.bits_left);
         }
         return true;
     }
@@ -285,7 +288,7 @@ impl BitStream {
                     // Safety
                     // 1: K can never go beyond 85 (everything that increments k keeps that guarantee)
                     // 2: K
-                    unsafe{*block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16};
+                    unsafe { *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16 };
 
                     k += 1;
                 } else {
@@ -303,23 +306,25 @@ impl BitStream {
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32 {
-        // This is the same as a bit extract instruction and the overhead is the same
-        ((self.lsb_buffer >> (64 - LOOKAHEAD)) & ((1 << LOOKAHEAD) - 1)) as i32
+        // for the LSB buffer peek bits doesn't require an and to remove zero out top bits
+        (self.lsb_buffer >> (64 - LOOKAHEAD))  as i32
     }
     /// Discard the next `N` bits without checking
-    #[inline(always)]
+    #[inline]
     fn drop_bits(&mut self, n: u8) {
         self.bits_left -= n;
         // remove top n bits  in lsb buffer
-        self.lsb_buffer<<=n;
+        self.lsb_buffer <<= n;
     }
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32 {
-        let t = ((self.lsb_buffer >> (64 - n_bits)) & ((1 << n_bits) - 1)) as i32;
+        let t = (self.lsb_buffer >> (64 - n_bits)) as i32;
+        // Reduce the bits left, this influences the MSB buffer
         self.bits_left -= n_bits;
-        self.lsb_buffer<<=n_bits;
+        // shift out bits read in the LSB buffer
+        self.lsb_buffer <<= n_bits;
         t
     }
     /// Reset the stream if we have a restart marker
@@ -344,7 +349,7 @@ fn huff_extend(x: i32, s: i32) -> i32 {
 /// Function is inlined (as always)
 #[inline(always)]
 #[allow(clippy::cast_possible_truncation)]
-fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64{
+fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64 {
     let pos = reader.position();
     reader.set_position(pos + 1);
     // if we have nothing left fill buffer with zeroes
