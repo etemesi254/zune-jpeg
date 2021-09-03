@@ -22,7 +22,7 @@ use std::cmp::{max, min};
 #[cfg(feature = "x86")]
 pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba, ycbcr_to_rgbx};
 #[cfg(feature = "x86")]
-pub use crate::color_convert::sse::ycbcr_to_rgb_sse;
+pub use crate::color_convert::sse::{ycbcr_to_rgb_sse,ycbcr_to_rgb_sse_16};
 
 pub mod avx;
 pub mod sse;
