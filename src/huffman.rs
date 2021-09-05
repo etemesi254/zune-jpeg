@@ -1,4 +1,4 @@
-#![allow(clippy::similar_names)]
+#![allow(clippy::similar_names,clippy::module_name_repetitions)]
 use std::convert::TryFrom;
 
 use crate::errors::DecodeErrors;
