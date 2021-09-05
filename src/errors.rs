@@ -10,6 +10,7 @@ use crate::misc::{
 /// Common Decode errors
 #[allow(clippy::module_name_repetitions)]
 pub enum DecodeErrors {
+    /// Any other thing we do not know
     Format(String),
     /// Illegal Magic Bytes
     IllegalMagicBytes(u16),
@@ -122,6 +123,10 @@ impl Debug for UnsupportedSchemes {
 }
 impl UnsupportedSchemes {
     #[must_use]
+    /// Create an unsupported scheme from an integer
+    ///
+    /// # Returns
+    /// `Some(UnsupportedScheme)` if the int refers to a specific scheme, otherwise returns `None`
     pub fn from_int(int: u8) -> Option<UnsupportedSchemes> {
         let int = u16::from_be_bytes([0xff, int]);
 
