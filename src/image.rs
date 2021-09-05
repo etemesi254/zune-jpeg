@@ -1,21 +1,23 @@
+#![allow(clippy::doc_markdown)]
 use std::cmp::max;
 use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
-
-use crate::color_convert::{ycbcr_to_rgb, ycbcr_to_rgb_16, ycbcr_to_rgb_sse_16};
-#[cfg(feature = "x86")]
-use crate::color_convert::{ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse, ycbcr_to_rgba, ycbcr_to_rgbx};
 use crate::components::Components;
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
+
 #[cfg(feature = "x86")]
-use crate::idct::dequantize_and_idct_avx2;
+use crate::color_convert::{ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse, ycbcr_to_rgba, ycbcr_to_rgbx,
+                           ycbcr_to_rgb, ycbcr_to_rgb_16, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
+#[cfg(feature = "x86")]
+use crate::idct::dequantize_and_idct_avx2; // avx optimized color IDCT
+
 use crate::idct::dequantize_and_idct_int;
+
 use crate::marker::Marker;
-use crate::misc::{read_u16_be, read_u8, Aligned32, ColorSpace, SOFMarkers};
-use crate::color_convert::sse::ycbcr_to_rgba_sse_16;
+use crate::misc::{Aligned32, ColorSpace, read_u16_be, read_u8, SOFMarkers};
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
@@ -36,7 +38,7 @@ pub(crate) const MAX_COMPONENTS: usize = 4;
 /// The pointer should
 /// 1. Carry out color conversion
 /// 2. Update `&mut usize` with the new position
-type ColorConvert16Ptr =
+pub type ColorConvert16Ptr =
     dyn FnMut(&[i16], &[i16], &[i16], &[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
 
 /// Color convert function  that can convert YCbCr colorspace to RGB(A/X) for 8 values
@@ -48,25 +50,32 @@ type ColorConvert16Ptr =
 ///     'y,cb,cr'
 ///
 /// The other guarantees are the same as `ColorConvert16Ptr`
-type ColorConvertPtr = dyn FnMut(&[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
-
+pub type ColorConvertPtr = dyn FnMut(&[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
+/// IDCT  function prototype
+///
+/// This encapsulates a dequantize and IDCT function which will carry out the following functions
+///
+/// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
+/// Carry out IDCT (type 3 dct) on ach block of 64 i16's
+pub type IDCTPtr = dyn FnMut(&mut [i16], &Aligned32<[i32; 64]>) + Send + Sync;
 /// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]
 pub struct Decoder {
-    // Struct to hold image information from SOI
+    /// Struct to hold image information from SOI
     pub(crate) info: ImageInfo,
-    //  Quantization tables
+    ///  Quantization tables, will be set to none and the tables will
+    /// be moved to `components` field
     pub(crate) qt_tables: [Option<[i32; 64]>; 4],
-    // DC Huffman Tables
+    /// DC Huffman Tables with a maximum of 4 tables for each  component
     pub(crate) dc_huffman_tables: [Option<HuffmanTable>; 4],
-    // AC Huffman Tables
+    /// AC Huffman Tables with a maximum of 4 tables for each component
     pub(crate) ac_huffman_tables: [Option<HuffmanTable>; 4],
-    // Image component
+    /// Image components, holds information like DC prediction and quantization tables of a component
     pub(crate) components: Vec<Components>,
 
-    // maximum horizontal component
+    /// maximum horizontal component of all channels in the image
     pub(crate) h_max: usize,
-    // maximum vertical component
+    // maximum vertical component of all channels in the image
     pub(crate) v_max: usize,
     // mcu's  width (interleaved scans)
     pub(crate) mcu_width: usize,
@@ -74,18 +83,22 @@ pub struct Decoder {
     pub(crate) mcu_height: usize,
     pub(crate) mcu_x: usize,
     pub(crate) mcu_y: usize,
-    // Is the image interleaved?
+    /// Is the image interleaved?
     pub(crate) interleaved: bool,
-    // Image input colorspace
+    /// Image input colorspace, should be YCbCr for a sane image, might be grayscale too
     pub(crate) input_colorspace: ColorSpace,
-    // Image output_colorspace
+    /// Image output_colorspace, what input colorspace should be converted to
     pub(crate) output_colorspace: ColorSpace,
-    // area for unprocessed values we encountered during processing
+    /// Area for unprocessed values we encountered during processing
     pub(crate) mcu_block: [Vec<i16>; MAX_COMPONENTS],
-    // Function pointers, for pointy stuff.
+    /// Function pointers, for pointy stuff.
 
-    // Dequantize and idct function
-    pub(crate) idct_func: Box<dyn FnMut(&mut [i16], &Aligned32<[i32; 64]>) + Send + Sync>,
+    /// Dequantize and idct function
+    ///
+    /// This is determined at runtime which function to run, statically it's initialized to
+    /// a platform independent one and during initialization of this struct, we check if we can
+    /// switch to a faster one which depend on certain CPU extensions.
+    pub(crate) idct_func: Box<IDCTPtr>,
     // Color convert function will act on 8 values of YCbCr blocks
     pub(crate) color_convert: Box<ColorConvertPtr>,
     // Color convert function which acts on 16 YcbCr values
@@ -127,34 +140,22 @@ impl Decoder {
     fn get_mut_info(&mut self) -> &mut ImageInfo {
         &mut self.info
     }
-    /// Add quantization tables to the struct
-    fn add_qt(&mut self, table: Vec<([i32; 64], usize)>) {
-        for (pos, value) in table {
-            // Once  a  quantization  table  has  been  defined  for  a  particular  destination,
-            // it  replaces  the  previous  tables  stored  in
-            // that destination  and  shall  be  used,  when  referenced,
-            self.qt_tables[value] = Some(pos);
-        }
-    }
-    /// Add Huffman Tables to the  decoder
-    fn add_huffman_tables(
-        &mut self,
-        table: (Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>),
-    ) {
-        table.0.into_iter().for_each(|(table, pos)| {
-            self.dc_huffman_tables[pos] = Some(table);
-        });
-        table.1.into_iter().for_each(|(table, pos)| {
-            self.ac_huffman_tables[pos] = Some(table);
-        });
-    }
     /// Decode a buffer already in memory
     ///
-    /// The buffer should be a valid Decoder file, perhaps created by the command
-    /// `std:::vec::read()`
+    /// The buffer should be a valid jpeg file, perhaps created by the command
+    /// `std:::fs::read()` or a JPEG file downloaded from the internet.
     ///
     /// # Errors
-    /// If the image is not a valid Decoder file
+    /// If the image is not a valid jpeg file
+    ///
+    /// # Examples
+    /// ```
+    /// use zune_jpeg::Decoder;
+    /// let file = std::fs::read("/a_valid_jpeg.jpg").unwrap();
+    /// // Decode the file, panic in case something fails
+    /// let decoder= Decoder::new().decode_buffer(file.as_ref())
+    /// .expect("Error could not decode the file");
+    /// ```
     pub fn decode_buffer(&mut self, buf: &[u8]) -> Result<Vec<u8>, DecodeErrors> {
         self.decode_internal(Cursor::new(buf.to_vec()))
     }
@@ -177,7 +178,38 @@ impl Decoder {
         let buffer = Cursor::new(read(file).expect("Could not open file"));
         self.decode_internal(buffer)
     }
+    /// Returns the image information
+    ///
+    /// This **must** be called after a subsequent call to `decode_file` or `decode_buffer` otherwise it will return None
+    ///
+    /// # Example
+    /// ```
+    ///
+    /// use zune_jpeg::Decoder;
+    /// let file = std::fs::read("/a_valid_jpeg.jpg").unwrap();
+    /// // Decode the file, panic in case something fails
+    /// let mut decoder= Decoder::new();
+    /// let pixels=decoder.decode_buffer(file.as_ref())
+    /// .expect("Error could not decode the file");
+    /// // okay now get info
+    /// let info = decoder.info().unwrap();
+    /// // Print width and height
+    /// println!("{},{}",info.width,info.height);
+    /// // Assert that all pixels are in the image
+    /// assert!(usize::from(info.width)*usize::from(info.height)*decoder.get_output_colorspace().num_components(),pixels.len())
+    ///
+    /// ```
+    #[must_use]
+    pub fn info(&self) -> Option<ImageInfo> {
+        // we check for fails to that call by comparing what we have to the default, if it's default we
+        // assume that the caller failed to uphold the guarantees.
+        // We can be sure that an image cannot be the default since its a hard panic in-case width or height are set to zero.
+        if self.info == ImageInfo::default(){
+            return None;
+        }
+        return Some(self.info.clone());
 
+    }
     /// Decode Decoder headers
     ///
     /// This routine takes care of parsing supported headers from a Decoder image
@@ -267,23 +299,15 @@ impl Decoder {
                         }
                         // Quantization tables
                         Marker::DQT => {
-                            debug!("Extracting Quantization tables");
-                            let values = parse_dqt(&mut buf)?;
-
-                            self.add_qt(values);
-                            debug!("Quantization tables extracted");
+                            parse_dqt(self,&mut buf)?;
                         }
                         // Huffman tables
                         Marker::DHT => {
-                            debug!("Extracting Huffman table(s)");
-                            self.add_huffman_tables(parse_huffman(&mut buf)?);
-                            debug!("Finished extracting Huffman Table(s)");
+                            parse_huffman(self,&mut buf)?;
                         }
                         // Start of Scan Data
                         Marker::SOS => {
-                            debug!("Parsing start of scan");
                             parse_sos(&mut buf, self)?;
-                            debug!("Finished parsing start of scan");
                             // break after reading the start of scan.
                             // what follows is the image data
                             break;
@@ -309,6 +333,11 @@ impl Decoder {
         }
         Ok(())
     }
+    /// Get the output colorspace the image pixels will be decoded into
+    #[must_use]
+    pub fn get_output_colorspace(&self) -> ColorSpace {
+        return self.output_colorspace
+    }
     fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors> {
         let mut buf = buf;
         self.decode_headers(&mut buf)?;
@@ -328,6 +357,7 @@ impl Decoder {
 
                     debug!("Using AVX optimised IDCT");
                     self.idct_func = Box::new(dequantize_and_idct_avx2);
+                    debug!("Using AVX optimised color conversion functions");
                     match self.output_colorspace {
                         ColorSpace::RGB => {
                             self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
@@ -337,12 +367,13 @@ impl Decoder {
                         _ => {}
                     }
                 }
-                else if is_x86_feature_detected!("avx2"){
+                else if is_x86_feature_detected!("sse2"){
                     debug!("No support for avx2 switching to sse");
                     debug!("Using sse color convert functions");
                         match self.output_colorspace {
                             ColorSpace::RGB =>{
                                 self.color_convert_16 = Box::new(ycbcr_to_rgb_sse_16);
+                                self.color_convert = Box::new(ycbcr_to_rgb_sse);
                         }
                             ColorSpace::RGBA|ColorSpace::RGBX=>{
                                 // Ideally I make RGBA  and RGBX the same because 255 for an alpha channel is still random...
@@ -352,13 +383,7 @@ impl Decoder {
                             _=>{}
                     }
                 }
-                // sse color conversion is faster because how avx spills data during writing,
-                // until I(or someone else) fixes that i'll prefer sse
-                // Also more machines support sse than avx
-                if is_x86_feature_detected!("sse4.1") {
-                    debug!("Using SSE color conversion function");
-                    self.color_convert = Box::new(ycbcr_to_rgb_sse);
-                }
+
             }
             #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
             {
@@ -379,11 +404,13 @@ impl Decoder {
     /// # Currently Works on x86_64 CPU's with avx2 instruction set
     /// Now that that's cleared,  the following options exist
     ///
-    ///- ColorSpace::RGBX-> Set it to RGB_X where X is anything between 0 and 255
+    ///- `ColorSpace::RGBX` : Set it to RGB_X where X is anything between 0 and 255
     /// (cool for playing with alpha channels)
     ///
-    /// -ColorSpace::RGBA -> Set is to RGB_A where A is the alpha channel , useful for converting JPEG
+    /// - `ColorSpace::RGBA` : Set is to RGB_A where A is the alpha channel , useful for converting JPEG
     /// images to PNG images
+    ///
+    /// - `ColorSpace::RGB` : Use the normal color convert function where YCbCr is converted to RGB colorspace.
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace) {
         self.output_colorspace = colorspace;
         // change color convert function
@@ -401,13 +428,20 @@ impl Decoder {
                     ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
                     _ => {}
                 }
-            }
+           }
         }
     }
     #[must_use]
+    /// Get the width of the image as a u16
+    ///
+    /// The width lies between 0 and 65535
     pub fn width(&self) -> u16 {
         self.info.width
     }
+
+    /// Get the height of the image as a u16
+    ///
+    /// The height lies between 0 and 65535
     #[must_use]
     pub fn height(&self) -> u16 {
         self.info.height
@@ -415,7 +449,7 @@ impl Decoder {
 }
 
 /// A struct representing Image Information
-#[derive(Default, Clone)]
+#[derive(Default, Clone,Eq, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ImageInfo {
     /// Width of the image
@@ -438,37 +472,37 @@ impl ImageInfo {
     /// Set width of the image
     ///
     /// Found in the start of frame
-    pub fn set_width(&mut self, width: u16) {
+    pub (crate) fn set_width(&mut self, width: u16) {
         self.width = width;
     }
     /// Set height of the image
     ///
     /// Found in the start of frame
-    pub fn set_height(&mut self, height: u16) {
+    pub (crate) fn set_height(&mut self, height: u16) {
         self.height = height;
     }
     /// Set the image density
     ///
     /// Found in the start of frame
-    pub fn set_density(&mut self, density: u8) {
+    pub (crate) fn set_density(&mut self, density: u8) {
         self.pixel_density = density;
     }
     /// Set image Start of frame marker
     ///
     /// found in the Start of frame header
-    pub fn set_sof_marker(&mut self, marker: SOFMarkers) {
+    pub(crate) fn set_sof_marker(&mut self, marker: SOFMarkers) {
         self.sof = marker;
     }
     /// Set image x-density(dots per pixel)
     ///
     /// Found in the APP(0) marker
-    pub fn set_x(&mut self, sample: u16) {
+    pub (crate) fn set_x(&mut self, sample: u16) {
         self.x_density = sample;
     }
     /// Set image y-density
     ///
     /// Found in the APP(0) marker
-    pub fn set_y(&mut self, sample: u16) {
+    pub (crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
     }
 }

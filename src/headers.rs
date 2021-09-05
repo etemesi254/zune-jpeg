@@ -37,8 +37,9 @@ use crate::{ColorSpace, Decoder};
 /// `HuffmanDecode` - Encountered errors with excessive length
 #[allow(clippy::similar_names)]
 pub fn parse_huffman<R>(
+    decoder:&mut Decoder,
     mut buf: &mut R,
-) -> Result<(Vec<(HuffmanTable, usize)>, Vec<(HuffmanTable, usize)>), DecodeErrors>
+) -> Result<(), DecodeErrors>
 where
     R: Read,
 {
@@ -46,9 +47,6 @@ where
     let dht_length = read_u16_be(&mut buf).expect("Could not read Huffman length from image") - 2;
     // how much have we read
     let mut length_read: u16 = 0;
-    //Container for tables
-    let mut dc_tables = Vec::with_capacity(3);
-    let mut ac_tables = Vec::with_capacity(3);
     // A single DHT table may contain multiple HT's
     while length_read < dht_length {
         // HT information
@@ -75,11 +73,11 @@ where
             .expect("Could not read symbols to the buffer \n");
         length_read += 17 + symbols_sum;
         match dc_or_ac {
-            0 => dc_tables.push((HuffmanTable::new(&num_symbols, symbols, true), index)),
-            _ => ac_tables.push((HuffmanTable::new(&num_symbols, symbols, false), index)),
+            0 => decoder.dc_huffman_tables[index] = Some(HuffmanTable::new(&num_symbols, symbols, true)),
+            _ => decoder.ac_huffman_tables[index] = Some(HuffmanTable::new(&num_symbols, symbols, false)),
         }
     }
-    Ok((dc_tables, ac_tables))
+    Ok(())
 }
 
 ///**B.2.4.1 Quantization table-specification syntax**
@@ -107,7 +105,7 @@ where
 /// The library cannot yet handle 16-bit QT tables.
 /// Decoding an image with such tables will cause panic
 #[allow(clippy::cast_possible_truncation)]
-pub fn parse_dqt<R>(buf: &mut R) -> Result<Vec<([i32; 64], usize)>, DecodeErrors>
+pub fn parse_dqt<R>(decoder:&mut Decoder,buf: &mut R) -> Result<(), DecodeErrors>
 where
     R: Read,
 {
@@ -115,8 +113,6 @@ where
     // read length
     let qt_length = read_u16_be(&mut buf).expect("Could not read  DQT length");
     let mut length_read: u16 = 0;
-    // there may be more than one qt table
-    let mut qt_tables = Vec::with_capacity(3);
     // we don't un-zig-zag here we do it after dequantization
     while qt_length > length_read {
         let qt_info = read_u8(&mut buf);
@@ -165,10 +161,10 @@ where
                 )));
             }
         };
-        qt_tables.push((dct_table, table_position));
+        decoder.qt_tables[table_position]=Some(dct_table);
         // Add table to DCT Table
     }
-    return Ok(qt_tables);
+    return Ok(());
 }
 
 /// Section:`B.2.2 Frame header syntax`
@@ -320,15 +316,13 @@ pub fn parse_app<R>(
     marker: Marker,
     info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
-where
-    R: Read + BufRead,
+where R:BufRead+Read
 {
     let length = read_u16_be(buf)? as usize;
     let mut bytes_read = 2;
 
     match marker {
         Marker::APP(0) => {
-            debug!("Parsing start of APP 0 segment");
             // The only thing we need is the x and y pixel densities here
             // which are found 10 bytes away
             buf.consume(8);
@@ -336,11 +330,10 @@ where
             info.set_x(x_density);
             let y_density = read_u16_be(&mut buf).expect("Could not read y-density");
             info.set_y(y_density);
-            debug!("Pixel density acquired");
         }
         Marker::APP(1) => {
-            debug!("Parsing Exif data from APP(1)");
             if length >= 6 {
+
                 let mut buffer = [0_u8; 6];
                 buf.read_exact(&mut buffer)
                     .expect("Could not read Exif data");
@@ -349,12 +342,10 @@ where
                 // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
                 // 4.5.4 Basic Structure of Decoder Compressed Data
                 if &buffer == b"Exif\x00\x00" {
-                    let mut data = vec![0; (length - bytes_read) as usize];
+                    buf.consume(length-bytes_read);
 
-                    buf.read_exact(&mut data).expect("Could not read exif data");
                 }
             }
-            debug!("Parsing APP(1) data complete");
         }
 
         _ => {}
