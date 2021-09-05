@@ -3,7 +3,8 @@
     clippy::wildcard_imports,
     clippy::cast_possible_truncation,
     clippy::too_many_arguments,
-    clippy::inline_always
+    clippy::inline_always,
+clippy::doc_markdown
 )]
 
 #[cfg(target_arch = "x86")]
@@ -191,7 +192,7 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     //113 * Cb / 64
     let b2 = _mm256_srai_epi16::<6>(b1);
     // b = Y + 113 * Cb / 64 ;
-    let b = clamp_avx(_mm256_add_epi16(b2, y_c));
+    let b = _mm256_add_epi16(b2, y_c);
     return (r, g, b);
 }
 
@@ -238,8 +239,8 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
 
     // Store
     // Use streaming instructions to prevent polluting the cache
-    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize).cast(), g);
-    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize + 32).cast(), h);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), g);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), h);
     *offset += 64;
 }
 /// YCbCr to RGBX conversion
@@ -297,8 +298,8 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     //      because this function will be called on a 1: Pre-initialized array(see decode_mcu)
     //      2: The function will be expected to write 24 values to the MCU's so pos+16 will not refer
     //          to the end of the array
-    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize).cast(), g);
-    _mm256_storeu_si256(out.as_mut_ptr().offset(*offset as isize + 32).cast(), h);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), g);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), h);
     *offset += 64;
 }
 

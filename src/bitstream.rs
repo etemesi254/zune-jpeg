@@ -31,10 +31,7 @@ use crate::misc::UN_ZIGZAG;
 
 /// A `BitStream` struct, capable of decoding compressed data from the data from image
 ///
-/// # Fields and Meanings
-/// - `buffer`   : `u64`-> Stores bits from our compressed stream
-/// - `bits_left`: `u8`-> A counter telling us how many valid bits are in the buffer
-/// - `marker`   : `Option<Marker>`->Will store a marker if it's encountered in the stream
+///
 pub(crate) struct BitStream {
     /// A MSB type buffer that is used for some certain operations
     buffer: u64,
@@ -148,10 +145,8 @@ impl BitStream {
             // for LSB it is            a=111111100000000000
             // so to create an LSB bit-buffer, shift the MSB by number of bits
             //
-            // LSB buffer allows some things like peek_bits to be const folded into a `bextr` instruction
+            // LSB buffer allows some things like peek_bits to be const folded into a `shrx ` instruction
             // because it no longer depends on bits left leading to a 4% improvement in a really optimized decoder.
-            //
-            // Bextr: https://software.intel.com/content/www/us/en/develop/documentation/cpp-compiler-developer-guide-and-reference/top/compiler-reference/intrinsics/intrinsics-for-intel-advanced-vector-extensions-2/intrinsics-for-operations-to-manipulate-integer-data-at-bit-granularity/bextr-u32-64.html
             self.lsb_buffer = self.buffer << (64 - self.bits_left);
         }
         return true;
@@ -306,7 +301,7 @@ impl BitStream {
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32 {
-        // for the LSB buffer peek bits doesn't require an and to remove zero out top bits
+        // for the LSB buffer peek bits doesn't require an and to remove/zero out top bits
         (self.lsb_buffer >> (64 - LOOKAHEAD))  as i32
     }
     /// Discard the next `N` bits without checking
@@ -341,6 +336,9 @@ impl BitStream {
 #[inline(always)]
 fn huff_extend(x: i32, s: i32) -> i32 {
     // if x<s return x else return x+offset[s] where offset[s] = ( (-1<<s)+1)
+
+    // It may be easier to  use a lookup table for `((-1) << (s)) + 1)` but Rust does bounds checking
+    // and I'm already tired of `unsafe`
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
 }
 
@@ -353,5 +351,5 @@ fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64 {
     let pos = reader.position();
     reader.set_position(pos + 1);
     // if we have nothing left fill buffer with zeroes
-    *reader.get_ref().get(pos as usize).unwrap_or(&0) as u64
+    u64::from(*reader.get_ref().get(pos as usize).unwrap_or(&0))
 }
