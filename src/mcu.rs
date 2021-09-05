@@ -1,3 +1,5 @@
+//! Implements routines to decode a MCU
+//!
 use std::io::Cursor;
 
 use crate::{ColorSpace, Decoder};
@@ -9,6 +11,9 @@ const DCT_SIZE: usize = 64;
 
 impl Decoder {
     /// Decode data from MCU's
+    ///
+    /// This routine does bit-stream decoding,up-sampling
+    /// and colorspace conversion for images
     #[rustfmt::skip]
     #[allow(clippy::cast_possible_truncation,
     clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::similar_names)]
@@ -47,8 +52,8 @@ impl Decoder {
         // Non-Interleaved MCUs
         // Carry out decoding in trivial scanline order
         else {
-            // check that dc and AC tables exist
-            // We can do this outside and for the inner loop, use unsafe
+            // check that dc and AC tables exist outside the hot path
+            // If none of these routines fail,  we can use unsafe in the inner loop without it being UB
             for i in 0..self.input_colorspace.num_components() {
                 let _ = &self.dc_huffman_tables.get(self.components[i].dc_table_pos).as_ref()
                     .expect("No DC table for a component")
@@ -137,8 +142,6 @@ impl Decoder {
                     // For the other components we do nothing(currently)
                     _ => {}
                 }
-                //  position += usize::from(mcu_width - 1) * usize::from(self.output_colorspace.num_components()) * DCT_SIZE;
-                // println!("{:?}",position);
             }
         }
 

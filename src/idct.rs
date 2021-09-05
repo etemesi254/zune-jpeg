@@ -30,7 +30,7 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 ///
 /// # Arguments
 ///  - vector: A mutable reference( so that i can reuse memory) to a MCU worth of numbers
-///  - qt_table: A quantization table fro the MCU
+///  - `qt_table`: A quantization table fro the MCU
 ///
 /// [`stbi_image.h`]:https://github.com/nothings/stb/blob/c9064e317699d2e495f36ba4f9ac037e88ee371a/stb_image.h#L2356
 #[allow(arithmetic_overflow)]
@@ -383,6 +383,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         transpose(
             &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
         );
+
         // process columns
         dct_pass!(SCALE_BITS, 17);
 
@@ -484,7 +485,7 @@ unsafe fn transpose(
     merge_si128!(x3, x7, (v6.mm256), (v7.mm256));
 }
 
-/// A copy of _MM_SHUFFLE() that doesn't require
+/// A copy of `_MM_SHUFFLE()` that doesn't require
 /// a nightly compiler
 #[inline]
 #[cfg(feature = "x86")]

@@ -4,16 +4,21 @@ use crate::misc::Aligned32;
 /// Component Data from start of frame
 #[derive(Clone)]
 pub(crate) struct Components {
+    /// The type of component that has the metadata below, can be Y,Cb or Cr
     pub component_id: ComponentID,
+    /// Sub-sampling ratio of this component in the x-plane
     pub vertical_sample: usize,
+    /// Sub-sampling ratio of this component in the y-plane
     pub horizontal_sample: usize,
+    /// DC table position of this component
     pub dc_table_pos: usize,
+    /// Ac table position of this component
     pub ac_table_pos: usize,
     //Quantization table number
     pub quantization_table_number: u8,
-    // Specifies quantization table to use with this component
+    /// Specifies quantization table to use with this component
     pub quantization_table: Aligned32<[i32; 64]>,
-    // dc prediction for the component
+    /// dc prediction for the component
     pub dc_pred: i32,
 }
 impl Components {
@@ -38,7 +43,7 @@ impl Components {
         let horizontal_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
-        debug!("\n\tComponent ID:{:?},\n\tVertical Sample:{}\n\tHorizontal Sample:{},\n\tquantization Table destinator:{}",
+        debug!("Component ID:{:?}\tVS:{}HS:{}QT:{}",
                id,vertical_sample,horizontal_sample,quantization_table_number);
 
         Ok(Components {

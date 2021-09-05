@@ -1,4 +1,4 @@
-#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::module_name_repetitions,clippy::doc_markdown,clippy::wildcard_imports)]
 #![cfg(feature = "x86")]
 
 #[cfg(target_arch = "x86")]
@@ -107,7 +107,8 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X:i16>(
     cr: &[i16],
     out: &mut [u8],
     offset: &mut usize,
-) {
+)
+{
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -170,8 +171,8 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X:i16>(
     let j = _mm_unpackhi_epi8(g,h);
 
 
-    _mm_store_si128(out.as_mut_ptr().offset(*offset as isize) as _,i);
-    _mm_store_si128(out.as_mut_ptr().offset(*offset as isize +16) as _,j);
+    _mm_storeu_si128(out.as_mut_ptr().add(*offset).cast(),i);
+    _mm_storeu_si128(out.as_mut_ptr().add(*offset  +16).cast(),j);
     *offset+= 32;
 
 }

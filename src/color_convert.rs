@@ -4,7 +4,8 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_possible_wrap,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+clippy::doc_markdown
 )]
 
 //! YUV to RGB Conversion
@@ -22,7 +23,7 @@ use std::cmp::{max, min};
 #[cfg(feature = "x86")]
 pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba, ycbcr_to_rgbx};
 #[cfg(feature = "x86")]
-pub use crate::color_convert::sse::{ycbcr_to_rgb_sse,ycbcr_to_rgb_sse_16};
+pub use crate::color_convert::sse::{ycbcr_to_rgb_sse,ycbcr_to_rgb_sse_16,ycbcr_to_rgba_sse_16};
 
 pub mod avx;
 pub mod sse;

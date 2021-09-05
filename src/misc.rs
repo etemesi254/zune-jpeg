@@ -102,7 +102,7 @@ impl ColorSpace {
     }
 }
 impl Default for ColorSpace {
-    ///Set default output_colorspace as RGB
+    ///Set default output colorspace as RGB
     ///
     /// This is the common behaviour for all (sane) Decoder images
     fn default() -> Self {
@@ -262,29 +262,4 @@ where
         *i = read_u16_be(&mut reader)?;
     }
     Ok(())
-}
-
-/// Multiply elements in two vectors
-///
-/// # Arguments
-/// - `a`: A vector containing 64 elements
-/// - `b` :Another vector containing 64 elements
-///
-/// # Returns
-/// Another vector containing multiplied coefficients
-#[inline]
-pub fn dequantize<T>(a: &[i16; 64], b: &[i16; 64]) -> [T; 64]
-where
-    T: Copy + Default + From<i16>,
-{
-    // some decoders put this inside IDCT, i prefer it here
-    let mut c = [T::default(); 64];
-    // using `i32::from` makes the generated assembly first convert before multiplying
-    // which does not favour us at all
-
-    // Debug mode, rust WTF?:https://godbolt.org/z/YosGbenxP  (587 lines)
-    for i in 0..c.len() {
-        *c.get_mut(i).unwrap() = T::from(a.get(i).unwrap() * b.get(i).unwrap());
-    }
-    c
 }
