@@ -16,6 +16,7 @@ log = "0.4.11"
 [dev-dependencies]
 criterion="0.3"
 mozjpeg={version="*"}
+jpeg-decoder = { version = "*" }
 
 [[bench]]
 name="decode"
