@@ -311,6 +311,7 @@ impl BitStream {
         // remove top n bits  in lsb buffer
         self.lsb_buffer <<= n;
     }
+    //noinspection ALL
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
