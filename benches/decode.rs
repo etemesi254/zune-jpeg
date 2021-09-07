@@ -29,6 +29,10 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 4]> {
     .unwrap();
     p
 }
+fn decode_jpeg_image_rs(buf:&[u8])->Vec<u8>{
+    let mut decoder = jpeg_decoder::Decoder::new(buf);
+    decoder.decode().unwrap()
+}
 fn criterion_benchmark(c: &mut Criterion) {
     let a = String::from("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg");
     let data = read(a).unwrap();
@@ -38,6 +42,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("Baseline JPEG Decoding  mozjpeg", |b| {
+        b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
+    });
+    c.bench_function("Baseline JPEG Decoding  imagers/jpeg-decoder", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 }
