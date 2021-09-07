@@ -3,20 +3,13 @@
     clippy::unreadable_literal,
     clippy::module_name_repetitions,
     unused_parens,
-    unused_imports
+    clippy::wildcard_imports
 )]
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{
-    __m256i, _mm256_cvtepi16_epi32, _mm256_load_si256, _mm256_max_epi16, _mm256_min_epi16,
-    _mm256_or_si256, _mm256_packs_epi32, _mm256_permute2x128_si256, _mm256_permute4x64_epi64,
-    _mm256_set1_epi16, _mm256_slli_epi32, _mm256_srai_epi32, _mm256_store_si256,
-    _mm256_testz_si256, _mm256_unpackhi_epi32, _mm256_unpackhi_epi64, _mm256_unpacklo_epi32,
-    _mm256_unpacklo_epi64, _mm_load_si128, _mm_loadu_si128,
-};
-use std::process::exit;
+use std::arch::x86_64::*;
 
 use crate::misc::Aligned32;
 #[cfg(feature = "x86")]
@@ -359,10 +352,10 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
                         .min(255),
                 );
                 // store
-                _mm256_store_si256(vector[0..16].as_mut_ptr().cast(), x);
-                _mm256_store_si256(vector[16..32].as_mut_ptr().cast(), x);
-                _mm256_store_si256(vector[32..48].as_mut_ptr().cast(), x);
-                _mm256_store_si256(vector[48..64].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[0..16].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[16..32].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[32..48].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[48..64].as_mut_ptr().cast(), x);
                 // Go to the next coefficient block
                 continue;
             }
@@ -402,7 +395,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
                 // Magic number 216 is what does it for us..
                 let c = _mm256_permute4x64_epi64(b, shuffle(3, 1, 2, 0));
                 // Store back,the memory is aligned to a 32 byte boundary
-                _mm256_store_si256(($out)[$index..$index + 16].as_mut_ptr().cast(), c);
+                _mm256_storeu_si256(($out)[$index..$index + 16].as_mut_ptr().cast(), c);
             };
         }
         // Pack and write the values back to the array
