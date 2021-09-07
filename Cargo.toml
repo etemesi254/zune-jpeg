@@ -11,12 +11,13 @@ default=["x86"]
 
 [dependencies]
 log = "0.4.11"
-
+threadpool="1.8.1"
 
 [dev-dependencies]
 criterion="0.3"
 mozjpeg={version="*"}
 jpeg-decoder = { version = "*" }
+
 
 [[bench]]
 name="decode"

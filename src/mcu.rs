@@ -2,22 +2,19 @@
 //!
 use std::io::Cursor;
 
-use crate::{ColorSpace, Decoder};
+use crate::{Decoder, MAX_COMPONENTS};
 use crate::bitstream::BitStream;
 use crate::marker::Marker;
 use crate::unsafe_utils::align_zero_alloc;
-
-const DCT_SIZE: usize = 64;
+use std::sync::{Mutex, Arc};
+use crate::worker::post_process;
+const DCT_BLOCK: usize = 64;
 
 impl Decoder {
-    /// Decode data from MCU's
-    ///
-    /// This routine does bit-stream decoding,up-sampling
-    /// and colorspace conversion for images
-    #[rustfmt::skip]
-    #[allow(clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::similar_names)]
-    pub(crate) fn decode_mcu_ycbcr(&mut self, reader: &mut Cursor<Vec<u8>>) -> Vec<u8> {
+
+    #[allow(clippy::similar_names)]
+    pub (crate) fn decode_mcu_ycbcr_multi_threaded(&mut self, reader:&mut Cursor<Vec<u8>>) -> Vec<u8> {
+        let pool = threadpool::ThreadPool::new(MAX_COMPONENTS);
         let mcu_width = ((self.info.width + 7) / 8) as usize;
         let mcu_height = ((self.info.height + 7) / 8) as usize;
 
@@ -41,7 +38,7 @@ impl Decoder {
                 };
         }
         let mut position = 0;
-        let mut global_channel = unsafe { align_zero_alloc::<u8, 32>(capacity * self.output_colorspace.num_components()) };
+        let  global_channel = Arc::new(Mutex::new(unsafe { align_zero_alloc::<u8, 32>(capacity * self.output_colorspace.num_components()) }));
         if self.interleaved {
             for _ in 0..self.mcu_y {
                 for _ in 0..self.mcu_x {
@@ -68,6 +65,7 @@ impl Decoder {
                 'label: for i in 0..mcu_width {
                     // iterate over components, for non interleaved scans
                     for pos in 0..self.input_colorspace.num_components() {
+
                         let component = &mut self.components[pos];
                         // The checks were performed above, before we get to the hot loop
                         // Basically, the decoder will panic ( see where the else statement starts)
@@ -84,7 +82,7 @@ impl Decoder {
                                 .as_ref()
                                 .unwrap_or_else(|| std::hint::unreachable_unchecked())
                         };
-                        let mut tmp = [0; DCT_SIZE];
+                        let mut tmp = [0; DCT_BLOCK];
                         // decode the MCU
                         // if false
                         // if true
@@ -99,11 +97,11 @@ impl Decoder {
                                 Marker::RST(_) => {
                                     // For RST marker, we need to reset stream and initialize predictions to
                                     // zero
-                                     // reset stream
+                                    // reset stream
                                     stream.reset();
                                     // Initialize dc predictions to zero for all components
                                     self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                                   // continue;
+                                    // continue;
                                 }
                                 // Okay encountered end of Image break to IDCT and color convert.
                                 Marker::EOI => {
@@ -122,32 +120,41 @@ impl Decoder {
                         self.mcu_block[pos][(i * 64)..((i * 64) + 64)].copy_from_slice(&tmp);
                     }
                 }
-                // carry out IDCT
-                (0..self.input_colorspace.num_components()).into_iter().for_each(|i| {
-                    (self.idct_func)(self.mcu_block[i].as_mut_slice(), &self.components[i].quantization_table);
+                // Clone things, to make multithreading safe
+                // Ideally most of the time will be wasted in mcu_block.clone()
+                // TODO:If need be implement a stream-store copy version..
+                let block={ self.mcu_block.clone()};
+                let component = self.components.clone();
+                let input = self.input_colorspace;
+                let output = self.output_colorspace;
+                let idct_func = self.idct_func;
+                let color_convert = self.color_convert;
+                let color_convert_16 = self.color_convert_16;
+                let width = usize::from(self.width());
+                let gc = global_channel.clone();
+
+
+                // Now using threads might affect us in certain ways,
+                // And a pretty bad one is writing of MCU's
+                // An MCU row may finish faster than one on top of it maybe because it has more zeroes hence IDCT can be short circuited
+                // so new we give each idct its start position here ant then increment that to fix it
+                pool.execute( move||{
+                    post_process(block,&component,
+                                 idct_func,color_convert_16,color_convert,
+                                 input,output,gc,
+                                 mcu_width,width,position);
                 });
-
-                // upsample and color convert
-                match (self.input_colorspace, self.output_colorspace) {
-
-                    // YCBCR to RGB(A) colorspace conversion.
-                    (ColorSpace::YCbCr, _) => {
-                        self.color_convert_ycbcr(&mut position, &mut global_channel, mcu_width);
-                    }
-                    (ColorSpace::GRAYSCALE, ColorSpace::GRAYSCALE) => {
-                        // for grayscale to grayscale we copy first MCU block(which should contain the MCU blocks) to the other
-                        let x: &Vec<i16> = self.mcu_block[0].as_ref();
-                        global_channel = x.iter().map(|c| *c as u8).collect();
-                    }
-                    // For the other components we do nothing(currently)
-                    _ => {}
-                }
+                // update position here
+                // The position will be MCU width * a block * number of pixels written (components per pixel)
+                position += mcu_width* DCT_BLOCK *self.output_colorspace.num_components();
+                //println!("{}",position);
             }
         }
-
+        pool.join();
         debug!("Finished decoding image");
         // Global channel may be over allocated for uneven images, shrink it back
-        global_channel.truncate(usize::from(self.width()) * usize::from(self.height()) * self.output_colorspace.num_components());
-        global_channel
+        global_channel.lock().unwrap().truncate(usize::from(self.width()) * usize::from(self.height()) * self.output_colorspace.num_components());
+        // remove the global channel and return it
+        Arc::try_unwrap(global_channel).unwrap().into_inner().unwrap()
     }
 }
