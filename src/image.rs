@@ -20,7 +20,7 @@ use crate::marker::Marker;
 use crate::misc::{Aligned32, ColorSpace, read_u16_be, read_u8, SOFMarkers};
 
 /// Maximum components
-pub(crate) const MAX_COMPONENTS: usize = 4;
+pub(crate) const MAX_COMPONENTS: usize = 3;
 
 /// Color conversion function that can convert YcbCr colorspace to RGB(A/X) for 16 values
 ///
@@ -38,8 +38,7 @@ pub(crate) const MAX_COMPONENTS: usize = 4;
 /// The pointer should
 /// 1. Carry out color conversion
 /// 2. Update `&mut usize` with the new position
-pub type ColorConvert16Ptr =
-    dyn FnMut(&[i16], &[i16], &[i16], &[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
+pub type ColorConvert16Ptr = fn(&[i16], &[i16], &[i16], &[i16], &[i16], &[i16], &mut [u8], &mut usize);
 
 /// Color convert function  that can convert YCbCr colorspace to RGB(A/X) for 8 values
 ///
@@ -50,14 +49,15 @@ pub type ColorConvert16Ptr =
 ///     'y,cb,cr'
 ///
 /// The other guarantees are the same as `ColorConvert16Ptr`
-pub type ColorConvertPtr = dyn FnMut(&[i16], &[i16], &[i16], &mut [u8], &mut usize) + Send + Sync;
+pub type ColorConvertPtr = fn(&[i16], &[i16], &[i16], &mut [u8], &mut usize);
 /// IDCT  function prototype
 ///
 /// This encapsulates a dequantize and IDCT function which will carry out the following functions
 ///
 /// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
-pub type IDCTPtr = dyn FnMut(&mut [i16], &Aligned32<[i32; 64]>) + Send + Sync;
+pub type IDCTPtr = fn(&mut [i16], &Aligned32<[i32; 64]>);
+
 /// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]
 pub struct Decoder {
@@ -65,11 +65,11 @@ pub struct Decoder {
     pub(crate) info: ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
     /// be moved to `components` field
-    pub(crate) qt_tables: [Option<[i32; 64]>; 4],
+    pub(crate) qt_tables: [Option<[i32; 64]>; MAX_COMPONENTS],
     /// DC Huffman Tables with a maximum of 4 tables for each  component
-    pub(crate) dc_huffman_tables: [Option<HuffmanTable>; 4],
+    pub(crate) dc_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// AC Huffman Tables with a maximum of 4 tables for each component
-    pub(crate) ac_huffman_tables: [Option<HuffmanTable>; 4],
+    pub(crate) ac_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// Image components, holds information like DC prediction and quantization tables of a component
     pub(crate) components: Vec<Components>,
 
@@ -98,20 +98,20 @@ pub struct Decoder {
     /// This is determined at runtime which function to run, statically it's initialized to
     /// a platform independent one and during initialization of this struct, we check if we can
     /// switch to a faster one which depend on certain CPU extensions.
-    pub(crate) idct_func: Box<IDCTPtr>,
+    pub(crate) idct_func: IDCTPtr,
     // Color convert function will act on 8 values of YCbCr blocks
-    pub(crate) color_convert: Box<ColorConvertPtr>,
+    pub(crate) color_convert: ColorConvertPtr,
     // Color convert function which acts on 16 YcbCr values
-    pub(crate) color_convert_16: Box<ColorConvert16Ptr>,
+    pub(crate) color_convert_16: ColorConvert16Ptr,
 }
 
 impl Default for Decoder {
     fn default() -> Self {
         let mut d = Decoder {
             info: ImageInfo::default(),
-            qt_tables: [None, None, None, None],
-            dc_huffman_tables: [None, None, None, None],
-            ac_huffman_tables: [None, None, None, None],
+            qt_tables: [None, None, None],
+            dc_huffman_tables: [None, None, None],
+            ac_huffman_tables: [None, None, None],
             components: vec![],
             h_max: 1,
             v_max: 1,
@@ -120,15 +120,15 @@ impl Default for Decoder {
             mcu_x: 0,
             mcu_y: 0,
             interleaved: false,
-            idct_func: Box::new(dequantize_and_idct_int),
-            color_convert: Box::new(ycbcr_to_rgb),
+            idct_func: dequantize_and_idct_int,
+            color_convert: ycbcr_to_rgb,
             // TODO:Add a platform independent version of this
-            color_convert_16: Box::new(ycbcr_to_rgb_16),
+            color_convert_16: ycbcr_to_rgb_16,
             input_colorspace: ColorSpace::YCbCr,
             output_colorspace: ColorSpace::RGB,
             // This should be kept at par with MAX_COMPONENTS, or until the RFC at
             // https://github.com/rust-lang/rfcs/pull/2920 is accepted
-            mcu_block: [vec![], vec![], vec![], vec![]],
+            mcu_block: [vec![], vec![], vec![]],
         };
         d.init();
         return d;
@@ -279,7 +279,7 @@ impl Decoder {
                             }
 
                             // delete quantization tables, we'll extract them from the components when needed
-                            self.qt_tables = [None, None, None, None];
+                            self.qt_tables = [None, None, None];
 
                             self.components = p;
                         }
@@ -341,7 +341,7 @@ impl Decoder {
     fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors> {
         let mut buf = buf;
         self.decode_headers(&mut buf)?;
-        Ok(self.decode_mcu_ycbcr(&mut buf))
+        Ok(self.decode_mcu_ycbcr_multi_threaded(&mut buf))
     }
     /// Initialize the most appropriate functions for
     ///
@@ -356,14 +356,14 @@ impl Decoder {
                     debug!("Detected AVX code support");
 
                     debug!("Using AVX optimised IDCT");
-                    self.idct_func = Box::new(dequantize_and_idct_avx2);
+                    self.idct_func = dequantize_and_idct_avx2;
                     debug!("Using AVX optimised color conversion functions");
                     match self.output_colorspace {
                         ColorSpace::RGB => {
-                            self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
+                            self.color_convert_16 = ycbcr_to_rgb_avx2;
                         }
-                        ColorSpace::RGBA => self.color_convert_16 = Box::new(ycbcr_to_rgba),
-                        ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
+                        ColorSpace::RGBA => self.color_convert_16 = ycbcr_to_rgba,
+                        ColorSpace::RGBX => self.color_convert_16 = ycbcr_to_rgbx,
                         _ => {}
                     }
                 }
@@ -372,12 +372,12 @@ impl Decoder {
                     debug!("Using sse color convert functions");
                         match self.output_colorspace {
                             ColorSpace::RGB =>{
-                                self.color_convert_16 = Box::new(ycbcr_to_rgb_sse_16);
-                                self.color_convert = Box::new(ycbcr_to_rgb_sse);
+                                self.color_convert_16 = ycbcr_to_rgb_sse_16;
+                                self.color_convert = ycbcr_to_rgb_sse;
                         }
                             ColorSpace::RGBA|ColorSpace::RGBX=>{
                                 // Ideally I make RGBA  and RGBX the same because 255 for an alpha channel is still random...
-                                self.color_convert_16 = Box::new(ycbcr_to_rgba_sse_16);
+                                self.color_convert_16 = ycbcr_to_rgba_sse_16;
                             }
 
                             _=>{}
@@ -390,13 +390,13 @@ impl Decoder {
                 // use the slower version which doesn't depend on  platform specific
                 // intrinsics
                 debug!("Using Table lookup color conversion function");
-                self.color_convert_func = Box::new(ycbcr_to_rgb);
+                self.color_convert_func = (ycbcr_to_rgb);
             }
         }
         #[cfg(not(feature = "x86"))]
         {
             debug!("Using safer(and slower) color conversion functions");
-            self.color_convert = Box::new(ycbcr_to_rgb);
+            self.color_convert = (ycbcr_to_rgb);
         }
     }
     /// Set the output colorspace
@@ -422,10 +422,10 @@ impl Decoder {
                 // set appropriate color space
                 match self.output_colorspace {
                     ColorSpace::RGB => {
-                        self.color_convert_16 = Box::new(ycbcr_to_rgb_avx2);
+                        self.color_convert_16 = ycbcr_to_rgb_avx2;
                     }
-                    ColorSpace::RGBA => self.color_convert_16 = Box::new(ycbcr_to_rgba),
-                    ColorSpace::RGBX => self.color_convert_16 = Box::new(ycbcr_to_rgbx),
+                    ColorSpace::RGBA => self.color_convert_16 = ycbcr_to_rgba,
+                    ColorSpace::RGBX => self.color_convert_16 = ycbcr_to_rgbx,
                     _ => {}
                 }
            }
