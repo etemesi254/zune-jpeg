@@ -69,10 +69,10 @@ fn color_convert_ycbcr(mcu_block: &[Vec<i16>; MAX_COMPONENTS],
 
     // slice into 128(2 mcu's)
     //println!("{}",mcu_len);
-    let mcu_count = (mcu_len - 1) >> 1;
+    let mcu_count = mcu_len  >> 1;
     //println!("{}",mcu_count);
     // check if we have an MCU remaining
-    let remainder = ((mcu_len - 1) % 2) != 0;
+    let remainder = ((mcu_len ) % 2) != 0;
     let mcu_width = width * output_colorspace.num_components();
     let mut expected_pos = *position + mcu_width;
     // Lock here because we do not want to keep locking while writing,
