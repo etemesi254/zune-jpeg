@@ -59,12 +59,13 @@ mod misc;
 
 mod color_convert;
 mod unsafe_utils;
+mod upsampler;
 mod worker;
 pub use image::*;
 #[test]
 fn decode_jpeg() {
-    let mut x = Decoder::new();
-    x.set_output_colorspace(ColorSpace::RGBX);
+    let mut x =Decoder::new();
+    x.set_output_colorspace(ColorSpace::RGB);
     let image = x
         .decode_file("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg")
         .unwrap();
