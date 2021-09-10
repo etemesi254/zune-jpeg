@@ -1,11 +1,15 @@
 //! This module provides unsafe ways to do some things
 //!
 #![allow(clippy::wildcard_imports)]
+
+use std::alloc::*;
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::mem::*;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+
 
 #[derive(Clone, Copy)]
 pub struct YmmRegister {
@@ -114,15 +118,13 @@ impl MulAssign<i32> for YmmRegister {
 }
 
 impl MulAssign<__m256i> for YmmRegister {
+    #[inline]
     fn mul_assign(&mut self, rhs: __m256i) {
         unsafe {
             self.mm256 = _mm256_mullo_epi32(self.mm256, rhs);
         }
     }
 }
-
-use std::alloc::*;
-use std::mem::*;
 
 /// Allocate a Vec<T> with a ALIGN byte boundary and zero its content
 ///
