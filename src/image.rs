@@ -10,10 +10,11 @@ use crate::huffman::HuffmanTable;
 
 #[cfg(feature = "x86")]
 use crate::color_convert::{ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse, ycbcr_to_rgba, ycbcr_to_rgbx,
-                           ycbcr_to_rgb, ycbcr_to_rgb_16, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
+                           ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
 #[cfg(feature = "x86")]
 use crate::idct::dequantize_and_idct_avx2; // avx optimized color IDCT
 
+use crate::color_convert::{ycbcr_to_rgb, ycbcr_to_rgb_16};
 use crate::idct::dequantize_and_idct_int;
 
 use crate::marker::Marker;
