@@ -1,3 +1,4 @@
+//! Routines for IDCT
 #![allow(
     clippy::excessive_precision,
     clippy::unreadable_literal,
@@ -149,7 +150,7 @@ pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64
             t2 *= 12586;
             t3 *= 6149;
 
-            let p1 = p5.wrapping_add(p1.wrapping_mul(-3865));
+            let p1 = p5.wrapping_add(p1.wrapping_mul(-3685));
             let p2 = p5.wrapping_add(p2.wrapping_mul(-10497));
             let p3 = p3.wrapping_mul(-8034);
             let p4 = p4.wrapping_mul(-1597);
@@ -167,7 +168,7 @@ pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64
             vector[i + 3] = clamp((x3 + t0) >> 17);
             vector[i + 4] = clamp((x3 - t0) >> 17);
             vector[i + 5] = clamp((x2 - t1) >> 17);
-            vector[i + 6] = clamp((x1 + t2) >> 17);
+            vector[i + 6] = clamp((x1 - t2) >> 17);
             vector[i + 7] = clamp((x0 - t3) >> 17);
 
             i += 8;
@@ -300,7 +301,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
                 t3 = row1 * 6149;
 
                 let p1 = p5 + p1 * -3685;
-                let p2 = p5 + p2 * -10497;
+                let p2 = p5 + (p2 * -10497);
                 let p3 = p3 * -8034;
                 let p4 = p4 * -1597;
 
@@ -315,7 +316,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
 
                 row4.mm256 = _mm256_srai_epi32((x3 - t0).mm256, $scale);
                 row5.mm256 = _mm256_srai_epi32((x2 - t1).mm256, $scale);
-                row6.mm256 = _mm256_srai_epi32((x1 + t2).mm256, $scale);
+                row6.mm256 = _mm256_srai_epi32((x1 - t2).mm256, $scale);
                 row7.mm256 = _mm256_srai_epi32((x0 - t3).mm256, $scale);
             };
         }
@@ -369,21 +370,18 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         row5 *= qt_row5;
         row6 *= qt_row6;
         row7 *= qt_row7;
-
-        // Process rows
-        dct_pass!(512, 10);
-
         transpose(
             &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
         );
+        // Process rows
+        dct_pass!(512, 10);
+
+        transpose(&mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7, );
 
         // process columns
         dct_pass!(SCALE_BITS, 17);
 
         // transpose to original
-        transpose(
-            &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
-        );
 
         //okay begin cool stuff
         macro_rules! permute_store {
@@ -399,10 +397,11 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
             };
         }
         // Pack and write the values back to the array
+        // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=0fca534094f6cb20c43eca8d33ef3891
         permute_store!((row0.mm256), (row1.mm256), 0, vector);
-        permute_store!((row2.mm256), (row2.mm256), 16, vector);
-        permute_store!((row4.mm256), (row3.mm256), 32, vector);
-        permute_store!((row6.mm256), (row4.mm256), 48, vector);
+        permute_store!((row2.mm256), (row3.mm256), 16, vector);
+        permute_store!((row4.mm256), (row5.mm256), 32, vector);
+        permute_store!((row6.mm256), (row7.mm256), 48, vector);
     }
 }
 
