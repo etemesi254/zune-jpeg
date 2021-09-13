@@ -1,6 +1,9 @@
 use crate::errors::DecodeErrors;
 use crate::misc::Aligned32;
+use crate::upsampler::upsample_no_op;
 
+/// Represents an up-sampler function, this function will be called to upsample a down-sampled image
+pub type UpSampler = fn (&Vec<i16>,usize)->Vec<i16>;
 /// Component Data from start of frame
 #[derive(Clone)]
 pub(crate) struct Components {
@@ -20,6 +23,10 @@ pub(crate) struct Components {
     pub quantization_table: Aligned32<[i32; 64]>,
     /// dc prediction for the component
     pub dc_pred: i32,
+    /// An upsampling function, can be basic or SSE, depending
+    /// on the platform
+    /// SSE one is magnitudes faster than basic
+    pub up_sampler:UpSampler,
 }
 impl Components {
     /// Create a new instance from three bytes from the start of frame
@@ -37,14 +44,14 @@ impl Components {
             }
         };
 
-        // first 4 bits are vertical sample, we discard bottom 4 bits by a right shift.
-        let vertical_sample = (a[1] >> 4) as usize;
-        // last 4 bits are horizontal samples, we get bottom n bits
-        let horizontal_sample = (a[1] & 0x0f) as usize;
+        // first 4 bits are horizontal sample, we discard bottom 4 bits by a right shift.
+        let horizontal_sample = (a[1] >> 4) as usize;
+        // last 4 bits are vertical samples, we get bottom n bits
+        let vertical_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
-        debug!("Component ID:{:?}\tVS:{}HS:{}QT:{}",
-               id,vertical_sample,horizontal_sample,quantization_table_number);
+        debug!("Component ID:{:?}\tHS:{}VS:{}QT:{}",
+               id,horizontal_sample,vertical_sample,quantization_table_number);
 
         Ok(Components {
             component_id: id,
@@ -55,6 +62,7 @@ impl Components {
             ac_table_pos: quantization_table_number as usize,
             quantization_table: Aligned32([0; 64]),
             dc_pred: 0,
+            up_sampler:upsample_no_op
         })
     }
 }
