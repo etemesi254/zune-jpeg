@@ -67,7 +67,7 @@ unsafe fn ycbcr_to_rgb_avx2_1(
     out: &mut [u8],
     offset: &mut usize,
 ) {
-    unsafe {
+
         let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
         // This is badly vectorised in AVX2,
         // With it extracting values from ymm to xmm registers
@@ -83,7 +83,6 @@ unsafe fn ycbcr_to_rgb_avx2_1(
             *out.get_unchecked_mut(*offset + 2) = b.array[i] as u8;
             *offset += 3;
         }
-    }
 }
 
 /// Baseline implementation of YCBCR to RGB for avx,

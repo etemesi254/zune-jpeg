@@ -474,7 +474,7 @@ impl Decoder {
                 return Err(DecodeErrors::Format("Unknown down-sampling method, cannot continue".to_string()));
             }
         }
-        return OK(());
+        return Ok(());
     }
     #[must_use]
     /// Get the width of the image as a u16

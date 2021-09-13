@@ -11,7 +11,7 @@ use crate::unsafe_utils::align_zero_alloc;
 mod sse;
 
 /// Carry out vertical   upsampling
-pub fn upsample_vertical(input: &Vec<i16>, output_len: usize) -> Vec<i16> {
+pub fn upsample_vertical(_input: &Vec<i16>, output_len: usize) -> Vec<i16> {
 
 
 
@@ -48,7 +48,7 @@ pub fn upsample_horizontal(input: &Vec<i16>, output_len: usize) -> Vec<i16> {
     return out;
 }
 
-pub fn upsample_horizontal_vertical(input: &Vec<i16>, _output_len: usize) -> Vec<i16> {
+pub fn upsample_horizontal_vertical(_input: &Vec<i16>, _output_len: usize) -> Vec<i16> {
     return Vec::new();
 }
 
