@@ -6,6 +6,8 @@ use crate::components::Components;
 
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
+/// This handles routines for images which are not interleaved for interleaved use post_process_interleaved
+///
 /// # Arguments
 /// - unprocessed- Contains Y,Cb,Cr components straight from the bitstream decoder
 /// - component_data - Contains metadata for unprocessed values, e.g QT tables and such
@@ -19,7 +21,7 @@ use crate::components::Components;
 /// - width - Width of the image.
 /// - position: Offset from which to write the pixels
 #[allow(clippy::too_many_arguments,clippy::cast_sign_loss,clippy::cast_possible_truncation,clippy::doc_markdown)]
-pub (crate) fn post_process(mut unprocessed: [Vec<i16>; MAX_COMPONENTS],
+pub (crate) fn post_process_non_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPONENTS],
                     component_data: &[Components],
                     idct_func: IDCTPtr,
                     color_convert_16:ColorConvert16Ptr,
@@ -35,7 +37,7 @@ pub (crate) fn post_process(mut unprocessed: [Vec<i16>; MAX_COMPONENTS],
         (idct_func)(unprocessed[x].as_mut_slice(), &component_data[x].quantization_table);
     });
 
-    // upsample and color convert
+    // color convert
     match (input_colorspace, output_colorspace) {
 
         // YCBCR to RGB(A) colorspace conversion.
@@ -52,7 +54,60 @@ pub (crate) fn post_process(mut unprocessed: [Vec<i16>; MAX_COMPONENTS],
         _ => {}
     }
 }
+/// Handle everything else in jpeg processing that doesn't involve bitstream decoding
+///
+/// This handles routines for images which are interleaved for non-interleaved use post_process_non_interleaved
+///
+/// # Arguments
+/// - unprocessed- Contains Y,Cb,Cr components straight from the bitstream decoder
+/// - component_data - Contains metadata for unprocessed values, e.g QT tables and such
+/// - idct_func - IDCT function pointer
+/// - color_convert_16 - Carry out color conversion on 2 mcu's
+/// - color_convert - Carry out color conversion on a single MCU
+/// - input_colorspace - The colorspace the image is in
+/// - output_colorspace: Colorspace to change the value to
+/// - output - Where to write the converted data
+/// - mcu_len - Number of MCU's per width
+/// - width - Width of the image.
+/// - position: Offset from which to write the pixels
 
+#[allow(clippy::too_many_arguments,clippy::cast_sign_loss,clippy::cast_possible_truncation,clippy::doc_markdown,unused_variables)]
+pub(crate) fn post_process_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPONENTS],
+                                       component_data: &[Components],
+                                       idct_func: IDCTPtr,
+                                       color_convert_16:ColorConvert16Ptr,
+                                       color_convert: ColorConvertPtr,
+                                       input_colorspace: ColorSpace,
+                                       output_colorspace: ColorSpace,
+                                       output: Arc<Mutex<Vec<u8>>>,
+                                       mcu_len: usize,
+                                       width: usize,
+                                       mut position: usize){
+
+    // carry out dequantization and inverse DCT
+    (0..input_colorspace.num_components()).for_each(|z|{
+        idct_func(&mut unprocessed[z],&component_data[z].quantization_table);
+    });
+    // carry out upsampling , the return vector overwrites the original vector
+    for i in 1..input_colorspace.num_components(){
+        unprocessed[i]=(component_data[i].up_sampler)(&unprocessed[i],unprocessed[0].len());
+    }
+    // color convert
+    match (input_colorspace, output_colorspace) {
+        // YCBCR to RGB(A) colorspace conversion.
+        (ColorSpace::YCbCr, _) => {
+            color_convert_ycbcr(&unprocessed, width, output_colorspace, color_convert_16, color_convert, output, &mut position,  mcu_len);
+
+        }
+        (ColorSpace::GRAYSCALE, ColorSpace::GRAYSCALE) => {
+            // for grayscale to grayscale we copy first MCU block(which should contain the Y Luminance channel) to the other
+            let x: Vec<u8> = unprocessed[0].iter().map(|c| *c as u8).collect();
+            output.lock().unwrap().copy_from_slice(x.as_slice());
+        }
+        // For the other components we do nothing(currently)
+        _ => {}
+    }
+}
 #[allow(clippy::similar_names,clippy::too_many_arguments,clippy::needless_pass_by_value)]
 fn color_convert_ycbcr(mcu_block: &[Vec<i16>; MAX_COMPONENTS],
                        width: usize,
