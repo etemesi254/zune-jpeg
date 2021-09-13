@@ -1,3 +1,4 @@
+//!Miscellaneous stuff
 #![allow(dead_code)]
 
 use std::fmt;
@@ -52,7 +53,7 @@ where
 }
 
 /// Align data to a 32 byte boundary
-#[repr(align(64))]
+#[repr(align(32))]
 #[derive(Clone)]
 pub struct Aligned32<T: ?Sized>(pub T);
 
@@ -159,6 +160,7 @@ impl SOFMarkers {
             Self::ProgressiveDctHuffman | Self::ProgressiveDctArithmetic
         )
     }
+    /// Create a marker from an integer
     pub fn from_int(int: u16) -> Option<SOFMarkers> {
         match int {
             START_OF_FRAME_BASE => Some(Self::BaselineDct),
