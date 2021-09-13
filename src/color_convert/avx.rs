@@ -1,9 +1,9 @@
 #![cfg(feature = "x86")]
 #![allow(
-    clippy::wildcard_imports,
-    clippy::cast_possible_truncation,
-    clippy::too_many_arguments,
-    clippy::inline_always,
+clippy::wildcard_imports,
+clippy::cast_possible_truncation,
+clippy::too_many_arguments,
+clippy::inline_always,
 clippy::doc_markdown
 )]
 
@@ -39,6 +39,25 @@ pub union YmmRegister {
 /// - `offset`: The position from 0 where we write these RGB values
 #[inline(always)]
 pub fn ycbcr_to_rgb_avx2(
+    y1: &[i16],
+    y2: &[i16],
+    cb1: &[i16],
+    cb2: &[i16],
+    cr1: &[i16],
+    cr2: &[i16],
+    out: &mut [u8],
+    offset: &mut usize,
+) {
+    // call this in another function to tell RUST to vectorize this
+    // storing
+    unsafe {
+        ycbcr_to_rgb_avx2_1(y1, y2, cb1, cb2, cr1, cr2, out, offset);
+    }
+}
+#[inline]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "avx")]
+unsafe fn ycbcr_to_rgb_avx2_1(
     y1: &[i16],
     y2: &[i16],
     cb1: &[i16],
@@ -137,6 +156,7 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     };
     return (r, g, b);
 }
+
 /// A baseline implementation of YCbCr to RGB conversion which does not carry out clamping
 ///
 /// This is used by the `ycbcr_to_rgba` and `ycbcr_to_rgbx` conversion routines
@@ -147,7 +167,7 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     cb2: &[i16],
     cr1: &[i16],
     cr2: &[i16],
-) -> (__m256i,__m256i,__m256i) {
+) -> (__m256i, __m256i, __m256i) {
     // Load values into a register
     //
     // dst[127:0] := MEM[loaddr+127:loaddr]
@@ -230,10 +250,10 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
     let d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
-                                                                  // transpose and interleave channels
+    // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-                                        // final transpose
+    // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
@@ -243,6 +263,7 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), h);
     *offset += 64;
 }
+
 /// YCbCr to RGBX conversion
 ///
 /// The X in RGBX stands for `anything`, the compiler will make X anything it sees fit, although
@@ -282,12 +303,12 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
 
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
-                                                   // Set alpha channel to random things, Mostly I see it using the b values
+    // Set alpha channel to random things, Mostly I see it using the b values
     let d = _mm256_packus_epi16(b, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
-                                                                    // transpose and interleave channels
+    // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-                                        // final transpose
+    // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
