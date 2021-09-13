@@ -282,7 +282,6 @@ impl BitStream {
                     s = huff_extend(r, s);
                     // Safety
                     // 1: K can never go beyond 85 (everything that increments k keeps that guarantee)
-                    // 2: K
                     unsafe { *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16 };
 
                     k += 1;
@@ -326,6 +325,7 @@ impl BitStream {
     /// Reset the stream if we have a restart marker
     ///
     /// Restart markers indicate drop those bits in the stream and zero out everything
+    #[cold]
     pub fn reset(&mut self) {
         self.bits_left = 0;
         self.marker = None;
