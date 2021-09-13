@@ -6,9 +6,10 @@
     unused_parens,
     clippy::wildcard_imports
 )]
-
+#[cfg(feature = "x86")]
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
+#[cfg(feature = "x86")]
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
@@ -240,30 +241,90 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         // We sign extend i16's to i32's and calculate them with extended precision and later reduce
         // them to i16's when we are done carrying out IDCT
 
+        let  rw0 = _mm_load_si128(vector[0..=7].as_ptr().cast());
+        let  rw1= _mm_load_si128(vector[8..=15].as_ptr().cast());
+        let  rw2 = _mm_load_si128(vector[16..=23].as_ptr().cast());
+
+        let rw3 = _mm_load_si128(vector[24..=31].as_ptr().cast());
+        let rw4 = _mm_load_si128(vector[32..=39].as_ptr().cast());
+        let rw5 = _mm_load_si128(vector[40..=47].as_ptr().cast());
+        let rw6 = _mm_load_si128(vector[48..=55].as_ptr().cast());
+
+        let rw7 = _mm_loadu_si128(vector[56..=63].as_ptr().cast());
+
+
+        {
+            // Forward DCT and quantization may cause all the AC terms to be zero, for such cases
+            // we can try to accelerate it
+
+            // Basically the poop is that whenever the array has 63 zeroes, its idct is
+            // (arr[0]>>3)or (arr[0]/8) propagated to all the elements so we first test to see if the array
+            // contains zero elements and
+
+            // Do another load for the first row, we don't want to check DC value, because we
+            // only care about AC terms
+            let tmp_load = _mm_loadu_si128(vector[1..8].as_ptr().cast());
+            // To test for zeroes, we use bitwise OR,operations, a| a => 0 if a is zero, so if all items
+            // are zero, the resulting value of X should be zero
+            let mut x = _mm_or_si128(tmp_load, tmp_load);
+            x = _mm_or_si128(rw1, x);
+            x = _mm_or_si128(rw2, x);
+            x = _mm_or_si128(rw3, x);
+            x = _mm_or_si128(rw4, x);
+            x = _mm_or_si128(rw5, x);
+            x = _mm_or_si128(rw6, x);
+            x = _mm_or_si128(rw7, x);
+            //compare with ourselves, if the value of v  is 1 all AC terms are zero for this block
+            let v = _mm_testz_si128(x, x);
+
+            if v == 1 {
+                // AC terms all zero, idct of the block is  is (coeff[0] *qt[0])/8 + bias(128) (and clamped to 255)
+                let x = _mm256_set1_epi16(
+                    (((vector[0] * (qt_table.0[0]) as i16) >> 3) + 128).max(0).min(255),
+                );
+                // store
+                _mm256_storeu_si256(vector[0..16].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[16..32].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[32..48].as_mut_ptr().cast(), x);
+                _mm256_storeu_si256(vector[48..64].as_mut_ptr().cast(), x);
+                // Go to the next coefficient block
+                continue;
+            }
+        }
         let mut row0 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[0..=7].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw0),
         };
         let mut row1 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[8..=15].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw1),
         };
         let mut row2 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[16..=23].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw2),
         };
         let mut row3 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[24..=31].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw3),
         };
         let mut row4 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[32..=39].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw4),
         };
         let mut row5 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[40..=47].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw5),
         };
         let mut row6 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_load_si128(vector[48..=55].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw6),
         };
         let mut row7 = YmmRegister {
-            mm256: _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[56..=63].as_ptr().cast())),
+            mm256: _mm256_cvtepi16_epi32(rw7),
         };
+        // multiply with qt tables
+        row0 *= qt_row0;
+        row1 *= qt_row1;
+        row2 *= qt_row2;
+        row3 *= qt_row3;
+        row4 *= qt_row4;
+        row5 *= qt_row5;
+        row6 *= qt_row6;
+        row7 *= qt_row7;
+
         macro_rules! dct_pass {
             ($SCALE_BITS:tt,$scale:tt) => {
 
@@ -320,56 +381,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
                 row7.mm256 = _mm256_srai_epi32((x0 - t3).mm256, $scale);
             };
         }
-        {
-            // Forward DCT and quantization may cause all the AC terms to be zero, for such cases
-            // we can try to accelerate it
 
-            // Basically the poop is that whenever the array has 63 zeroes, its idct is
-            // (arr[0]>>3)or (arr[0]/8) propagated to all the elements so we first test to see if the array
-            // contains zero elements and
-
-            // Do another load for the first row, we don't want to check DC value, because we
-            // only care about AC terms
-            let tmp_load = _mm256_cvtepi16_epi32(_mm_loadu_si128(vector[1..8].as_ptr().cast()));
-            // To test for zeroes, we use bitwise OR,operations, a| a => 0 if a is zero, so if all items
-            // are zero, the resulting value of X should be zero
-            let mut x = _mm256_or_si256(tmp_load, tmp_load);
-            x = _mm256_or_si256(row1.mm256, x);
-            x = _mm256_or_si256(row2.mm256, x);
-            x = _mm256_or_si256(row3.mm256, x);
-            x = _mm256_or_si256(row4.mm256, x);
-            x = _mm256_or_si256(row5.mm256, x);
-            x = _mm256_or_si256(row6.mm256, x);
-            x = _mm256_or_si256(row7.mm256, x);
-            //compare with ourselves, if the value of v  is 1 all AC terms are zero for this block
-            let v = _mm256_testz_si256(x, x);
-
-            if v == 1 {
-                // AC terms all zero, idct is DC term + bias (and clamped to 255)
-
-                let x = _mm256_set1_epi16(
-                    (((vector[0] * (qt_table.0[0]) as i16) >> 3) + 128)
-                        .max(0)
-                        .min(255),
-                );
-                // store
-                _mm256_storeu_si256(vector[0..16].as_mut_ptr().cast(), x);
-                _mm256_storeu_si256(vector[16..32].as_mut_ptr().cast(), x);
-                _mm256_storeu_si256(vector[32..48].as_mut_ptr().cast(), x);
-                _mm256_storeu_si256(vector[48..64].as_mut_ptr().cast(), x);
-                // Go to the next coefficient block
-                continue;
-            }
-        }
-        // multiply with qt tables
-        row0 *= qt_row0;
-        row1 *= qt_row1;
-        row2 *= qt_row2;
-        row3 *= qt_row3;
-        row4 *= qt_row4;
-        row5 *= qt_row5;
-        row6 *= qt_row6;
-        row7 *= qt_row7;
         transpose(
             &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
         );
@@ -397,7 +409,6 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
             };
         }
         // Pack and write the values back to the array
-        // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=0fca534094f6cb20c43eca8d33ef3891
         permute_store!((row0.mm256), (row1.mm256), 0, vector);
         permute_store!((row2.mm256), (row3.mm256), 16, vector);
         permute_store!((row4.mm256), (row5.mm256), 32, vector);
