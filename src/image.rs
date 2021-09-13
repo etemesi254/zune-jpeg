@@ -1,24 +1,26 @@
 #![allow(clippy::doc_markdown)]
+
 use std::cmp::max;
 use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
+
+#[cfg(feature = "x86")]
+use crate::color_convert::{ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba,
+                           ycbcr_to_rgba_sse_16, ycbcr_to_rgbx};
+use crate::color_convert::{ycbcr_to_rgb, ycbcr_to_rgb_16};
 use crate::components::Components;
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
-
 #[cfg(feature = "x86")]
-use crate::color_convert::{ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse, ycbcr_to_rgba, ycbcr_to_rgbx,
-                           ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
-#[cfg(feature = "x86")]
-use crate::idct::dequantize_and_idct_avx2; // avx optimized color IDCT
-
-use crate::color_convert::{ycbcr_to_rgb, ycbcr_to_rgb_16};
+use crate::idct::dequantize_and_idct_avx2;
 use crate::idct::dequantize_and_idct_int;
-
 use crate::marker::Marker;
 use crate::misc::{Aligned32, ColorSpace, read_u16_be, read_u8, SOFMarkers};
+use crate::upsampler::{upsample_horizontal, upsample_horizontal_sse, upsample_horizontal_vertical, upsample_vertical};
+
+// avx optimized color IDCT
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 3;
@@ -172,8 +174,8 @@ impl Decoder {
     ///  - `UnsupportedImage`  - The image encoding scheme is not yet supported, for now we only support
     /// Baseline DCT which is suitable for most images out there
     pub fn decode_file<P>(&mut self, file: P) -> Result<Vec<u8>, DecodeErrors>
-    where
-        P: AsRef<Path> + Clone,
+        where
+            P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file).expect("Could not open file"));
@@ -205,11 +207,10 @@ impl Decoder {
         // we check for fails to that call by comparing what we have to the default, if it's default we
         // assume that the caller failed to uphold the guarantees.
         // We can be sure that an image cannot be the default since its a hard panic in-case width or height are set to zero.
-        if self.info == ImageInfo::default(){
+        if self.info == ImageInfo::default() {
             return None;
         }
         return Some(self.info.clone());
-
     }
     /// Decode Decoder headers
     ///
@@ -225,8 +226,8 @@ impl Decoder {
     ///  - SOF(n) -> Decoder images which are not baseline
     ///  - DAC -> Images using Arithmetic tables
     fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
-    where
-        R: Read + BufRead,
+        where
+            R: Read + BufRead,
     {
         let mut buf = buf;
 
@@ -300,11 +301,11 @@ impl Decoder {
                         }
                         // Quantization tables
                         Marker::DQT => {
-                            parse_dqt(self,&mut buf)?;
+                            parse_dqt(self, &mut buf)?;
                         }
                         // Huffman tables
                         Marker::DHT => {
-                            parse_huffman(self,&mut buf)?;
+                            parse_huffman(self, &mut buf)?;
                         }
                         // Start of Scan Data
                         Marker::SOS => {
@@ -337,68 +338,73 @@ impl Decoder {
     /// Get the output colorspace the image pixels will be decoded into
     #[must_use]
     pub fn get_output_colorspace(&self) -> ColorSpace {
-        return self.output_colorspace
+        return self.output_colorspace;
     }
     fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors> {
         let mut buf = buf;
         self.decode_headers(&mut buf)?;
-        Ok(self.decode_mcu_ycbcr_multi_threaded(&mut buf))
+        // if the image is interleaved
+        if self.interleaved {
+            self.decode_mcu_ycbcr_interleaved(&mut buf)
+        } else {
+            Ok(self.decode_mcu_ycbcr_non_interleaved(&mut buf))
+        }
     }
     /// Initialize the most appropriate functions for
     ///
     fn init(&mut self) {
         // Set color convert function
         #[cfg(feature = "x86")]
-        {
-            debug!("Running on x86 ARCH using accelerated decoding routines");
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             {
-                if is_x86_feature_detected!("avx2") {
-                    debug!("Detected AVX code support");
+                debug!("Running on x86 ARCH using accelerated decoding routines");
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                    {
+                        if is_x86_feature_detected!("avx2") {
+                            debug!("Detected AVX code support");
 
-                    debug!("Using AVX optimised IDCT");
-                    self.idct_func = dequantize_and_idct_avx2;
-                    debug!("Using AVX optimised color conversion functions");
-                    match self.output_colorspace {
-                        ColorSpace::RGB => {
-                            self.color_convert_16 = ycbcr_to_rgb_avx2;
-                        }
-                        ColorSpace::RGBA => self.color_convert_16 = ycbcr_to_rgba,
-                        ColorSpace::RGBX => self.color_convert_16 = ycbcr_to_rgbx,
-                        _ => {}
-                    }
-                }
-                else if is_x86_feature_detected!("sse2"){
-                    debug!("No support for avx2 switching to sse");
-                    debug!("Using sse color convert functions");
-                        match self.output_colorspace {
-                            ColorSpace::RGB =>{
-                                self.color_convert_16 = ycbcr_to_rgb_sse_16;
-                                self.color_convert = ycbcr_to_rgb_sse;
-                        }
-                            ColorSpace::RGBA|ColorSpace::RGBX=>{
-                                // Ideally I make RGBA  and RGBX the same because 255 for an alpha channel is still random...
-                                self.color_convert_16 = ycbcr_to_rgba_sse_16;
+                            debug!("Using AVX optimised IDCT");
+                            self.idct_func = dequantize_and_idct_avx2;
+                            debug!("Using AVX optimised color conversion functions");
+                            match self.output_colorspace {
+                                ColorSpace::RGB => {
+                                    self.color_convert_16 = ycbcr_to_rgb_avx2;
+                                }
+                                ColorSpace::RGBA => self.color_convert_16 = ycbcr_to_rgba,
+                                ColorSpace::RGBX => self.color_convert_16 = ycbcr_to_rgbx,
+                                _ => {}
                             }
+                        } else if is_x86_feature_detected!("sse2") {
+                            debug!("No support for avx2 switching to sse");
+                            debug!("Using sse color convert functions");
+                            match self.output_colorspace {
+                                ColorSpace::RGB => {
+                                    self.color_convert_16 = ycbcr_to_rgb_sse_16;
+                                    self.color_convert = ycbcr_to_rgb_sse;
+                                }
+                                ColorSpace::RGBA | ColorSpace::RGBX => {
+                                    // Ideally I make RGBA  and RGBX the same because 255 for an alpha channel is still random...
+                                    self.color_convert_16 = ycbcr_to_rgba_sse_16;
+                                }
 
-                            _=>{}
+                                _ => {}
+                            }
+                        }
                     }
-                }
-
+                #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+                    {
+                        // use the slower version which doesn't depend on  platform specific
+                        // intrinsics
+                        debug!("Using Table lookup color conversion function");
+                        self.color_convert_16 = ycbcr_to_rgb_16;
+                        self.color_convert_func = ycbcr_to_rgb;
+                    }
             }
-            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-            {
-                // use the slower version which doesn't depend on  platform specific
-                // intrinsics
-                debug!("Using Table lookup color conversion function");
-                self.color_convert_func = (ycbcr_to_rgb);
-            }
-        }
         #[cfg(not(feature = "x86"))]
-        {
-            debug!("Using safer(and slower) color conversion functions");
-            self.color_convert = (ycbcr_to_rgb);
-        }
+            {
+                debug!("Using safer(and slower) color conversion functions");
+                self.color_convert = ycbcr_to_rgb;
+                self.color_convert_16 = ycbcr_to_rgb_16;
+            }
     }
     /// Set the output colorspace
     ///
@@ -417,20 +423,58 @@ impl Decoder {
         // change color convert function
 
         #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "x86"))]
-        {
-            // Check for avx2 feature set on x86 cpu's
-            if is_x86_feature_detected!("avx2") {
-                // set appropriate color space
-                match self.output_colorspace {
-                    ColorSpace::RGB => {
-                        self.color_convert_16 = ycbcr_to_rgb_avx2;
+            {
+                // Check for avx2 feature set on x86 cpu's
+                if is_x86_feature_detected!("avx2") {
+                    // set appropriate color space
+                    match self.output_colorspace {
+                        ColorSpace::RGB => {
+                            self.color_convert_16 = ycbcr_to_rgb_avx2;
+                        }
+                        ColorSpace::RGBA => self.color_convert_16 = ycbcr_to_rgba,
+                        ColorSpace::RGBX => self.color_convert_16 = ycbcr_to_rgbx,
+                        _ => {}
                     }
-                    ColorSpace::RGBA => self.color_convert_16 = ycbcr_to_rgba,
-                    ColorSpace::RGBX => self.color_convert_16 = ycbcr_to_rgbx,
-                    _ => {}
                 }
-           }
+            }
+    }
+    /// Set upsampling routines in case an image is down sampled
+    pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors> {
+        // no sampling, return early
+        // check if horizontal max ==1
+        if self.h_max == self.v_max && self.h_max == 1 {
+            return Ok(());
         }
+        // match for other ratios
+        match (self.h_max, self.v_max) {
+            (2, 1) => {
+                // horizontal sub-sampling
+                debug!("Horizontal sub-sampling (2,1)");
+                // Change all sub sampling to be horizontal. This also changes the Y component which
+                // should **NOT** be up-sampled, so it's the responsibility of the caller to ensure that
+                if is_x86_feature_detected!("sse2") {
+                    self.components.iter_mut().for_each(|x| x.up_sampler = upsample_horizontal_sse);
+                } else {
+                    self.components.iter_mut().for_each(|x| x.up_sampler = upsample_horizontal);
+                }
+            }
+            (1, 2) => {
+                // Vertical sub-sampling
+                debug!("Vertical sub-sampling (1,2)");
+                self.components.iter_mut().for_each(|x| x.up_sampler = upsample_vertical);
+            }
+            (2, 2) => {
+                // vertical and horizontal sub sampling
+                debug!("Vertical and horizontal sub-sampling(2,2)");
+                self.components.iter_mut().for_each(|x| x.up_sampler = upsample_horizontal_vertical);
+            }
+            (_, _) => {
+                // no op. Do nothing
+                // jokes , panic...
+                return Err(DecodeErrors::Format("Unknown down-sampling method, cannot continue".to_string()));
+            }
+        }
+        return OK(());
     }
     #[must_use]
     /// Get the width of the image as a u16
@@ -450,7 +494,7 @@ impl Decoder {
 }
 
 /// A struct representing Image Information
-#[derive(Default, Clone,Eq, PartialEq)]
+#[derive(Default, Clone, Eq, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ImageInfo {
     /// Width of the image
@@ -473,19 +517,19 @@ impl ImageInfo {
     /// Set width of the image
     ///
     /// Found in the start of frame
-    pub (crate) fn set_width(&mut self, width: u16) {
+    pub(crate) fn set_width(&mut self, width: u16) {
         self.width = width;
     }
     /// Set height of the image
     ///
     /// Found in the start of frame
-    pub (crate) fn set_height(&mut self, height: u16) {
+    pub(crate) fn set_height(&mut self, height: u16) {
         self.height = height;
     }
     /// Set the image density
     ///
     /// Found in the start of frame
-    pub (crate) fn set_density(&mut self, density: u8) {
+    pub(crate) fn set_density(&mut self, density: u8) {
         self.pixel_density = density;
     }
     /// Set image Start of frame marker
@@ -497,13 +541,13 @@ impl ImageInfo {
     /// Set image x-density(dots per pixel)
     ///
     /// Found in the APP(0) marker
-    pub (crate) fn set_x(&mut self, sample: u16) {
+    pub(crate) fn set_x(&mut self, sample: u16) {
         self.x_density = sample;
     }
     /// Set image y-density
     ///
     /// Found in the APP(0) marker
-    pub (crate) fn set_y(&mut self, sample: u16) {
+    pub(crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
     }
 }
