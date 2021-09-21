@@ -1,8 +1,8 @@
 #![allow(
-clippy::if_not_else,
-clippy::similar_names,
-clippy::inline_always,
-clippy::doc_markdown
+    clippy::if_not_else,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::doc_markdown
 )]
 //! # Performance optimizations
 //! - One bottleneck is `refill`/`refill_fast`, the fact that we have
@@ -17,7 +17,7 @@ clippy::doc_markdown
 
 use std::io::Cursor;
 
-use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
+use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -110,7 +110,7 @@ impl BitStream {
                         if next_byte != 0x00 {
                             // Undo the byte append and return
                             $buffer &= !0xf;
-                          //  $lsb_byte <<= 8;
+                            //  $lsb_byte <<= 8;
                             $bits_left -= 8;
                             self.marker = Some(Marker::from_u8(next_byte as u8).unwrap());
                             // if we get a marker, we return immediately, and hope
@@ -124,29 +124,18 @@ impl BitStream {
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
         if self.bits_left <= 32 {
-            // This server two reasons,
+            // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse
             let mut byte;
             // 4 refills, if all succeed the stream should contain enough bits to decode a value
-            refill!(self.buffer,byte, self.bits_left);
-            refill!(self.buffer,byte, self.bits_left);
-            refill!(self.buffer,byte, self.bits_left);
-            refill!(self.buffer,byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
+            refill!(self.buffer, byte, self.bits_left);
 
-            // Construct an lsb buffer cheaply by shifting the msb buffer up to 64
-            // This epiphany came to me in my sleep
-            //
-            // The reason it works is because an MSB buffer can be seen as an lsb buffer with the zeros
-            // preceding,
-            // Take for example
-            // a=255
-            // for MSB, this looks like a=000000000001111111
-            // for LSB it is            a=111111100000000000
-            // so to create an LSB bit-buffer, shift the MSB by number of bits
-            //
-            // LSB buffer allows some things like peek_bits to be const folded into a `shrx ` instruction
-            // because it no longer depends on bits left leading to a 4% improvement in a really optimized decoder.
+            // Construct an MSB buffer whose top bits are the bitstream we are currently
+            // holding.
             self.lsb_buffer = self.buffer << (64 - self.bits_left);
         }
         return true;
@@ -162,9 +151,9 @@ impl BitStream {
     /// # Expectations
     /// The `block` should be initialized to zero
     #[allow(
-    clippy::many_single_char_names,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
     )]
     #[inline(always)]
     pub fn decode_fast(
@@ -175,15 +164,12 @@ impl BitStream {
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
     ) -> bool {
-        // Same macro as HUFF_DECODE_FAST in jdhuff.h 220(as time of writing)
-        // Sadly this is slow, about 2x slower than that implementation
-        // even though its a word to word implementation.
         macro_rules! huff_decode_fast {
             ($s:expr,$n_bits:expr,$table:expr) => {
                 // refill buffer, the check if its less than 16 will be done inside the function
                 // but since we use inline(always) we have a branch here which tells us if we
                 // refill
-                if !self.refill(reader){
+                if !self.refill(reader) {
                     return false;
                 };
                 $s = self.peek_bits::<HUFF_LOOKAHEAD>();
@@ -247,9 +233,9 @@ impl BitStream {
             if v != 0 {
                 //  FAST AC path
                 k += ((v >> 4) & 15) as usize; // run
-                self.drop_bits((v & 15) as u8);
-                // Safety:
-                //  UN_ZIGZAG cannot go past 63 and k can never go past 85
+                self.drop_bits((v & 15) as u8); // combined length
+                                                // Safety:
+                                                //  UN_ZIGZAG cannot go past 63 and k can never go past 85
                 unsafe {
                     *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k)) = v >> 8;
                 }
@@ -282,7 +268,9 @@ impl BitStream {
                     s = huff_extend(r, s);
                     // Safety
                     // 1: K can never go beyond 85 (everything that increments k keeps that guarantee)
-                    unsafe { *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16 };
+                    unsafe {
+                        *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16;
+                    };
 
                     k += 1;
                 } else {
@@ -301,7 +289,7 @@ impl BitStream {
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32 {
         // for the LSB buffer peek bits doesn't require an and to remove/zero out top bits
-        (self.lsb_buffer >> (64 - LOOKAHEAD))  as i32
+        (self.lsb_buffer >> (64 - LOOKAHEAD)) as i32
     }
     /// Discard the next `N` bits without checking
     #[inline]
