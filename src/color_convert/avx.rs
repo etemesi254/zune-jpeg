@@ -1,10 +1,10 @@
 #![cfg(feature = "x86")]
 #![allow(
-clippy::wildcard_imports,
-clippy::cast_possible_truncation,
-clippy::too_many_arguments,
-clippy::inline_always,
-clippy::doc_markdown
+    clippy::wildcard_imports,
+    clippy::cast_possible_truncation,
+    clippy::too_many_arguments,
+    clippy::inline_always,
+    clippy::doc_markdown
 )]
 
 #[cfg(target_arch = "x86")]
@@ -67,25 +67,29 @@ unsafe fn ycbcr_to_rgb_avx2_1(
     out: &mut [u8],
     offset: &mut usize,
 ) {
-
-        let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
-        // This is badly vectorised in AVX2,
-        // With it extracting values from ymm to xmm registers
-        // Hence it might be a tad slower than sse(9 more instructions)
-        for i in 0..16 {
-            // Reason
-            //  -   Bounds checking will prevent autovectorization of this
-            // Safety
-            // -    Array is pre initialized and the way this is called ensures
-            // it will never go out of bounds
-            *out.get_unchecked_mut(*offset) = r.array[i] as u8;
-            *out.get_unchecked_mut(*offset + 1) = g.array[i] as u8;
-            *out.get_unchecked_mut(*offset + 2) = b.array[i] as u8;
-            *offset += 3;
-        }
+    let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
+    // This is badly vectorised in AVX2,
+    // With it extracting values from ymm to xmm registers
+    // Hence it might be a tad slower than sse(9 more instructions)
+    for i in 0..16 {
+        // Reason
+        //  -   Bounds checking will prevent autovectorization of this
+        // Safety
+        // -    Array is pre initialized and the way this is called ensures
+        // it will never go out of bounds
+        *out.get_unchecked_mut(*offset) = r.array[i] as u8;
+        *out.get_unchecked_mut(*offset + 1) = g.array[i] as u8;
+        *out.get_unchecked_mut(*offset + 2) = b.array[i] as u8;
+        *offset += 3;
+    }
 }
 
 /// Baseline implementation of YCBCR to RGB for avx,
+///
+/// It uses integer operations as opposed to floats, the approximation is difficult for the
+///  eye to see, but this means that it may produce different values with libjpeg_turbo.
+///  if accuracy is of utmost importance, use that.
+///
 /// this function should be called for most implementations, including
 /// - ycbcr->rgb
 /// - ycbcr->rgba
@@ -155,10 +159,11 @@ pub unsafe fn ycbcr_to_rgb_baseline(
     };
     return (r, g, b);
 }
-
+#[inline]
+#[target_feature(enable = "avx2")]
 /// A baseline implementation of YCbCr to RGB conversion which does not carry out clamping
 ///
-/// This is used by the `ycbcr_to_rgba` and `ycbcr_to_rgbx` conversion routines
+/// This is used by the `ycbcr_to_rgba_avx` and `ycbcr_to_rgbx` conversion routines
 pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     y1: &[i16],
     y2: &[i16],
@@ -216,7 +221,7 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 }
 
 #[inline(always)]
-pub fn ycbcr_to_rgba(
+pub fn ycbcr_to_rgba_avx(
     y1: &[i16],
     y2: &[i16],
     cb1: &[i16],
@@ -272,7 +277,7 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
 /// a 4 way interleave instead of a three way interleave, the code is simple
 /// to vectorize hence this is faster than YcbCr -> RGB conversion
 #[inline(always)]
-pub fn ycbcr_to_rgbx(
+pub fn ycbcr_to_rgbx_avx2(
     y1: &[i16],
     y2: &[i16],
     cb1: &[i16],
