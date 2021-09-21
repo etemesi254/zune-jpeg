@@ -1,4 +1,4 @@
-#![allow(clippy::similar_names,clippy::module_name_repetitions)]
+#![allow(clippy::similar_names, clippy::module_name_repetitions)]
 use std::convert::TryFrom;
 
 use crate::errors::DecodeErrors;
@@ -51,7 +51,11 @@ impl HuffmanTable {
     /// Compute derived values for a Huffman table
     ///
     /// This routine performs some validation checks on the table
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     fn make_derived_table(&mut self, is_dc: bool) -> Result<(), DecodeErrors> {
         // build a list of code size
         let mut size = [0; 257];

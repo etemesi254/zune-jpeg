@@ -17,10 +17,8 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 4]> {
             .from_mem(buf)
             .unwrap();
 
-
         // rgba() enables conversion
         let mut image = d.rgba().unwrap();
-
 
         let pixels: Vec<[u8; 4]> = image.read_scanlines().unwrap();
         assert!(image.finish_decompress());
@@ -29,7 +27,7 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 4]> {
     .unwrap();
     p
 }
-fn decode_jpeg_image_rs(buf:&[u8])->Vec<u8>{
+fn decode_jpeg_image_rs(buf: &[u8]) -> Vec<u8> {
     let mut decoder = jpeg_decoder::Decoder::new(buf);
     decoder.decode().unwrap()
 }
@@ -45,8 +43,22 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
     c.bench_function("Baseline JPEG Decoding  imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
+        b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
     });
+
+    let x = read("/home/caleb/IMG_6128.JPG").unwrap();
+
+    c.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
+        b.iter(|| black_box(decode_jpeg(x.as_slice())))
+    });
+
+    c.bench_function("Horizontal sampling JPEG Decoding  mozjpeg", |b| {
+        b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
+    });
+    c.bench_function(
+        "Horizontal sampling JPEG Decoding  imagers/jpeg-decoder",
+        |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
+    );
 }
 
 criterion_group!(name=benches;

@@ -1,4 +1,8 @@
-#![allow(clippy::module_name_repetitions,clippy::doc_markdown,clippy::wildcard_imports)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::doc_markdown,
+    clippy::wildcard_imports
+)]
 #![cfg(feature = "x86")]
 
 #[cfg(target_arch = "x86")]
@@ -101,14 +105,13 @@ unsafe fn ycbcr_to_rgb_sse41(
         *pos += 3;
     }
 }
-unsafe fn ycbcr_to_rgb_ax_sse41<const X:i16>(
+unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
     y: &[i16],
     cb: &[i16],
     cr: &[i16],
     out: &mut [u8],
     offset: &mut usize,
-)
-{
+) {
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -160,21 +163,18 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X:i16>(
 
     // We dont need to clamp for SSE, the packus instruction will do that for us
 
-    let e = _mm_packus_epi16(r,g);
-    let f = _mm_packus_epi16(b,_mm_set1_epi16(X));
+    let e = _mm_packus_epi16(r, g);
+    let f = _mm_packus_epi16(b, _mm_set1_epi16(X));
 
-    let g = _mm_unpacklo_epi8(e,f);
-    let h = _mm_unpackhi_epi8(e,f);
+    let g = _mm_unpacklo_epi8(e, f);
+    let h = _mm_unpackhi_epi8(e, f);
 
+    let i = _mm_unpacklo_epi8(g, h);
+    let j = _mm_unpackhi_epi8(g, h);
 
-    let i = _mm_unpacklo_epi8(g,h);
-    let j = _mm_unpackhi_epi8(g,h);
-
-
-    _mm_storeu_si128(out.as_mut_ptr().add(*offset).cast(),i);
-    _mm_storeu_si128(out.as_mut_ptr().add(*offset  +16).cast(),j);
-    *offset+= 32;
-
+    _mm_storeu_si128(out.as_mut_ptr().add(*offset).cast(), i);
+    _mm_storeu_si128(out.as_mut_ptr().add(*offset + 16).cast(), j);
+    *offset += 32;
 }
 
 /// Clamp using SSE
@@ -204,22 +204,22 @@ pub unsafe fn clamp_sse(a: __m128i) -> __m128i {
 #[inline]
 #[target_feature(enable = "sse2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn ycbcr_to_rgb_16(y1: &[i16],
-                   y2: &[i16],
-                   cb1: &[i16],
-                   cb2: &[i16],
-                   cr1: &[i16],
-                   cr2: &[i16],
-                   out: &mut [u8],
-                   offset: &mut usize){
+unsafe fn ycbcr_to_rgb_16(
+    y1: &[i16],
+    y2: &[i16],
+    cb1: &[i16],
+    cb2: &[i16],
+    cr1: &[i16],
+    cr2: &[i16],
+    out: &mut [u8],
+    offset: &mut usize,
+) {
     {
         //  do the first batch
-        ycbcr_to_rgb_sse41(y1,cb1,cr1,out,offset);
+        ycbcr_to_rgb_sse41(y1, cb1, cr1, out, offset);
         // Do the second batch
-        ycbcr_to_rgb_sse41(y2,cb2,cr2,out,offset);
-
+        ycbcr_to_rgb_sse41(y2, cb2, cr2, out, offset);
     }
-
 }
 pub fn ycbcr_to_rgb_sse_16(
     y1: &[i16],
@@ -229,9 +229,10 @@ pub fn ycbcr_to_rgb_sse_16(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: &mut usize) {
-    unsafe{
-        ycbcr_to_rgb_16(y1,y2,cb1,cb2,cr1,cr2,out,offset);
+    offset: &mut usize,
+) {
+    unsafe {
+        ycbcr_to_rgb_16(y1, y2, cb1, cb2, cr1, cr2, out, offset);
     }
 }
 
@@ -243,13 +244,19 @@ pub fn ycbcr_to_rgba_sse_16(
     cr1: &[i16],
     cr2: &[i16],
     out: &mut [u8],
-    offset: &mut usize
-){
-    unsafe{
+    offset: &mut usize,
+) {
+    unsafe {
         // not so random he he
         // First batch
-        ycbcr_to_rgb_ax_sse41::<255>(y1,cb1,cr1,out,offset);
+        ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
         // second batch
-        ycbcr_to_rgb_ax_sse41::<255>(y2,cb2,cr2,out,offset);
+        ycbcr_to_rgb_ax_sse41::<255>(y2, cb2, cr2, out, offset);
+    }
+}
+
+pub fn ycbcr_to_rgba_sse(y1: &[i16], cb1: &[i16], cr1: &[i16], out: &mut [u8], offset: &mut usize) {
+    unsafe {
+        ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
     }
 }

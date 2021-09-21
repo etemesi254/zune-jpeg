@@ -10,7 +10,6 @@ use std::arch::x86_64::*;
 use std::mem::*;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
-
 #[derive(Clone, Copy)]
 pub struct YmmRegister {
     pub(crate) mm256: __m256i,
