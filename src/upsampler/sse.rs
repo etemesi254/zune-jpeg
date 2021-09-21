@@ -1,14 +1,15 @@
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use std::arch::x86_64::{
+    _mm_add_epi16, _mm_insert_epi16, _mm_set1_epi16, _mm_slli_epi16, _mm_srai_epi16,
+    _mm_store_si128, _mm_undefined_si128,
+};
 
 use crate::unsafe_utils::align_zero_alloc;
 
-pub fn upsample_horizontal_sse(input: &Vec<i16>, output_len: usize) -> Vec<i16> {
-    unsafe {
-        upsample_horizontal_sse_u(input, output_len)
-    }
+pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16> {
+    unsafe { upsample_horizontal_sse_u(input, output_len) }
 }
 
 /// Upsample using SSE to improve speed
@@ -17,8 +18,9 @@ pub fn upsample_horizontal_sse(input: &Vec<i16>, output_len: usize) -> Vec<i16> 
 #[target_feature(enable = "sse2")]
 //Some things are weird...
 #[target_feature(enable = "sse4.1")]
-pub unsafe fn upsample_horizontal_sse_u(input: &Vec<i16>, output_len: usize) -> Vec<i16> {
+pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec<i16> {
     let mut out = align_zero_alloc::<i16, 32>(output_len);
+    //println!("{}",output_len);
     // set first 8 pixels linearly
     // Assert that out has more than 8 elements and input has more than 4
     // Do this before otherwise Rust will bounds check all of these items like some paranoid
@@ -69,30 +71,29 @@ pub unsafe fn upsample_horizontal_sse_u(input: &Vec<i16>, output_len: usize) -> 
         let mut nn = _mm_undefined_si128();
         let mut yn = _mm_undefined_si128();
 
-        nn = _mm_insert_epi16::<7>(nn, i4_4 as i32);
-        yn = _mm_insert_epi16::<7>(yn, i4_3 as i32);
+        nn = _mm_insert_epi16::<7>(nn, i32::from(i4_4));
+        yn = _mm_insert_epi16::<7>(yn, i32::from(i4_3));
 
-        nn = _mm_insert_epi16::<6>(nn, i4_2 as i32);
-        yn = _mm_insert_epi16::<6>(yn, i4_3 as i32);
+        nn = _mm_insert_epi16::<6>(nn, i32::from(i4_2));
+        yn = _mm_insert_epi16::<6>(yn, i32::from(i4_3));
 
-        nn = _mm_insert_epi16::<5>(nn, i4_3 as i32);
-        yn = _mm_insert_epi16::<5>(yn, i4_2 as i32);
+        nn = _mm_insert_epi16::<5>(nn, i32::from(i4_3));
+        yn = _mm_insert_epi16::<5>(yn, i32::from(i4_2));
 
-        nn = _mm_insert_epi16::<4>(nn, i4_1 as i32);
-        yn = _mm_insert_epi16::<4>(yn, i4_2 as i32);
+        nn = _mm_insert_epi16::<4>(nn, i32::from(i4_1));
+        yn = _mm_insert_epi16::<4>(yn, i32::from(i4_2));
 
-        nn = _mm_insert_epi16::<3>(nn, i4_2 as i32);
-        yn = _mm_insert_epi16::<3>(yn, i4_1 as i32);
+        nn = _mm_insert_epi16::<3>(nn, i32::from(i4_2));
+        yn = _mm_insert_epi16::<3>(yn, i32::from(i4_1));
 
-        nn = _mm_insert_epi16::<2>(nn, i4 as i32);
-        yn = _mm_insert_epi16::<2>(yn, i4_1 as i32);
+        nn = _mm_insert_epi16::<2>(nn, i32::from(i4));
+        yn = _mm_insert_epi16::<2>(yn, i32::from(i4_1));
 
-        nn = _mm_insert_epi16::<1>(nn, i4_1 as i32);
-        yn = _mm_insert_epi16::<1>(yn, i4 as i32);
+        nn = _mm_insert_epi16::<1>(nn, i32::from(i4_1));
+        yn = _mm_insert_epi16::<1>(yn, i32::from(i4));
 
-        nn = _mm_insert_epi16::<0>(nn, i4_0 as i32);
-        yn = _mm_insert_epi16::<0>(yn, i4 as i32);
-
+        nn = _mm_insert_epi16::<0>(nn, i32::from(i4_0));
+        yn = _mm_insert_epi16::<0>(yn, i32::from(i4));
 
         // a multiplication by 3 can be seen as a shift by 1 and add by itself, let's use that
         // to reduce latency
@@ -121,16 +122,18 @@ pub unsafe fn upsample_horizontal_sse_u(input: &Vec<i16>, output_len: usize) -> 
     out[ol + 5] = (input[il + 2] * 3 + input[il + 1] + 2) >> 2;
     out[ol + 6] = (input[il + 2] * 3 + input[il + 3] + 2) >> 2;
     out[ol + 7] = input[il + 3];
-
     return out;
+
 }
 
 #[test]
 /// Ensure SSE and horizontal are identical bitwise for all inputs
 fn upsample_sse_plain() {
     use crate::upsampler::upsample_horizontal;
-    let v: Vec<i16> = (0..32).collect();
-    assert_eq!(upsample_horizontal_sse(&v, v.len() * 2),
-               upsample_horizontal(&v, v.len() * 2), "Algorithms do not match");
+    let v: Vec<i16> = (0..128).collect();
+    assert_eq!(
+        upsample_horizontal_sse(&v, v.len() * 2),
+        upsample_horizontal(&v, v.len() * 2),
+        "Algorithms do not match"
+    );
 }
-

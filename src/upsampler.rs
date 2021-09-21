@@ -11,14 +11,7 @@ use crate::unsafe_utils::align_zero_alloc;
 mod sse;
 
 /// Carry out vertical   upsampling
-pub fn upsample_vertical(_input: &Vec<i16>, output_len: usize) -> Vec<i16> {
-
-
-
-    let mut _out = unsafe {
-        align_zero_alloc::<i16, 32>(output_len)
-    };
-    // i'll figure you out..
+pub fn upsample_vertical(_input: &[i16], _output_len: usize) -> Vec<i16> {
 
 
     return Vec::new();
@@ -28,11 +21,10 @@ pub fn upsample_vertical(_input: &Vec<i16>, output_len: usize) -> Vec<i16> {
 ///
 /// The up-sampling algorithm used is libjpeg-turbo `fancy_upsampling` which is a linear
 /// interpolation or triangle filter, see module docs for explanation
-pub fn upsample_horizontal(input: &Vec<i16>, output_len: usize) -> Vec<i16> {
+pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16> {
     // okay horizontal sub-sampling with  bi-linear interpolation
-    let mut out = unsafe {
-        align_zero_alloc::<i16, 32>(output_len)
-    };
+    let mut out = unsafe { align_zero_alloc::<i16, 32>(output_len) };
+
     out[0] = input[0];
     out[1] = (input[0] * 3 + input[1] + 2) >> 2;
     let input_len = input.len();
@@ -48,11 +40,11 @@ pub fn upsample_horizontal(input: &Vec<i16>, output_len: usize) -> Vec<i16> {
     return out;
 }
 
-pub fn upsample_horizontal_vertical(_input: &Vec<i16>, _output_len: usize) -> Vec<i16> {
+pub fn upsample_horizontal_vertical(_input: &[i16], _output_len: usize) -> Vec<i16> {
     return Vec::new();
 }
 
 /// Upsample nothing
-pub fn upsample_no_op(_: &Vec<i16>, _: usize) -> Vec<i16> {
+pub fn upsample_no_op(_: &[i16], _: usize) -> Vec<i16> {
     return Vec::new();
 }
