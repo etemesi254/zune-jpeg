@@ -261,11 +261,23 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
+    // undo packus shuffling...
+    let i =  _mm256_permute2x128_si256::<{shuffle(3,2,1,0)}>(g, h);
+
+    let j =  _mm256_permute2x128_si256::<{shuffle(1,2,3,0)}>(g, h);
+
+    let k =  _mm256_permute2x128_si256::<{shuffle(3,2,0,1)}>(g, h);
+
+    let l =  _mm256_permute2x128_si256::<{shuffle(0,3,2,1)}>(g, h);
+
+    let m = _mm256_blend_epi32::<0b1111_0000>(i,j);
+
+    let n = _mm256_blend_epi32::<0b1111_0000>(k,l);
 
     // Store
     // Use streaming instructions to prevent polluting the cache
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), g);
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), h);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), m);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), n);
     *offset += 64;
 }
 
@@ -317,15 +329,26 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
-    // Store
+    // undo packus shuffling...
+    // This only applies to AVX because it's packus is a bit weird
+    // and PLEASE DO NOT CHANGE SHUFFLE CONSTANTS.
+    // COMING UP WITH THEM TOOK SOO LONG...
+    let i =  _mm256_permute2x128_si256::<{shuffle(3,2,1,0)}>(g, h);
 
-    // Safety for offset:
-    //  -   in-bounds:The caller( which is me) ** ENSURES* offset never goes past the end of the array
-    //      because this function will be called on a 1: Pre-initialized array(see decode_mcu)
-    //      2: The function will be expected to write 24 values to the MCU's so pos+16 will not refer
-    //          to the end of the array
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), g);
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), h);
+    let j =  _mm256_permute2x128_si256::<{shuffle(1,2,3,0)}>(g, h);
+
+    let k =  _mm256_permute2x128_si256::<{shuffle(3,2,0,1)}>(g, h);
+
+    let l =  _mm256_permute2x128_si256::<{shuffle(0,3,2,1)}>(g, h);
+
+    let m = _mm256_blend_epi32::<0b1111_0000>(i,j);
+
+    let n = _mm256_blend_epi32::<0b1111_0000>(k,l);
+
+    // Store
+    // Use streaming instructions to prevent polluting the cache
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), m);
+    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), n);
     *offset += 64;
 }
 
@@ -344,4 +367,8 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i {
     let max_v = _mm256_max_epi16(reg, min_s); //max(a,0)
     let min_v = _mm256_min_epi16(max_v, max_s); //min(max(a,0),255)
     return min_v;
+}
+#[inline]
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
+    ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
