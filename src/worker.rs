@@ -3,6 +3,9 @@ use std::sync::{Arc, Mutex};
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
 use crate::components::Components;
 
+// In case data isn't there
+const BASE_ARRAY: [i16; 8] = [128; 8];
+
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
 /// This handles routines for images which are not interleaved for interleaved use post_process_interleaved
@@ -34,7 +37,7 @@ pub(crate) fn post_process_non_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPO
     // color convert
     match (input_colorspace, output_colorspace) {
         // YCBCR to RGB(A) colorspace conversion.
-        (ColorSpace::YCbCr, ColorSpace::RGBX|ColorSpace::RGBA|ColorSpace::RGB) => {
+        (ColorSpace::YCbCr, ColorSpace::RGBX | ColorSpace::RGBA | ColorSpace::RGB | ColorSpace::GRAYSCALE) => {
             color_convert_ycbcr_non_interleaved(&unprocessed, width, output_colorspace,
                                                 color_convert_16, color_convert, output, &mut position, mcu_len, );
         }
@@ -87,15 +90,10 @@ pub(crate) fn post_process_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPONENT
         // YCBCR to RGB(A) colorspace conversion.
 
         // Match keyword is amazing..
-        (ColorSpace::YCbCr, ColorSpace::RGB|ColorSpace::RGBA|ColorSpace::RGBX) => {
+        (ColorSpace::YCbCr, ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::GRAYSCALE) => {
             color_convert_ycbcr_interleaved(&unprocessed, width, h_samp, v_samp,
                                             output_colorspace, color_convert_16, color_convert,
                                             output, &mut position, mcu_len);
-        }
-        (ColorSpace::GRAYSCALE, ColorSpace::GRAYSCALE) => {
-            // for grayscale to grayscale we copy first MCU block(which should contain the Y Luminance channel) to the other
-            let x: Vec<u8> = unprocessed[0].iter().map(|c| *c as u8).collect();
-            output.lock().unwrap().copy_from_slice(x.as_slice());
         }
         // For the other components we do nothing(currently)
         _ => {}
@@ -114,38 +112,32 @@ fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], w
     let mut pos = 0;
 
     // slice into 128(2 mcu's)
-    let mcu_count = (mcu_len - 1) >> 1;
+    let mcu_count = (mcu_len) >> 1;
     // check if we have an MCU remaining
-    let remainder = ((mcu_len - 1) % 2) != 0;
+    let remainder = ((mcu_len) % 2) != 0;
     let mcu_width = width * output_colorspace.num_components();
     let mut expected_pos = *position + mcu_width;
     // Lock here because we do not want to keep locking while writing,
-    // this is cheaper actually but it's syntax becomes weird when dereferencing
-    let mut x = output.lock().unwrap();
+    // this is cheaper actually but it's syntax becomes weird when de-referencing
+    let mut x = output.lock().expect("Poisoned mutex");
     for i in 0..8 {
         // Process MCU's in batches of 2, this allows us (where applicable) to convert two MCU rows
         // using fewer instructions
         for _ in 0..mcu_count {
             //This isn't cache efficient as it hops around too much
+            //
+            // Note, this is slowing us down(3% regression) although we can prove that it won't panic, but...
+            // FOR SAFETY..
+            let y_c = mcu_block[0].get(pos..pos + 8).unwrap_or(&BASE_ARRAY);
+            let cb_c = mcu_block[1].get(pos..pos + 8).unwrap_or(&BASE_ARRAY);
+            let cr_c = mcu_block[2].get(pos..pos + 8).unwrap_or(&BASE_ARRAY);
+            //  8 pixels of the second MCU
+            let y1_c = mcu_block[0].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY);
+            let cb2_c = mcu_block[1].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY);
+            let cr2_c = mcu_block[2].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY);
+            // Call color convert function
+            (color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, &mut **x, position);
 
-            // SAFETY
-            // 1. mcu_block is initialized, (note not assigned) with zeroes
-            // enough to ensure that this is unsafe,
-            // The bounds here can never go above the length
-            unsafe {
-                // remove some cmp instructions that were slowing us down
-
-                let y_c = mcu_block[0].get_unchecked(pos..pos + 8);
-                let cb_c = mcu_block[1].get_unchecked(pos..pos + 8);
-                let cr_c = mcu_block[2].get_unchecked(pos..pos + 8);
-                //  8 pixels of the second MCU
-                let y1_c = mcu_block[0].get_unchecked(pos + 64..pos + 72);
-                let cb2_c = mcu_block[1].get_unchecked(pos + 64..pos + 72);
-                let cr2_c = mcu_block[2].get_unchecked(pos + 64..pos + 72);
-                // Call color convert function
-                (color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, &mut **x, position);
-
-            }
             pos += 128;
         }
         //println!("{}",position);
@@ -173,7 +165,7 @@ fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], w
         //  println!("{}",position);
 
         // Reset position to start fetching from the next MCU
-        pos = i*8;
+        pos = i * 8;
     }
 }
 
@@ -199,66 +191,59 @@ fn color_convert_ycbcr_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS],
     // iterate the number of MCU rows because  up-sampled images can write more than 1 mcu
     // write an MCU row
     for _ in 0..h_max * v_max {
-
         for i in 0..8 {
 
-        // Process MCU's in batches of 2, this allows us (where applicable) to convert two MCU rows
-        // using fewer instructions
+            // Process MCU's in batches of 2, this allows us (where applicable) to convert two MCU rows
+            // using fewer instructions
 
-        // fetch and parse one mcu line..
-        for _ in 0..mcu_count - 1 {
+            // fetch and parse one mcu line..
+            for _ in 0..mcu_count - 1 {
 
                 //This isn't cache efficient as it hops around too much
 
-                // SAFETY
-                // 1. mcu_block is initialized, (note not assigned) with zeroes
-                // enough to ensure that this is unsafe,
-                // The bounds here can never go above the length
-                unsafe {
-                    // remove some cmp instructions that were slowing us down
 
+                let y_c = &mcu_block[0].get(pos..pos + 8).unwrap_or(&BASE_ARRAY);
+                let cb_c = mcu_block[1].get(pos..pos + 8).unwrap_or(&BASE_ARRAY);
+                let cr_c = mcu_block[2].get(pos..pos + 8).unwrap_or(&BASE_ARRAY);
+                //  8 pixels of the second MCU
+                let y1_c = &mcu_block[0].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY);
+                let cb2_c = mcu_block[1].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY);
+                let cr2_c = mcu_block[2].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY);
+                for _ in 0..h_max * v_max {
+                    (color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, &mut **tmp_output, position);
+                }
+
+                pos += 128;
+                if remainder {
+                    // last odd MCU in the column
                     let y_c = &mcu_block[0][pos..pos + 8];
-                    let cb_c = mcu_block[1].get_unchecked(pos..pos + 8);
-                    let cr_c = mcu_block[2].get_unchecked(pos..pos + 8);
-                    //  8 pixels of the second MCU
-                    let y1_c = &mcu_block[0].get_unchecked(pos + 64..pos + 72);
-                    let cb2_c = mcu_block[1].get_unchecked(pos + 64..pos + 72);
-                    let cr2_c = mcu_block[2].get_unchecked(pos + 64..pos + 72);
-                    for _ in 0..h_max * v_max {
-                        (color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, &mut **tmp_output, position);
+                    let cb_c = &mcu_block[1][pos..pos + 8];
+                    let cr_c = &mcu_block[2][pos..pos + 8];
+                    // convert function should be able to handle
+                    // last mcu
+                    (color_convert)(y_c, cb_c, cr_c, &mut **tmp_output, position);
+                    //*position+=24;
                 }
             }
-            pos += 128;
-            if remainder {
-                // last odd MCU in the column
-                let y_c = &mcu_block[0][pos..pos + 8];
-                let cb_c = &mcu_block[1][pos..pos + 8];
-                let cr_c = &mcu_block[2][pos..pos + 8];
-                // convert function should be able to handle
-                // last mcu
-                (color_convert)(y_c, cb_c, cr_c, &mut **tmp_output, position);
-                //*position+=24;
-            }
+
+            // Sometimes Color convert may overshoot, IE if the image is not
+            // divisible by 8 it may have to pad the last MCU with extra pixels
+            // The decoder is supposed to discard these extra bits
+            //
+            // But instead of discarding those bits, I just tell the color_convert to overwrite them
+            // Meaning I have to reset position to the expected position, which is the width
+            // of the MCU.
+
+            *position = expected_pos;
+            expected_pos += mcu_width;
+            //  println!("{}",position);
+
+            // Reset position to start fetching from the next MCU line
+            pos = i * 8;
+            //println!("{}",pos);
+            //
+            // next row?
         }
-
-        // Sometimes Color convert may overshoot, IE if the image is not
-        // divisible by 8 it may have to pad the last MCU with extra pixels
-        // The decoder is supposed to discard these extra bits
-        //
-        // But instead of discarding those bits, I just tell the color_convert to overwrite them
-        // Meaning I have to reset position to the expected position, which is the width
-        // of the MCU.
-
-        *position = expected_pos;
-        expected_pos += mcu_width;
-        //  println!("{}",position);
-
-        // Reset position to start fetching from the next MCU line
-        pos = i * 8;
-        //println!("{}",pos);
-        //
-        // next row?
-    }
     }
     //panic!();
 }
