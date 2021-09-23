@@ -4,17 +4,7 @@
     clippy::inline_always,
     clippy::doc_markdown
 )]
-//! # Performance optimizations
-//! - One bottleneck is `refill`/`refill_fast`, the fact that we have
-//! to check for `OxFF` byte during refills, which  most of the times doesn't exist
-//!  but it sometimes does. This makes it slow as it forces byte wise processing and branching during the hot path.
-//! There is this handy post [here] that talks about how we can avoid checks in the hot path, basically
-//! we remove `0x00` bytes before we reach the hot path, but I'm yet to think of faster ways to do that
-//!
-//! -
-//!
-//![here]:https://fgiesen.wordpress.com/2011/11/21/buffer-centric-io/
-
+//! This file exposes a single struct that can decode a huffman encoded Bitstream in a JPEG file
 use std::io::Cursor;
 
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
@@ -40,7 +30,7 @@ pub(crate) struct BitStream {
     lsb_buffer: u64,
     /// Tell us the bits left the two buffer
     bits_left: u8,
-    /// Did we find a marker during decoding?
+    /// Did we find a marker(RST/EOF) during decoding?
     pub marker: Option<Marker>,
 }
 
@@ -76,11 +66,10 @@ impl BitStream {
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool {
         // Ps i know inline[always] is frowned upon
 
-        // Macro version of refill
-        // Arguments
-        // buffer-> our io buffer, because rust macros cannot get values from the surrounding environment
-        // bits_left-> number of bits left to full refill
-
+        /// Macro version of a single byte refill.
+        /// Arguments
+        /// buffer-> our io buffer, because rust macros cannot get values from the surrounding environment
+        /// bits_left-> number of bits left to full refill
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
@@ -142,8 +131,16 @@ impl BitStream {
     }
     /// Decode a Minimum Code Unit(MCU) as quickly as possible
     ///
+    /// # Arguments
+    /// - reader: The bitstream from where we read more bits.
+    /// - dc_table: The Huffman table used to decode the DC coefficient
+    /// - ac_table: The Huffman table used to decode AC values
+    /// - block: A memory region where we will write out the decoded values
+    /// - DC prediction: Last DC value for this component
+    ///
     ///# Performance
-    ///- We are using a modified version of the Huffman Decoder from libjpeg-turbo/[jdhuff.h+jdhuff.c]
+    ///- We are using a modified version of the Huffman Decoder from `libjpeg-turbo/[jdhuff.h+jdhuff.c]`
+    /// and `stb_image`
     /// which is pretty fast(jokes its `super fast`...).
     /// - The code is heavily inlined(this function itself is inlined)(I would not like to be that guy viewing disassembly info of this
     /// function) and makes use of macros, so the resulting code the compiler receives probably spans too many lines
@@ -164,49 +161,32 @@ impl BitStream {
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
     ) -> bool {
-        macro_rules! huff_decode_fast {
-            ($s:expr,$n_bits:expr,$table:expr) => {
-                // refill buffer, the check if its less than 16 will be done inside the function
-                // but since we use inline(always) we have a branch here which tells us if we
-                // refill
-                if !self.refill(reader) {
-                    return false;
-                };
-                $s = self.peek_bits::<HUFF_LOOKAHEAD>();
-                // Lookup 8 bits in the stream and see if there is a corresponding byte
 
-                $s = $table.lookup[$s as usize];
-
-                $n_bits = $s >> HUFF_LOOKAHEAD;
-                // Pre-execute common case of nb <= HUFF_LOOKAHEAD
-                self.drop_bits($n_bits as u8);
-                $s &= ((1 << HUFF_LOOKAHEAD) - 1);
-                if $n_bits > i32::from(HUFF_LOOKAHEAD) {
-                    // if we don't get a hit in the first HUFF_LOOKAHEAD bits
-
-                    // equivalent of jpeg_huff_decode
-                    // don't use self.get_bits() here , we don't want to modify bits left
-                    $s = ((self.buffer >> self.bits_left) & ((1 << ($n_bits)) - 1)) as i32;
-                    while $s > $table.maxcode[$n_bits as usize] {
-                        // Read one bit from the buffer and append to s
-                        $s <<= 1;
-                        $s |= self.get_bits(1);
-                        $n_bits += 1;
-                    }
-                    // Greater than 16? probably corrupt image
-                    if $n_bits > 16 {
-                        $s = 0
-                    } else {
-                        $s = i32::from(
-                            $table.values[($s + $table.offset[$n_bits as usize] & 0xFF) as usize],
-                        );
-                    }
-                }
-            };
-        }
         let (mut s, mut l, mut r);
 
-        huff_decode_fast!(s, l, dc_table);
+        if !self.refill(reader) {
+            return false;
+        };
+        s = self.peek_bits::<HUFF_LOOKAHEAD>();
+        s = dc_table.lookup[s as usize];
+        l = s >> HUFF_LOOKAHEAD;
+        self.drop_bits(l as u8);
+        s &= (1 << HUFF_LOOKAHEAD) - 1;
+        if l > i32::from(HUFF_LOOKAHEAD) {
+            s = ((self.buffer >> self.bits_left) & ((1 << (l)) - 1)) as i32;
+            while s > dc_table.maxcode[l as usize] {
+                s <<= 1;
+                s |= self.get_bits(1);
+                l += 1;
+            }
+            if l > 16 {
+                s = 0;
+            } else {
+                s = i32::from(
+                    dc_table.values[((s + dc_table.offset[l as usize]) & 0xFF) as usize],
+                );
+            }
+        }
         if s != 0 {
             r = self.get_bits(s as u8);
             s = huff_extend(r, s);
@@ -229,16 +209,14 @@ impl BitStream {
             s = self.peek_bits::<HUFF_LOOKAHEAD>();
             // Safety:
             //     S can never go past 1<<HUFF_LOOKAHEAD and lookup table is 1<<HUFF_LOOKAHEAD
-            let v = unsafe { *ac_lookup.get_unchecked(s as usize) };
+            let v =  ac_lookup[s as usize] ;
             if v != 0 {
                 //  FAST AC path
                 k += ((v >> 4) & 15) as usize; // run
                 self.drop_bits((v & 15) as u8); // combined length
-                                                // Safety:
-                                                //  UN_ZIGZAG cannot go past 63 and k can never go past 85
-                unsafe {
-                    *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k)) = v >> 8;
-                }
+                // Safety:
+                //  UN_ZIGZAG cannot go past 63 and k can never go past 85
+                    block[UN_ZIGZAG[k]] = v >> 8;
                 k += 1;
             } else {
                 s = ac_table.lookup[s as usize];
@@ -268,9 +246,7 @@ impl BitStream {
                     s = huff_extend(r, s);
                     // Safety
                     // 1: K can never go beyond 85 (everything that increments k keeps that guarantee)
-                    unsafe {
-                        *block.get_unchecked_mut(*UN_ZIGZAG.get_unchecked(k as usize)) = s as i16;
-                    };
+                    block[UN_ZIGZAG[k as usize]] = s as i16;
 
                     k += 1;
                 } else {
@@ -321,13 +297,11 @@ impl BitStream {
         self.lsb_buffer = 0;
     }
 }
-
+/// Do the equivalent of JPEG HUFF_EXTEND
 #[inline(always)]
 fn huff_extend(x: i32, s: i32) -> i32 {
     // if x<s return x else return x+offset[s] where offset[s] = ( (-1<<s)+1)
 
-    // It may be easier to  use a lookup table for `((-1) << (s)) + 1)` but Rust does bounds checking
-    // and I'm already tired of `unsafe`
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
 }
 
