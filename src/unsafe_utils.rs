@@ -9,9 +9,11 @@ use std::arch::x86::*;
 use std::arch::x86_64::*;
 use std::mem::*;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
-
+/// An abstraction of an AVX ymm register that
+///allows some things to not look ugly
 #[derive(Clone, Copy)]
 pub struct YmmRegister {
+    /// An AVX register
     pub(crate) mm256: __m256i,
 }
 
@@ -160,7 +162,8 @@ where
     T: Default + Copy,
 {
     // Create a new layout, with alignment Align
-    let layout = Layout::from_size_align(capacity * size_of::<T>(), ALIGNMENT).unwrap();
+    let layout = Layout::from_size_align(capacity * size_of::<T>(), ALIGNMENT)
+        .expect("Error creating memory alignment.");
     // Call alloc_zeroed, this returns zeroed memory
     let ptr = alloc_zeroed(layout);
     // Call Vec to handle pointer stuff

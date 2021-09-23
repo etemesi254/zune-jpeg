@@ -6,10 +6,9 @@ use std::sync::{Arc, Mutex};
 use crate::bitstream::BitStream;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
-use crate::unsafe_utils::align_zero_alloc;
 use crate::worker::{post_process_interleaved, post_process_non_interleaved};
 use crate::Decoder;
-
+/// The size of a DC block for a MCU.
 const DCT_BLOCK: usize = 64;
 
 impl Decoder {
@@ -39,20 +38,15 @@ impl Decoder {
         // for those pointers storing unprocessed items, zero them out here
         // num_components cannot go above MAX_COMPONENTS(currently all are at a max of 4)
         for (pos, comp) in self.components.iter().enumerate() {
-            // multiply be vertical and horizontal sample , it  should be 1*1 for non-sampled images
-            self.mcu_block[pos] = unsafe {
-                align_zero_alloc::<i16, 32>(
-                    component_capacity * comp.vertical_sample * comp.horizontal_sample,
-                )
-            };
+            // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
+            self.mcu_block[pos] = vec![0; component_capacity * comp.vertical_sample * comp.horizontal_sample];
         }
         let mut position = 0;
         // Create an Arc of components to prevent cloning on every MCU width
         // we can just send this Arc on clone
         let global_component = Arc::new(self.components.clone());
-        let global_channel = Arc::new(Mutex::new(unsafe {
-            align_zero_alloc::<u8, 32>(capacity * self.output_colorspace.num_components())
-        }));
+        let global_channel = Arc::new(Mutex::new(
+            vec![0;capacity * self.output_colorspace.num_components()]));
         // things needed for post processing that we can remove out of the loop
         // since they are copy, it should not be that hard
         let input = self.input_colorspace;
@@ -82,6 +76,9 @@ impl Decoder {
                     // The checks were performed above, before we get to the hot loop
                     // Basically, the decoder will panic ( see where the else statement starts)
                     // so these `un-safes` are safe
+
+                    // These cause performance regressions  if I do the normal bounds-check here ,
+                    // so I won't remove them.
                     let dc_table = unsafe {
                         self.dc_huffman_tables
                             .get_unchecked(component.dc_table_pos)
@@ -101,7 +98,7 @@ impl Decoder {
                         //
                         // THe unwrap is safe as the only way for us to hit this is if BitStream::refill_fast() returns
                         // false, which happens after it writes a marker to the destination.
-                        let marker = stream.marker.unwrap();
+                        let marker = stream.marker.expect("No marker found");
 
                         match marker {
                             Marker::RST(_) => {
@@ -155,15 +152,18 @@ impl Decoder {
         pool.join();
         debug!("Finished decoding image");
         // Global channel may be over allocated for uneven images, shrink it back
-        global_channel.lock().unwrap().truncate(
+        global_channel.lock().expect("Could not get the").truncate(
             usize::from(self.width())
                 * usize::from(self.height())
                 * self.output_colorspace.num_components(),
         );
         // remove the global channel and return it
-        Arc::try_unwrap(global_channel).unwrap().into_inner().unwrap()
+        Arc::try_unwrap(global_channel)
+            .expect("Could not get pixels, Arc has more than one strong reference")
+            .into_inner().expect("Poisoned mutex")
     }
 
+    /// Decode an Interleaved(sub-sampled) image
     #[allow(clippy::similar_names)]
     #[inline(never)]
     #[rustfmt::skip]
@@ -191,19 +191,14 @@ impl Decoder {
         // for those pointers storing unprocessed items, zero them out here
         // num_components cannot go above MAX_COMPONENTS(currently all are at a max of 4)
         for (pos, comp) in self.components.iter().enumerate() {
-            // multiply be vertical and horizontal sample , it  should be 1*1 for non-sampled images
-            self.mcu_block[pos] = unsafe {
-                align_zero_alloc::<i16, 32>(
-                    component_capacity * comp.vertical_sample * comp.horizontal_sample,
-                )
-            };
+            // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
+            self.mcu_block[pos] = vec![0; component_capacity * comp.vertical_sample * comp.horizontal_sample];
         }
         let mut position = 0;
         self.set_upsampling()?;
 
-        let global_channel = Arc::new(Mutex::new(unsafe {
-            align_zero_alloc::<u8, 32>(capacity * self.output_colorspace.num_components())
-        }));
+        let global_channel = Arc::new(Mutex::new(
+            vec![0;capacity * self.output_colorspace.num_components()]));
         let global_component = Arc::new(self.components.clone());
 
 

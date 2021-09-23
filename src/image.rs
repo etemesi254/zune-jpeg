@@ -359,8 +359,7 @@ impl Decoder {
     }
     /// Set the output colorspace
     ///
-    /// # Currently Works on x86_64 CPU's with avx2 instruction set
-    /// Now that that's cleared,  the following options exist
+    ///# Values which will work(currently)
     ///
     ///- `ColorSpace::RGBX` : Set it to RGB_X where X is anything between 0 and 255
     /// (cool for playing with alpha channels)
@@ -370,14 +369,14 @@ impl Decoder {
     ///
     /// - `ColorSpace::RGB` : Use the normal color convert function where YCbCr is converted to RGB colorspace.
     ///
+    /// - `ColorSpace::GRAYSCALE`:Convert normal image to a black and white image(grayscale)
     /// # Panics
     ///  Won't panic actually
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace) {
         self.output_colorspace = colorspace;
-        // change color convert function
 
         match colorspace {
-            ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA => {
+            ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA|ColorSpace::GRAYSCALE => {
                 let p = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
                 self.color_convert_16 = p.0;
                 self.color_convert = p.1;
@@ -433,6 +432,16 @@ impl Decoder {
             }
         }
         return Ok(());
+    }
+    /// Set output colorspace to be RGBA
+    /// equivalent of calling
+    /// ```rust
+    /// use zune_jpeg::{Decoder, ColorSpace};
+    /// Decoder::new().set_output_colorspace(ColorSpace::RGBA);
+    /// ```
+    pub fn rgba(&mut self){
+        // told you so
+        self.set_output_colorspace(ColorSpace::RGBA);
     }
     #[must_use]
     /// Get the width of the image as a u16

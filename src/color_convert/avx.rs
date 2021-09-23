@@ -1,3 +1,4 @@
+//! AVX color conversion routines
 #![cfg(feature = "x86")]
 #![allow(
     clippy::wildcard_imports,
@@ -221,7 +222,7 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 }
 
 #[inline(always)]
-pub fn ycbcr_to_rgba_avx(
+pub fn ycbcr_to_rgba_avx2(
     y1: &[i16],
     y2: &[i16],
     cb1: &[i16],

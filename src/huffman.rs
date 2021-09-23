@@ -1,11 +1,14 @@
+//! This file contains a single struct `HuffmanTable` that
+//! stores Huffman tables needed during BitStream decoding.
 #![allow(clippy::similar_names, clippy::module_name_repetitions)]
 use std::convert::TryFrom;
 
 use crate::errors::DecodeErrors;
 
-// # bits of lookahead
+/// Determines how many bits of lookahead we have for our bitstream decoder.
 pub const HUFF_LOOKAHEAD: u8 = 9;
-
+/// A struct which contains necessary tables for decoding a JPEG
+/// huffman encoded bitstream
 pub struct HuffmanTable {
     /// element[0] of each array is unused
     /// largest code of length k

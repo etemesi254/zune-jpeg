@@ -1,3 +1,7 @@
+//! This module exports a single struct to store information about
+//! JPEG image components
+//!
+//! The data is extracted from a SOF header.
 use crate::errors::DecodeErrors;
 use crate::misc::Aligned32;
 use crate::upsampler::upsample_no_op;
@@ -17,7 +21,7 @@ pub(crate) struct Components {
     pub dc_table_pos: usize,
     /// Ac table position of this component
     pub ac_table_pos: usize,
-    //Quantization table number
+    /// Quantization table number
     pub quantization_table_number: u8,
     /// Specifies quantization table to use with this component
     pub quantization_table: Aligned32<[i32; 64]>,
@@ -71,7 +75,10 @@ impl Components {
 /// Component ID's
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
 pub enum ComponentID {
+    /// Luminance channel
     Y,
+    /// Blue chrominance
     Cb,
+    /// Red chrominance
     Cr,
 }
