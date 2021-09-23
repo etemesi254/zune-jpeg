@@ -1,7 +1,8 @@
+//! SSE color conversion routines
 #![allow(
-    clippy::module_name_repetitions,
-    clippy::doc_markdown,
-    clippy::wildcard_imports
+clippy::module_name_repetitions,
+clippy::doc_markdown,
+clippy::wildcard_imports
 )]
 #![cfg(feature = "x86")]
 
@@ -105,6 +106,7 @@ unsafe fn ycbcr_to_rgb_sse41(
         *pos += 3;
     }
 }
+
 unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
     y: &[i16],
     cb: &[i16],
@@ -189,16 +191,17 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
 #[inline]
 #[target_feature(enable = "sse2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub unsafe fn clamp_sse(a: __m128i) -> __m128i {
+unsafe fn clamp_sse(a: __m128i) -> __m128i {
     // the lowest value
     let min: __m128i = _mm_set1_epi16(0);
     // Highest value
     let max: __m128i = _mm_set1_epi16(255);
     let max_v = _mm_max_epi16(a, min); //max(a,0)
     let min_v = _mm_min_epi16(max_v, max); //min(max(a,0),255)
-                                           // Store it back to the array
+    // Store it back to the array
     return min_v;
 }
+
 /// Carry out YCbCr to RGB conversion to
 /// emulate the avx version
 #[inline]
@@ -221,6 +224,7 @@ unsafe fn ycbcr_to_rgb_16(
         ycbcr_to_rgb_sse41(y2, cb2, cr2, out, offset);
     }
 }
+
 pub fn ycbcr_to_rgb_sse_16(
     y1: &[i16],
     y2: &[i16],
@@ -259,4 +263,28 @@ pub fn ycbcr_to_rgba_sse(y1: &[i16], cb1: &[i16], cr1: &[i16], out: &mut [u8], o
     unsafe {
         ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
     }
+}
+/// Calculate YCBCR to Grayscale
+///
+pub fn ycbcr_to_grayscale_16_sse(u: &[i16], v: &[i16], _: &[i16],
+                          _: &[i16],
+                          _: &[i16],
+                          _: &[i16], out: &mut [u8], offset: &mut usize)  {
+    unsafe {
+        let x = _mm_loadu_si128(u.as_ptr().cast());
+        let y = _mm_loadu_si128(v.as_ptr().cast());
+        // pack them
+        let z = _mm_packus_epi16(x, y);
+        // undo shuffling
+        let a2 = _mm_shuffle_epi32::<{ shuffle(3, 2, 1, 0) }>(z);
+        // store
+        _mm_storeu_si128(out.as_mut_ptr().add(*offset).cast(), a2);
+        // increment
+        *offset += 16;
+    }
+}
+
+#[inline]
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
+    ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
