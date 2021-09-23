@@ -7,24 +7,24 @@
     clippy::too_many_arguments,
     clippy::doc_markdown
 )]
+//! Color space conversion routines
+//!
+//! This files exposes functions to convert one colorspace to another in a jpeg image
+//!
+//! Currently supported conversions are
+//!
+//! - `YCbCr` to `RGB,RGBA,GRAYSCALE,RGBX`.
+//!
+//!
+//! The `RGB` routines use an  integer approximation routine
 
-//! YUV to RGB Conversion
-//!
-//! Conversion equation can be implemented as
-//! ```text
-//! R = Y + 1.40200 * Cr
-//! G = Y - 0.34414 * Cb - 0.71414 * Cr
-//! B = Y + 1.77200 * Cb
-//! ```
-//!
-//!
 use std::cmp::{max, min};
 
 #[cfg(feature = "x86")]
-pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx, ycbcr_to_rgbx_avx2};
+pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2, ycbcr_to_rgbx_avx2};
 #[cfg(feature = "x86")]
 pub use crate::color_convert::sse::{
-    ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse, ycbcr_to_rgba_sse_16,
+    ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse, ycbcr_to_rgba_sse_16,ycbcr_to_grayscale_16_sse
 };
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace};
 
@@ -142,6 +142,34 @@ pub fn ycbcr_to_rgb_16(
     // second MCU
     ycbcr_to_rgb(y2, cb2, cr2, output, pos);
 }
+/// Convert 2 blocks of ycbcr to grayscale as slow as possible
+///
+/// We just copy the `Y(Luminance)` channel as it looks like a grayscale
+///
+/// A faster implementation is found in `color_convert/sse`
+/// # Performance
+/// 1. Really slow-> Auto vectorization isn't the best thing...
+pub fn ycbcr_to_grayscale_16(y1:&[i16],y2:&[i16],_: &[i16],
+                             _: &[i16],
+                             _: &[i16],
+                             _: &[i16],
+    output:&mut[u8],pos:&mut usize
+){
+    // copy fist block
+    output[*pos..*pos+8].copy_from_slice(&y1.iter().map(|x| *x as u8).collect::<Vec<u8>>());
+    // second block
+    output[*pos+8..*pos+16].copy_from_slice(&y2.iter().map(|x| *x as u8).collect::<Vec<u8>>());
+    *pos+=16;
+}
+/// Convert a single block of YCbCr to GrayScale
+/// This is still slow
+pub fn ycbcr_to_grayscale_8(y:&[i16],_:&[i16],_: &[i16],output:&mut[u8],pos:&mut usize){
+    // write
+    output[*pos+8..*pos+16].copy_from_slice(&y.iter().map(|x| *x as u8).collect::<Vec<u8>>());
+    // increment
+    *pos+=8;
+
+}
 
 /// This function determines the best color-convert function to carry out
 /// based on the colorspace needed
@@ -161,9 +189,10 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                 }
                 ColorSpace::RGBA => {
                     // Avx for 16, sse for 8
-                    Some((ycbcr_to_rgba_avx, ycbcr_to_rgba_sse))
+                    Some((ycbcr_to_rgba_avx2, ycbcr_to_rgba_sse))
                 }
                 ColorSpace::RGBX => Some((ycbcr_to_rgbx_avx2, ycbcr_to_rgba_sse)),
+                ColorSpace::GRAYSCALE=>Some((ycbcr_to_grayscale_16_sse,ycbcr_to_grayscale_8)),
                 _ => None,
             };
         }
@@ -178,6 +207,8 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                 ColorSpace::RGBA | ColorSpace::RGBX => {
                     Some((ycbcr_to_rgba_sse_16, ycbcr_to_rgba_sse))
                 }
+
+                ColorSpace::GRAYSCALE=>Some((ycbcr_to_grayscale_16_sse,ycbcr_to_grayscale_8)),
                 _ => None,
             };
         }
@@ -186,6 +217,7 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     return match type_need {
         ColorSpace::RGB => Some((ycbcr_to_rgb_16, ycbcr_to_rgb)),
         ColorSpace::RGBA | ColorSpace::RGBX => Some((ycbcr_to_rgba_16, ycbcr_to_rgba)),
+        ColorSpace::GRAYSCALE=>Some((ycbcr_to_grayscale_16,ycbcr_to_grayscale_8)),
         _ => None,
     };
 }
