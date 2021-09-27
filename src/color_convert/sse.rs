@@ -1,8 +1,8 @@
 //! SSE color conversion routines
 #![allow(
-clippy::module_name_repetitions,
-clippy::doc_markdown,
-clippy::wildcard_imports
+    clippy::module_name_repetitions,
+    clippy::doc_markdown,
+    clippy::wildcard_imports
 )]
 #![cfg(feature = "x86")]
 
@@ -16,7 +16,13 @@ union XmmRegister {
     reg: __m128i,
 }
 
-pub fn ycbcr_to_rgb_sse(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], offset: &mut usize) {
+pub fn ycbcr_to_rgb_sse(
+    y: &[i16; 8],
+    cb: &[i16; 8],
+    cr: &[i16; 8],
+    out: &mut [u8],
+    offset: &mut usize,
+) {
     unsafe {
         // we can't merge ycbcr to
         ycbcr_to_rgb_sse41(y, cb, cr, out, offset);
@@ -26,9 +32,9 @@ pub fn ycbcr_to_rgb_sse(y: &[i16], cb: &[i16], cr: &[i16], out: &mut [u8], offse
 #[inline]
 #[target_feature(enable = "sse4.1")]
 unsafe fn ycbcr_to_rgb_sse41(
-    y: &[i16],
-    cb: &[i16],
-    cr: &[i16],
+    y: &[i16; 8],
+    cb: &[i16; 8],
+    cr: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -108,9 +114,9 @@ unsafe fn ycbcr_to_rgb_sse41(
 }
 
 unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
-    y: &[i16],
-    cb: &[i16],
-    cr: &[i16],
+    y: &[i16; 8],
+    cb: &[i16; 8],
+    cr: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -198,7 +204,7 @@ unsafe fn clamp_sse(a: __m128i) -> __m128i {
     let max: __m128i = _mm_set1_epi16(255);
     let max_v = _mm_max_epi16(a, min); //max(a,0)
     let min_v = _mm_min_epi16(max_v, max); //min(max(a,0),255)
-    // Store it back to the array
+                                           // Store it back to the array
     return min_v;
 }
 
@@ -208,12 +214,12 @@ unsafe fn clamp_sse(a: __m128i) -> __m128i {
 #[target_feature(enable = "sse2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn ycbcr_to_rgb_16(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -226,12 +232,12 @@ unsafe fn ycbcr_to_rgb_16(
 }
 
 pub fn ycbcr_to_rgb_sse_16(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -241,12 +247,12 @@ pub fn ycbcr_to_rgb_sse_16(
 }
 
 pub fn ycbcr_to_rgba_sse_16(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -259,17 +265,29 @@ pub fn ycbcr_to_rgba_sse_16(
     }
 }
 
-pub fn ycbcr_to_rgba_sse(y1: &[i16], cb1: &[i16], cr1: &[i16], out: &mut [u8], offset: &mut usize) {
+pub fn ycbcr_to_rgba_sse(
+    y1: &[i16; 8],
+    cb1: &[i16; 8],
+    cr1: &[i16; 8],
+    out: &mut [u8],
+    offset: &mut usize,
+) {
     unsafe {
         ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
     }
 }
 /// Calculate YCBCR to Grayscale
 ///
-pub fn ycbcr_to_grayscale_16_sse(u: &[i16], v: &[i16], _: &[i16],
-                          _: &[i16],
-                          _: &[i16],
-                          _: &[i16], out: &mut [u8], offset: &mut usize)  {
+pub fn ycbcr_to_grayscale_16_sse(
+    u: &[i16; 8],
+    v: &[i16; 8],
+    _: &[i16; 8],
+    _: &[i16; 8],
+    _: &[i16; 8],
+    _: &[i16; 8],
+    out: &mut [u8],
+    offset: &mut usize,
+) {
     unsafe {
         let x = _mm_loadu_si128(u.as_ptr().cast());
         let y = _mm_loadu_si128(v.as_ptr().cast());

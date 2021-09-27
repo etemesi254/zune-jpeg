@@ -40,12 +40,12 @@ pub union YmmRegister {
 /// - `offset`: The position from 0 where we write these RGB values
 #[inline(always)]
 pub fn ycbcr_to_rgb_avx2(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -59,12 +59,12 @@ pub fn ycbcr_to_rgb_avx2(
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
 unsafe fn ycbcr_to_rgb_avx2_1(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -100,12 +100,12 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
 pub unsafe fn ycbcr_to_rgb_baseline(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
 ) -> (YmmRegister, YmmRegister, YmmRegister) {
     // Load values into a register
     //
@@ -166,12 +166,12 @@ pub unsafe fn ycbcr_to_rgb_baseline(
 ///
 /// This is used by the `ycbcr_to_rgba_avx` and `ycbcr_to_rgbx` conversion routines
 pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
 ) -> (__m256i, __m256i, __m256i) {
     // Load values into a register
     //
@@ -223,12 +223,12 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 
 #[inline(always)]
 pub fn ycbcr_to_rgba_avx2(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -238,12 +238,12 @@ pub fn ycbcr_to_rgba_avx2(
 #[inline]
 #[target_feature(enable = "avx2")]
 pub unsafe fn ycbcr_to_rgba_unsafe(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -255,24 +255,24 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
     let d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
-    // transpose and interleave channels
+                                                            // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-    // final transpose
+                                        // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
     // undo packus shuffling...
-    let i =  _mm256_permute2x128_si256::<{shuffle(3,2,1,0)}>(g, h);
+    let i = _mm256_permute2x128_si256::<{ shuffle(3, 2, 1, 0) }>(g, h);
 
-    let j =  _mm256_permute2x128_si256::<{shuffle(1,2,3,0)}>(g, h);
+    let j = _mm256_permute2x128_si256::<{ shuffle(1, 2, 3, 0) }>(g, h);
 
-    let k =  _mm256_permute2x128_si256::<{shuffle(3,2,0,1)}>(g, h);
+    let k = _mm256_permute2x128_si256::<{ shuffle(3, 2, 0, 1) }>(g, h);
 
-    let l =  _mm256_permute2x128_si256::<{shuffle(0,3,2,1)}>(g, h);
+    let l = _mm256_permute2x128_si256::<{ shuffle(0, 3, 2, 1) }>(g, h);
 
-    let m = _mm256_blend_epi32::<0b1111_0000>(i,j);
+    let m = _mm256_blend_epi32::<0b1111_0000>(i, j);
 
-    let n = _mm256_blend_epi32::<0b1111_0000>(k,l);
+    let n = _mm256_blend_epi32::<0b1111_0000>(k, l);
 
     // Store
     // Use streaming instructions to prevent polluting the cache
@@ -291,12 +291,12 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
 /// to vectorize hence this is faster than YcbCr -> RGB conversion
 #[inline(always)]
 pub fn ycbcr_to_rgbx_avx2(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -307,12 +307,12 @@ pub fn ycbcr_to_rgbx_avx2(
 #[allow(clippy::cast_possible_wrap)]
 #[target_feature(enable = "avx2")]
 pub unsafe fn ycbcr_to_rgbx_unsafe(
-    y1: &[i16],
-    y2: &[i16],
-    cb1: &[i16],
-    cb2: &[i16],
-    cr1: &[i16],
-    cr2: &[i16],
+    y1: &[i16; 8],
+    y2: &[i16; 8],
+    cb1: &[i16; 8],
+    cb2: &[i16; 8],
+    cr1: &[i16; 8],
+    cr2: &[i16; 8],
     out: &mut [u8],
     offset: &mut usize,
 ) {
@@ -320,12 +320,12 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
 
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
-    // Set alpha channel to random things, Mostly I see it using the b values
+                                       // Set alpha channel to random things, Mostly I see it using the b values
     let d = _mm256_packus_epi16(b, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
-    // transpose and interleave channels
+                                                              // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-    // final transpose
+                                        // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
@@ -333,17 +333,17 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     // This only applies to AVX because it's packus is a bit weird
     // and PLEASE DO NOT CHANGE SHUFFLE CONSTANTS.
     // COMING UP WITH THEM TOOK SOO LONG...
-    let i =  _mm256_permute2x128_si256::<{shuffle(3,2,1,0)}>(g, h);
+    let i = _mm256_permute2x128_si256::<{ shuffle(3, 2, 1, 0) }>(g, h);
 
-    let j =  _mm256_permute2x128_si256::<{shuffle(1,2,3,0)}>(g, h);
+    let j = _mm256_permute2x128_si256::<{ shuffle(1, 2, 3, 0) }>(g, h);
 
-    let k =  _mm256_permute2x128_si256::<{shuffle(3,2,0,1)}>(g, h);
+    let k = _mm256_permute2x128_si256::<{ shuffle(3, 2, 0, 1) }>(g, h);
 
-    let l =  _mm256_permute2x128_si256::<{shuffle(0,3,2,1)}>(g, h);
+    let l = _mm256_permute2x128_si256::<{ shuffle(0, 3, 2, 1) }>(g, h);
 
-    let m = _mm256_blend_epi32::<0b1111_0000>(i,j);
+    let m = _mm256_blend_epi32::<0b1111_0000>(i, j);
 
-    let n = _mm256_blend_epi32::<0b1111_0000>(k,l);
+    let n = _mm256_blend_epi32::<0b1111_0000>(k, l);
 
     // Store
     // Use streaming instructions to prevent polluting the cache
