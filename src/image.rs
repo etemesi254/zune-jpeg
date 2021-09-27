@@ -1,6 +1,5 @@
 #![allow(clippy::doc_markdown)]
 
-use std::cmp::max;
 use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
@@ -13,9 +12,7 @@ use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::{read_u16_be, read_u8, Aligned32, ColorSpace, SOFMarkers};
-use crate::upsampler::{
-    upsample_horizontal, upsample_horizontal_sse, upsample_horizontal_vertical, upsample_vertical,
-};
+use crate::upsampler::{upsample_horizontal, upsample_horizontal_vertical, upsample_vertical};
 
 // avx optimized color IDCT
 
@@ -39,7 +36,7 @@ pub(crate) const MAX_COMPONENTS: usize = 3;
 /// 1. Carry out color conversion
 /// 2. Update `&mut usize` with the new position
 pub type ColorConvert16Ptr =
-    fn(&[i16], &[i16], &[i16], &[i16], &[i16], &[i16], &mut [u8], &mut usize);
+    fn(&[i16; 8], &[i16; 8], &[i16; 8], &[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut usize);
 
 /// Color convert function  that can convert YCbCr colorspace to RGB(A/X) for 8 values
 ///
@@ -50,7 +47,7 @@ pub type ColorConvert16Ptr =
 ///     'y,cb,cr'
 ///
 /// The other guarantees are the same as `ColorConvert16Ptr`
-pub type ColorConvertPtr = fn(&[i16], &[i16], &[i16], &mut [u8], &mut usize);
+pub type ColorConvertPtr = fn(&[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut usize);
 /// IDCT  function prototype
 ///
 /// This encapsulates a dequantize and IDCT function which will carry out the following functions
@@ -78,22 +75,37 @@ pub struct Decoder {
     pub(crate) h_max: usize,
     // maximum vertical component of all channels in the image
     pub(crate) v_max: usize,
-    // mcu's  width (interleaved scans)
+    /// mcu's  width (interleaved scans)
     pub(crate) mcu_width: usize,
-    // MCU height(interleaved scans
+    /// MCU height(interleaved scans
     pub(crate) mcu_height: usize,
+    /// Number of MCU's in the x plane
     pub(crate) mcu_x: usize,
+    /// Number of MCU's in the y plane
     pub(crate) mcu_y: usize,
     /// Is the image interleaved?
     pub(crate) interleaved: bool,
+
     /// Image input colorspace, should be YCbCr for a sane image, might be grayscale too
     pub(crate) input_colorspace: ColorSpace,
     /// Image output_colorspace, what input colorspace should be converted to
     pub(crate) output_colorspace: ColorSpace,
     /// Area for unprocessed values we encountered during processing
     pub(crate) mcu_block: [Vec<i16>; MAX_COMPONENTS],
-    /// Function pointers, for pointy stuff.
+    // Progressive image details
+    /// Is the image progressive?
+    pub(crate) is_progressive: bool,
 
+    /// Start of spectral scan
+    pub(crate) ss: u8,
+    /// End of spectral scan
+    pub(crate) se: u8,
+    /// Successive approximation bit position high
+    pub(crate) ah: u8,
+    /// Successive approximation bit position low
+    pub(crate) al: u8,
+
+    // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     ///
     /// This is determined at runtime which function to run, statically it's initialized to
@@ -114,6 +126,7 @@ impl Default for Decoder {
             dc_huffman_tables: [None, None, None],
             ac_huffman_tables: [None, None, None],
             components: vec![],
+            // Interleaved information
             h_max: 1,
             v_max: 1,
             mcu_height: 0,
@@ -121,14 +134,24 @@ impl Default for Decoder {
             mcu_x: 0,
             mcu_y: 0,
             interleaved: false,
+            // Progressive information
+            is_progressive: false,
+            ss: 0,
+            se: 0,
+            ah: 0,
+            al: 0,
+            // Function pointers
             idct_func: choose_idct_func(),
             color_convert: ycbcr_to_rgb,
-            // TODO:Add a platform independent version of this
             color_convert_16: ycbcr_to_rgb_16,
+            // Colorspace
             input_colorspace: ColorSpace::YCbCr,
             output_colorspace: ColorSpace::RGB,
             // This should be kept at par with MAX_COMPONENTS, or until the RFC at
             // https://github.com/rust-lang/rfcs/pull/2920 is accepted
+
+            // Store MCU blocks
+            // This should probably be changed..
             mcu_block: [vec![], vec![], vec![]],
         };
         d.init();
@@ -176,7 +199,7 @@ impl Decoder {
         P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
-        let buffer = Cursor::new(read(file).expect("Could not open file"));
+        let buffer = Cursor::new(read(file)?);
         self.decode_internal(buffer)
     }
     /// Returns the image information
@@ -230,7 +253,7 @@ impl Decoder {
         let mut buf = buf;
 
         // First two bytes should indicate the image buff
-        let magic_bytes = read_u16_be(&mut buf).expect("Could not read the first 2 bytes");
+        let magic_bytes = read_u16_be(&mut buf)?;
         if magic_bytes != 0xffd8 {
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
@@ -246,42 +269,21 @@ impl Decoder {
                 // for meanings of the values below
                 if let Some(m) = marker {
                     match m {
-                        Marker::SOF(0) => {
-                            let marker = SOFMarkers::BaselineDct;
+                        Marker::SOF(0 | 2) => {
+                            let marker = {
+                                // choose marker
+                                if m == Marker::SOF(0) {
+                                    SOFMarkers::BaselineDct
+                                } else {
+                                    // set progressive to be true
+                                    self.is_progressive = true;
+                                    SOFMarkers::ProgressiveDctHuffman
+                                }
+                            };
                             debug!("Image encoding scheme =`{:?}`", marker);
                             // get components
-                            let mut p = parse_start_of_frame(&mut buf, marker, self)?;
-                            // place the quantization tables in components
-                            for component in &mut p {
-                                // compute interleaved image info
-                                self.h_max = max(self.h_max, component.horizontal_sample);
-                                self.v_max = max(self.v_max, component.vertical_sample);
-                                self.mcu_width = self.v_max * 8;
-                                self.mcu_height = self.h_max * 8;
-                                self.mcu_x = (usize::from(self.info.width) + self.mcu_width - 1)
-                                    / self.mcu_width;
-                                self.mcu_y = (usize::from(self.info.height) + self.mcu_height - 1)
-                                    / self.mcu_height;
-                                // deal with quantization tables
-                                if self.h_max != 1 || self.v_max != 1 {
-                                    self.interleaved = true;
-                                }
-                                let q = *self.qt_tables
-                                    [component.quantization_table_number as usize]
-                                    .as_ref()
-                                    .unwrap_or_else(|| {
-                                        panic!(
-                                            "No quantization table for component {:?}",
-                                            component.component_id
-                                        );
-                                    });
-                                component.quantization_table = Aligned32(q);
-                            }
+                            parse_start_of_frame(&mut buf, marker, self)?;
 
-                            // delete quantization tables, we'll extract them from the components when needed
-                            self.qt_tables = [None, None, None];
-
-                            self.components = p;
                         }
                         // Start of Frame Segments not supported
                         Marker::SOF(v) => {
@@ -343,13 +345,22 @@ impl Decoder {
         self.decode_headers(&mut buf)?;
         // if the image is interleaved
         if self.interleaved {
-            self.decode_mcu_ycbcr_interleaved(&mut buf)
-        } else {
-            Ok(self.decode_mcu_ycbcr_non_interleaved(&mut buf))
+            if self.is_progressive {
+                self.decode_mcu_ycbcr_non_interleaved_prog(&mut buf)
+            } else {
+                self.decode_mcu_ycbcr_interleaved_baseline(&mut buf)
+            }
+        }
+        // non interleaved
+        else {
+            if self.is_progressive {
+                // TODO: do something important..
+            }
+            self.decode_mcu_ycbcr_non_interleaved_baseline(&mut buf)
         }
     }
     /// Initialize the most appropriate functions for
-    ///
+    #[allow(clippy::unwrap_used)] // can't panic if we know it won't panic
     fn init(&mut self) {
         // set color convert function
         // it's safe to unwrap because  we know Colorspace::RGB will return
@@ -372,11 +383,12 @@ impl Decoder {
     /// - `ColorSpace::GRAYSCALE`:Convert normal image to a black and white image(grayscale)
     /// # Panics
     ///  Won't panic actually
+    #[allow(clippy::expect_used)]
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace) {
         self.output_colorspace = colorspace;
 
         match colorspace {
-            ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA|ColorSpace::GRAYSCALE => {
+            ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA | ColorSpace::GRAYSCALE => {
                 let p = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
                 self.color_convert_16 = p.0;
                 self.color_convert = p.1;
@@ -399,14 +411,21 @@ impl Decoder {
                 debug!("Horizontal sub-sampling (2,1)");
                 // Change all sub sampling to be horizontal. This also changes the Y component which
                 // should **NOT** be up-sampled, so it's the responsibility of the caller to ensure that
-                if is_x86_feature_detected!("sse2") {
-                    self.components
-                        .iter_mut()
-                        .for_each(|x| x.up_sampler = upsample_horizontal_sse);
-                } else {
-                    self.components
-                        .iter_mut()
-                        .for_each(|x| x.up_sampler = upsample_horizontal);
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                {
+                    if is_x86_feature_detected!("sse2") {
+                        #[cfg(feature = "x86")]
+                        {
+                            use crate::upsampler::upsample_horizontal_sse;
+                            self.components
+                                .iter_mut()
+                                .for_each(|x| x.up_sampler = upsample_horizontal_sse);
+                        }
+                    } else {
+                        self.components
+                            .iter_mut()
+                            .for_each(|x| x.up_sampler = upsample_horizontal);
+                    }
                 }
             }
             (1, 2) => {
@@ -425,7 +444,7 @@ impl Decoder {
             }
             (_, _) => {
                 // no op. Do nothing
-                // jokes , panic...
+                // Jokes , panic...
                 return Err(DecodeErrors::Format(
                     "Unknown down-sampling method, cannot continue".to_string(),
                 ));
@@ -439,7 +458,7 @@ impl Decoder {
     /// use zune_jpeg::{Decoder, ColorSpace};
     /// Decoder::new().set_output_colorspace(ColorSpace::RGBA);
     /// ```
-    pub fn rgba(&mut self){
+    pub fn rgba(&mut self) {
         // told you so
         self.set_output_colorspace(ColorSpace::RGBA);
     }

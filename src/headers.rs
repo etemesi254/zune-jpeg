@@ -4,7 +4,7 @@
 //!
 //! A good guide on markers can be found [here](http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm)
 //!
-use std::convert::TryInto;
+
 use std::io::{BufRead, Read};
 
 use crate::components::Components;
@@ -12,8 +12,9 @@ use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::image::ImageInfo;
 use crate::marker::Marker;
-use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG};
+use crate::misc::{read_u16_be, read_u8, SOFMarkers, UN_ZIGZAG, Aligned32};
 use crate::{ColorSpace, Decoder};
+use std::cmp::max;
 
 ///**B.2.4.2 Huffman table-specification syntax**
 /// ----------------------------------------------
@@ -41,7 +42,10 @@ where
     R: Read,
 {
     // Read the length of the Huffman table
-    let dht_length = read_u16_be(&mut buf).expect("Could not read Huffman length from image") - 2;
+    let dht_length = read_u16_be(&mut buf).map_err(|_| {
+        DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
+    })? - 2;
+    println!("DHT");
     // how much have we read
     let mut length_read: u16 = 0;
     // A single DHT table may contain multiple HT's
@@ -55,8 +59,9 @@ where
         let index = (ht_info & 0x0f) as usize;
         // read the number of symbols
         let mut num_symbols: [u8; 17] = [0; 17];
-        buf.read_exact(&mut num_symbols[1..17])
-            .expect("Could not read bytes to the buffer");
+        buf.read_exact(&mut num_symbols[1..17]).map_err(|_| {
+            DecodeErrors::HuffmanDecode("Could not read bytes into the buffer".to_string())
+        })?;
         let symbols_sum: u16 = num_symbols.iter().map(|f| u16::from(*f)).sum();
         // the sum should not be above 255
         if symbols_sum > 256 {
@@ -66,17 +71,18 @@ where
         }
         // A table containing symbols in increasing code length
         let mut symbols: Vec<u8> = vec![0; symbols_sum.into()];
-        buf.read_exact(&mut symbols)
-            .expect("Could not read symbols to the buffer \n");
+        buf.read_exact(&mut symbols).map_err(|x| {
+            DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+        })?;
         length_read += 17 + symbols_sum;
         match dc_or_ac {
             0 => {
                 decoder.dc_huffman_tables[index] =
-                    Some(HuffmanTable::new(&num_symbols, symbols, true));
+                    Some(HuffmanTable::new(&num_symbols, symbols, true)?);
             }
             _ => {
                 decoder.ac_huffman_tables[index] =
-                    Some(HuffmanTable::new(&num_symbols, symbols, false));
+                    Some(HuffmanTable::new(&num_symbols, symbols, false)?);
             }
         }
     }
@@ -114,7 +120,8 @@ where
 {
     let mut buf = buf;
     // read length
-    let qt_length = read_u16_be(&mut buf).expect("Could not read  DQT length");
+    let qt_length = read_u16_be(&mut buf)
+        .map_err(|c| DecodeErrors::Format(format!("Could not read  DQT length {}", c)))?;
     let mut length_read: u16 = 0;
     // we don't un-zig-zag here we do it after dequantization
     while qt_length > length_read {
@@ -139,19 +146,13 @@ where
         let dct_table = match precision {
             0 => {
                 let mut qt_values = [0; 64];
-                buf.read_exact(&mut qt_values)
-                    .expect("Could not read symbols to the buffer \n");
+                buf.read_exact(&mut qt_values).map_err(|x| {
+                    DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+                })?;
 
                 length_read += 7 + precision_value as u16;
                 // carry out un zig-zag here
-                un_zig_zag(
-                    &qt_values
-                        .iter()
-                        .map(|a| i32::from(*a))
-                        .collect::<Vec<i32>>()
-                        .try_into()
-                        .unwrap(),
-                )
+                un_zig_zag(&qt_values)
             }
             1 => {
                 // 16 bit quantization tables
@@ -198,13 +199,14 @@ pub(crate) fn parse_start_of_frame<R>(
     buf: &mut R,
     sof: SOFMarkers,
     img: &mut Decoder,
-) -> Result<Vec<Components>, DecodeErrors>
+) -> Result<(), DecodeErrors>
 where
     R: Read,
 {
     let mut buf = buf;
     // Get length of the frame header
-    let length = read_u16_be(&mut buf).unwrap();
+    let length = read_u16_be(&mut buf)
+        .map_err(|_| DecodeErrors::Format("Cannot read SOF length, exhausted data".to_string()))?;
     // usually 8, but can be 12 and 16
     let dt_precision = read_u8(&mut buf);
     if dt_precision != 8 {
@@ -216,12 +218,15 @@ where
 
     img.info.set_density(dt_precision);
     // read the image height , maximum is 65,536
-    let img_height = read_u16_be(&mut buf).unwrap();
+    let img_height = read_u16_be(&mut buf).map_err(|_| {
+        DecodeErrors::Format("Cannot read image height, exhausted data".to_string())
+    })?;
 
     img.info.set_height(img_height);
 
     // read image width
-    let img_width = read_u16_be(&mut buf).unwrap();
+    let img_width = read_u16_be(&mut buf)
+        .map_err(|_| DecodeErrors::Format("Cannot read image width, exhausted data".to_string()))?;
 
     img.info.set_width(img_width);
     // Check image width or height is zero
@@ -254,15 +259,45 @@ where
     for _ in 0..num_components {
         // read 3 bytes for each component
         buf.read_exact(&mut temp)
-            .expect("Could not read  component data");
-        let component = Components::from(temp).expect("Could not parse component data");
+            .map_err(|x| DecodeErrors::Format(format!("Could not read component data\n{}", x)))?;
+        let component = Components::from(temp)?;
 
         components.push(component);
     }
 
     // Set the SOF marker
     img.info.set_sof_marker(sof);
-    Ok(components)
+    for component in &mut components{
+        // compute interleaved image info
+        img.h_max = max(img.h_max, component.horizontal_sample);
+        img.v_max = max(img.v_max, component.vertical_sample);
+        img.mcu_width = img.v_max * 8;
+        img.mcu_height = img.h_max * 8;
+        img.mcu_x = (usize::from(img.info.width) + img.mcu_width - 1)
+            / img.mcu_width;
+        img.mcu_y = (usize::from(img.info.height) + img.mcu_height - 1)
+            / img.mcu_height;
+        // deal with quantization tables
+        if img.h_max != 1 || img.v_max != 1 {
+            img.interleaved = true;
+        }
+        let q = *img.qt_tables
+            [component.quantization_table_number as usize]
+            .as_ref()
+            .ok_or_else(|| {
+                DecodeErrors::DqtError(format!(
+                    "No quantization table for component {:?}",
+                    component.component_id
+                ))
+            })?;
+        component.quantization_table = Aligned32(q);
+    }
+    // delete quantization tables, we'll extract them from the components when needed
+    img.qt_tables = [None, None, None];
+
+    img.components = components;
+    Ok(())
+
 }
 
 /// Parse a start of scan data
@@ -284,7 +319,7 @@ where
 {
     let mut buf = buf;
     // Scan header length
-    let ls = read_u16_be(&mut buf).expect("Could not read start of scan length");
+    let ls = read_u16_be(&mut buf)?;
 
     // Number of image components in scan
     let ns = read_u8(&mut buf);
@@ -293,9 +328,11 @@ where
             "Bad SOS length,corrupt jpeg".to_string(),
         ));
     }
-    if !(1..5).contains(&ns) {
+    dbg!(ls,ns);
+    //check if it's between 1 and 3(inclusive)
+    if !(1..4).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
-            "Number of components in start of scan should be less than 4 but more than 0. Found {}",
+            "Number of components in start of scan should be less than 3 but more than 0. Found {}",
             ns
         )));
     }
@@ -303,13 +340,49 @@ where
     if ns == 1 {
         image.input_colorspace = ColorSpace::GRAYSCALE;
     }
+    // consume spec parameters
+    for i in 0..ns {
+        let _ = read_u8(&mut buf);
+
+
+        let y = read_u8(&mut buf);
+        image.components[i as usize].dc_huff_table = usize::from((y >> 4) & 0xF);
+        image.components[usize::from(i)].ac_huff_table = usize::from(y & 0xF);
+        //println!("{},{}", y>>4, y&0xF);
+    }
     // Collect the component spec parameters
     if image.info.sof == SOFMarkers::ProgressiveDctHuffman {
-        for _ in 0..ns {}
+        // Extract progressive information
+
+        // https://www.w3.org/Graphics/JPEG/itu-t81.pdf
+        // Page 42
+
+        // Start of spectral / predictor selection. (between 0 and 63)
+        image.ss = read_u8(&mut buf) & 63;
+
+        // should be between ss and 63
+        // End of spectral selection
+        image.se = read_u8(&mut buf) & 63;
+
+        let bit_approx = read_u8(&mut buf);
+
+        if image.se > image.ss {
+            return Err(DecodeErrors::SosError(
+                "End of spectral section smaller than start of spectral selection".to_string(),
+            ));
+        }
+
+        // successive approximation bit position high
+        // top 4 bits
+        image.ah = bit_approx >> 4;
+        // successive approximation bit position low
+        // bottom 4 bits
+        image.al = bit_approx & 0xF;
+
+        dbg!(image.ss,image.al,image.se);
     } else {
-        // Ignore per component details, for baseline DCT, we probably don't need
-        // them
-        buf.consume((2 * ns as usize) + 3);
+        // ignore three bytes that contain progressive information
+        buf.consume(3);
     }
     Ok(())
 }
@@ -330,16 +403,18 @@ where
             // The only thing we need is the x and y pixel densities here
             // which are found 10 bytes away
             buf.consume(8);
-            let x_density = read_u16_be(&mut buf).expect("Could not read x-density");
+            let x_density = read_u16_be(&mut buf)?;
             info.set_x(x_density);
-            let y_density = read_u16_be(&mut buf).expect("Could not read y-density");
+            let y_density = read_u16_be(&mut buf)?;
             info.set_y(y_density);
         }
         Marker::APP(1) => {
             if length >= 6 {
                 let mut buffer = [0_u8; 6];
-                buf.read_exact(&mut buffer)
-                    .expect("Could not read Exif data");
+                buf.read_exact(&mut buffer).map_err(|x| {
+                    DecodeErrors::Format(format!("Could not read Exif data\n{}", x))
+                })?;
+
                 bytes_read += 6;
 
                 // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
@@ -356,10 +431,10 @@ where
 }
 
 /// Small utility function to print Un-zig-zagged quantization tables
-fn un_zig_zag<T: Default + Copy>(a: &[T; 64]) -> [T; 64] {
-    let mut output = [T::default(); 64];
+fn un_zig_zag(a: &[u8]) -> [i32; 64] {
+    let mut output = [0; 64];
     for i in 0..64 {
-        output[UN_ZIGZAG[i]] = a[i];
+        output[UN_ZIGZAG[i]] = i32::from(a[i]);
     }
     output
 }

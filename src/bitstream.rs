@@ -7,6 +7,7 @@
 //! This file exposes a single struct that can decode a huffman encoded Bitstream in a JPEG file
 use std::io::Cursor;
 
+use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
@@ -32,6 +33,12 @@ pub(crate) struct BitStream {
     bits_left: u8,
     /// Did we find a marker(RST/EOF) during decoding?
     pub marker: Option<Marker>,
+
+    /// Progressive decoding
+    pub successive_high: u8,
+    pub successive_low: u8,
+    _spec_start: u8,
+    spec_end: u8,
 }
 
 impl BitStream {
@@ -45,6 +52,23 @@ impl BitStream {
             lsb_buffer: 0,
             bits_left: 0,
             marker: None,
+            successive_high: 0,
+            successive_low: 0,
+            _spec_start: 0,
+            spec_end: 0,
+        }
+    }
+    /// Create a new Bitstream for progressive decoding
+    pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream {
+        BitStream {
+            buffer: 0,
+            lsb_buffer: 0,
+            bits_left: 0,
+            marker: None,
+            successive_high: ah,
+            successive_low: al,
+            _spec_start: spec_start,
+            spec_end,
         }
     }
     /// Refill the bit buffer by (a maximum of) 48 bits (4 bytes)
@@ -129,40 +153,20 @@ impl BitStream {
         }
         return true;
     }
-    /// Decode a Minimum Code Unit(MCU) as quickly as possible
-    ///
-    /// # Arguments
-    /// - reader: The bitstream from where we read more bits.
-    /// - dc_table: The Huffman table used to decode the DC coefficient
-    /// - ac_table: The Huffman table used to decode AC values
-    /// - block: A memory region where we will write out the decoded values
-    /// - DC prediction: Last DC value for this component
-    ///
-    ///# Performance
-    ///- We are using a modified version of the Huffman Decoder from `libjpeg-turbo/[jdhuff.h+jdhuff.c]`
-    /// and `stb_image`
-    /// which is pretty fast(jokes its `super fast`...).
-    /// - The code is heavily inlined(this function itself is inlined)(I would not like to be that guy viewing disassembly info of this
-    /// function) and makes use of macros, so the resulting code the compiler receives probably spans too many lines
-    /// - The main problems are memory bottlenecks
-    /// # Expectations
-    /// The `block` should be initialized to zero
     #[allow(
         clippy::many_single_char_names,
         clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
+        clippy::cast_sign_loss,
+        clippy::unwrap_used
     )]
     #[inline(always)]
-    pub fn decode_fast(
+    fn decode_dc(
         &mut self,
         reader: &mut Cursor<Vec<u8>>,
         dc_table: &HuffmanTable,
-        ac_table: &HuffmanTable,
-        block: &mut [i16; 64],
         dc_prediction: &mut i32,
     ) -> bool {
-
-        let (mut s, mut l, mut r);
+        let (mut s, mut l, r);
 
         if !self.refill(reader) {
             return false;
@@ -182,9 +186,7 @@ impl BitStream {
             if l > 16 {
                 s = 0;
             } else {
-                s = i32::from(
-                    dc_table.values[((s + dc_table.offset[l as usize]) & 0xFF) as usize],
-                );
+                s = i32::from(dc_table.values[((s + dc_table.offset[l as usize]) & 0xFF) as usize]);
             }
         }
         if s != 0 {
@@ -192,8 +194,48 @@ impl BitStream {
             s = huff_extend(r, s);
         }
         // Update DC prediction
+        // (multiply by successive low if it's a progressive image, it should not matter for baseline).
         *dc_prediction += s;
-        block[0] = *dc_prediction as i16;
+        return true;
+    }
+    /// Decode a Minimum Code Unit(MCU) as quickly as possible
+    ///
+    /// # Arguments
+    /// - reader: The bitstream from where we read more bits.
+    /// - dc_table: The Huffman table used to decode the DC coefficient
+    /// - ac_table: The Huffman table used to decode AC values
+    /// - block: A memory region where we will write out the decoded values
+    /// - DC prediction: Last DC value for this component
+    ///
+    ///# Performance
+    ///- We are using a modified version of the Huffman Decoder from `libjpeg-turbo/[jdhuff.h+jdhuff.c]`
+    /// and `stb_image`
+    /// which is pretty fast(jokes its `super fast`...).
+    /// - The code is heavily inlined(this function itself is inlined)(I would not like to be that guy viewing disassembly info of this
+    /// function) and makes use of macros, so the resulting code the compiler receives probably spans too many lines
+    /// - The main problems are memory bottlenecks
+    /// # Expectations
+    /// The `block` should be initialized to zero
+    #[allow(
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+    )]
+    #[rustfmt::skip]
+    #[inline(always)]
+    pub fn decode_mcu_block(&mut self, reader: &mut Cursor<Vec<u8>>,
+                            dc_table: &HuffmanTable, ac_table: &HuffmanTable,
+                            block: &mut [i16; 64], dc_prediction: &mut i32,
+    ) -> bool {
+
+        // decode DC, dc prediction will contain the value
+        if !self.decode_dc(reader, dc_table, dc_prediction) {
+            return false;
+        }
+        // set dc to be the dc prediction.
+        block[0]= *dc_prediction as i16;
+
+        let (mut s, mut l, mut r);
         // Decode AC coefficients
         let mut k: usize = 1;
         // Get fast AC table as a reference before we enter the hot path
@@ -209,14 +251,14 @@ impl BitStream {
             s = self.peek_bits::<HUFF_LOOKAHEAD>();
             // Safety:
             //     S can never go past 1<<HUFF_LOOKAHEAD and lookup table is 1<<HUFF_LOOKAHEAD
-            let v =  ac_lookup[s as usize] ;
+            let v = ac_lookup[s as usize];
             if v != 0 {
                 //  FAST AC path
                 k += ((v >> 4) & 15) as usize; // run
                 self.drop_bits((v & 15) as u8); // combined length
                 // Safety:
                 //  UN_ZIGZAG cannot go past 63 and k can never go past 85
-                    block[UN_ZIGZAG[k]] = v >> 8;
+                block[UN_ZIGZAG[k]] = v >> 8;
                 k += 1;
             } else {
                 s = ac_table.lookup[s as usize];
@@ -286,6 +328,42 @@ impl BitStream {
         self.lsb_buffer <<= n_bits;
         t
     }
+    /// Decode a DC block
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn decode_block_dc(
+        &mut self,
+        reader: &mut Cursor<Vec<u8>>,
+        dc_table: &HuffmanTable,
+        block: &mut [i16; 64],
+        dc_prediction: &mut i32,
+    ) -> Result<bool, DecodeErrors> {
+        if self.spec_end == 0 {
+            return Err(DecodeErrors::HuffmanDecode(
+                "Can't merge dc and AC corrupt jpeg".to_string(),
+            ));
+        }
+        if self.successive_high == 0 {
+            self.decode_dc(reader, dc_table, dc_prediction);
+            block[0] = (*dc_prediction as i16) * (1_i16 << self.successive_low);
+        } else {
+            // refinement scan
+            self.get_bit(reader);
+            block[0] += 1 << self.successive_low;
+        }
+
+        return Ok(true);
+    }
+    /// Get a single bit from the bitstream
+    fn get_bit(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool {
+        if self.bits_left < 1 {
+            return self.refill(reader);
+        }
+        // discard a bit
+        self.bits_left -= 1;
+        self.lsb_buffer <<= 1;
+
+        return true;
+    }
     /// Reset the stream if we have a restart marker
     ///
     /// Restart markers indicate drop those bits in the stream and zero out everything
@@ -297,6 +375,7 @@ impl BitStream {
         self.lsb_buffer = 0;
     }
 }
+
 /// Do the equivalent of JPEG HUFF_EXTEND
 #[inline(always)]
 fn huff_extend(x: i32, s: i32) -> i32 {
