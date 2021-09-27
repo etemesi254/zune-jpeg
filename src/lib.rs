@@ -69,7 +69,7 @@ fn decode_jpeg() {
     let mut x = Decoder::new();
     x.set_output_colorspace(ColorSpace::GRAYSCALE);
     let image = x
-        .decode_file("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg")
+        .decode_file("/home/caleb/CLionProjects/zune-jpeg/test-images/speed_bench.jpg")
         .unwrap();
 
     println!("{:?}", &image[0..30]);

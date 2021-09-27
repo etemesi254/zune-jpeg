@@ -268,7 +268,9 @@ impl Decoder {
                 // Check http://www.vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
                 // for meanings of the values below
                 if let Some(m) = marker {
+                    println!("{:?}",marker);
                     match m {
+
                         Marker::SOF(0 | 2) => {
                             let marker = {
                                 // choose marker

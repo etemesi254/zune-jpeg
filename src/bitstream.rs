@@ -98,6 +98,8 @@ impl BitStream {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
                 $byte = read_u8(reader);
+                println!("{}",$byte);
+                panic!();
 
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this

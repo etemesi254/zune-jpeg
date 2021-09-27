@@ -45,7 +45,6 @@ where
     let dht_length = read_u16_be(&mut buf).map_err(|_| {
         DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
     })? - 2;
-    println!("DHT");
     // how much have we read
     let mut length_read: u16 = 0;
     // A single DHT table may contain multiple HT's
@@ -320,15 +319,16 @@ where
     let mut buf = buf;
     // Scan header length
     let ls = read_u16_be(&mut buf)?;
+    dbg!(ls-2);
 
     // Number of image components in scan
     let ns = read_u8(&mut buf);
+    dbg!(ls-3);
     if ls != u16::from(6 + 2 * ns) {
         return Err(DecodeErrors::SosError(
             "Bad SOS length,corrupt jpeg".to_string(),
         ));
     }
-    dbg!(ls,ns);
     //check if it's between 1 and 3(inclusive)
     if !(1..4).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
@@ -342,6 +342,7 @@ where
     }
     // consume spec parameters
     for i in 0..ns {
+        dbg!(ls-3-u16::from((i+1)*2));
         let _ = read_u8(&mut buf);
 
 
@@ -379,7 +380,6 @@ where
         // bottom 4 bits
         image.al = bit_approx & 0xF;
 
-        dbg!(image.ss,image.al,image.se);
     } else {
         // ignore three bytes that contain progressive information
         buf.consume(3);
