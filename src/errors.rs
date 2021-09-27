@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 
 use crate::misc::{
     START_OF_FRAME_EXT_AR, START_OF_FRAME_EXT_SEQ, START_OF_FRAME_LOS_SEQ,
-    START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT, START_OF_FRAME_PROG_DCT_AR,
+    START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT_AR,
 };
 
 /// Common Decode errors
@@ -80,14 +80,22 @@ impl Display for DecodeErrors {
     }
 }
 impl Error for DecodeErrors {}
+impl From<Box<dyn Error>> for DecodeErrors {
+    fn from(err: Box<dyn Error>) -> Self {
+        DecodeErrors::Format(format!("Error decoding an image:\n {}", err.to_string()))
+    }
+}
 
+impl From<std::io::Error> for DecodeErrors {
+    fn from(err: std::io::Error) -> Self {
+        DecodeErrors::Format(format!("Error decoding an image:\n {}", err.to_string()))
+    }
+}
 /// Contains Unsupported/Yet-to-be supported Decoder image encoding types.
 #[derive(Eq, PartialEq, Copy, Clone)]
 pub enum UnsupportedSchemes {
     /// SOF_1 Extended sequential DCT,Huffman coding
     ExtendedSequentialHuffman,
-    /// Progressive DCT, Huffman coding
-    ProgressiveDctHuffman,
     /// Lossless (sequential), huffman coding,
     LosslessHuffman,
     /// Extended sequential DEC, arithmetic coding
@@ -102,9 +110,6 @@ impl Debug for UnsupportedSchemes {
         match &self {
             Self::ExtendedSequentialHuffman => {
                 write!(f,"The library cannot yet decode images encoded using Extended Sequential Huffman  encoding scheme yet.")
-            }
-            Self::ProgressiveDctHuffman => {
-                write!(f, "The library cannot yet decode images encoded using Progressive Huffman Encoding scheme.")
             }
             Self::LosslessHuffman => {
                 write!(f,"The library cannot yet decode images encoded with Lossless Huffman encoding scheme")
@@ -131,7 +136,6 @@ impl UnsupportedSchemes {
         let int = u16::from_be_bytes([0xff, int]);
 
         match int {
-            START_OF_FRAME_PROG_DCT => Some(Self::ProgressiveDctHuffman),
             START_OF_FRAME_PROG_DCT_AR => Some(Self::ProgressiveDctArithmetic),
             START_OF_FRAME_LOS_SEQ => Some(Self::LosslessHuffman),
             START_OF_FRAME_LOS_SEQ_AR => Some(Self::LosslessArithmetic),

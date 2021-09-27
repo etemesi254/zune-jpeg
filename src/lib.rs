@@ -34,7 +34,10 @@
     clippy::perf,
     clippy::pedantic,
     clippy::inline_always,
-clippy::missing_errors_doc,
+    clippy::missing_errors_doc,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used
 )]
 //clippy::missing_docs_in_private_items,
 #![deny(missing_docs)]
@@ -53,6 +56,7 @@ mod idct;
 mod image;
 mod marker;
 mod mcu;
+mod mcu_prog;
 mod misc;
 
 mod color_convert;
@@ -79,4 +83,10 @@ fn decode_jpeg_interleaved() {
 
     println!("{:?}", &image[0..30]);
     //println!("{:?}", &image[10000..10512]);
+}
+#[test]
+fn decode_jpeg_prog() {
+    let _pixels = Decoder::new()
+        .decode_file("/home/caleb/mr_lee_prog.jpg")
+        .unwrap();
 }

@@ -17,10 +17,14 @@ pub(crate) struct Components {
     pub vertical_sample: usize,
     /// Sub-sampling ratio of this component in the y-plane
     pub horizontal_sample: usize,
-    /// DC table position of this component
-    pub dc_table_pos: usize,
-    /// Ac table position of this component
-    pub ac_table_pos: usize,
+    /// DC quantization table position of this component
+    pub dc_qt_pos: usize,
+    /// Ac quantization table position of this component
+    pub ac_qt_pos: usize,
+    /// DC huffman table position
+    pub dc_huff_table: usize,
+    /// AC huffman table position for this element.
+    pub ac_huff_table: usize,
     /// Quantization table number
     pub quantization_table_number: u8,
     /// Specifies quantization table to use with this component
@@ -64,8 +68,12 @@ impl Components {
             vertical_sample,
             horizontal_sample,
             quantization_table_number,
-            dc_table_pos: quantization_table_number as usize,
-            ac_table_pos: quantization_table_number as usize,
+            dc_qt_pos: quantization_table_number as usize,
+            ac_qt_pos: quantization_table_number as usize,
+            // These two will be set with sof marker
+            dc_huff_table: 0,
+            ac_huff_table: 0,
+
             quantization_table: Aligned32([0; 64]),
             dc_pred: 0,
             up_sampler: upsample_no_op,

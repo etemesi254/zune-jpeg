@@ -3,16 +3,13 @@
 //! The main upsampling method is a bi-linear interpolation or a "triangle  filter " or libjpeg turbo
 //! `fancy_upsampling` which is a good compromise between speed and visual quality
 //!
-
+#[cfg(feature = "x86")]
 pub use sse::upsample_horizontal_sse;
-
 
 mod sse;
 
 /// Carry out vertical   upsampling
 pub fn upsample_vertical(_input: &[i16], _output_len: usize) -> Vec<i16> {
-
-
     return Vec::new();
 }
 
@@ -21,8 +18,7 @@ pub fn upsample_vertical(_input: &[i16], _output_len: usize) -> Vec<i16> {
 /// The up-sampling algorithm used is libjpeg-turbo `fancy_upsampling` which is a linear
 /// interpolation or triangle filter, see module docs for explanation
 pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16> {
-    // okay horizontal sub-sampling with  bi-linear interpolation
-    let mut out =  vec![0;output_len] ;
+    let mut out = vec![0; output_len];
 
     out[0] = input[0];
     out[1] = (input[0] * 3 + input[1] + 2) >> 2;

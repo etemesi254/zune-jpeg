@@ -29,7 +29,11 @@ pub fn dequantize_and_idct_avx2(vector: &mut [i16], qt_table: &Aligned32<[i32; 6
 }
 
 #[target_feature(enable = "avx2")]
-#[allow(clippy::too_many_lines, clippy::cast_possible_truncation,clippy::similar_names)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::similar_names
+)]
 unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[i32; 64]>) {
     // since QT tables are reused, we can lift them from the loop and multiply them inside
     // This is still slow because cache misses
@@ -88,7 +92,7 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
             if v == 1 {
                 // AC terms all zero, idct of the block is  is (coeff[0] *qt[0])/8 + bias(128) (and clamped to 255)
                 let idct_value = _mm256_set1_epi16(
-                    (((vector[0] * (qt_table.0[0]) as i16) >> 3) + 128)
+                    (((vector[0].wrapping_mul((qt_table.0[0]) as i16)) >> 3) + 128)
                         .max(0)
                         .min(255),
                 );
