@@ -240,7 +240,7 @@ where
     R: Read,
 {
     let mut tmp: [u8; 2] = [0, 0];
-    if reader.read(&mut tmp).expect("could not read from data") != 2 {
+    if reader.read(&mut tmp)? != 2 {
         return Err(DecodeErrors::ExhaustedData);
     };
     let v = u16::from_be_bytes(tmp);
