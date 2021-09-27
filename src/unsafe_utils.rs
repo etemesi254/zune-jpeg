@@ -1,3 +1,4 @@
+#![cfg(feature = "x86")]
 //! This module provides unsafe ways to do some things
 //!
 #![allow(clippy::wildcard_imports)]
@@ -157,6 +158,7 @@ impl MulAssign<__m256i> for YmmRegister {
 ///    }
 /// }
 ///```
+#[allow(clippy::expect_used)]
 pub(crate) unsafe fn align_zero_alloc<T, const ALIGNMENT: usize>(capacity: usize) -> Vec<T>
 where
     T: Default + Copy,
