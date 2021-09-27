@@ -1,3 +1,4 @@
+#![cfg(feature = "x86")]
 #![allow(clippy::module_name_repetitions)]
 
 #[cfg(target_arch = "x86")]
@@ -125,7 +126,6 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
     out[ol + 6] = (input[il + 2] * 3 + input[il + 3] + 2) >> 2;
     out[ol + 7] = input[il + 3];
     return out;
-
 }
 
 #[test]

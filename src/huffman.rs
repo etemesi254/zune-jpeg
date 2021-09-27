@@ -1,7 +1,6 @@
 //! This file contains a single struct `HuffmanTable` that
-//! stores Huffman tables needed during BitStream decoding.
+//! stores Huffman tables needed during `BitStream` decoding.
 #![allow(clippy::similar_names, clippy::module_name_repetitions)]
-use std::convert::TryFrom;
 
 use crate::errors::DecodeErrors;
 
@@ -10,7 +9,7 @@ pub const HUFF_LOOKAHEAD: u8 = 9;
 /// A struct which contains necessary tables for decoding a JPEG
 /// huffman encoded bitstream
 pub struct HuffmanTable {
-    /// element[0] of each array is unused
+    /// element `[0]` of each array is unused
     /// largest code of length k
     pub(crate) maxcode: [i32; 18],
     /// offset for codes of length k
@@ -38,7 +37,11 @@ pub struct HuffmanTable {
 }
 
 impl HuffmanTable {
-    pub fn new(codes: &[u8; 17], values: Vec<u8>, is_dc: bool) -> HuffmanTable {
+    pub fn new(
+        codes: &[u8; 17],
+        values: Vec<u8>,
+        is_dc: bool,
+    ) -> Result<HuffmanTable, DecodeErrors> {
         let mut p = HuffmanTable {
             maxcode: [0; 18],
             offset: [0; 18],
@@ -47,9 +50,8 @@ impl HuffmanTable {
             values,
             ac_lookup: None,
         };
-        p.make_derived_table(is_dc)
-            .expect("Could not create a Huffman table");
-        p
+        p.make_derived_table(is_dc)?;
+        Ok(p)
     }
     /// Compute derived values for a Huffman table
     ///
@@ -93,7 +95,7 @@ impl HuffmanTable {
             }
             // code is now 1 more than the last code used for code-length si; but
             // it must still fit in si bits, since no code is allowed to be all ones.
-            if i32::try_from(code).expect("Overflow, weee") >= (1 << si) {
+            if (code as i32) >= (1 << si) {
                 return Err(DecodeErrors::HuffmanDecode("Bad Huffman Table".to_string()));
             }
             code <<= 1;
@@ -108,8 +110,7 @@ impl HuffmanTable {
             } else {
                 // offset[l]=codes[index of 1st symbol of code length l
                 // minus minimum code of length l]
-                self.offset[l] =
-                    i32::try_from(p).expect("Overflow error wee") - (huff_code[p]) as i32;
+                self.offset[l] = (p as i32) - (huff_code[p]) as i32;
                 p += usize::from(self.bits[l]);
                 // maximum code of length l
                 self.maxcode[l] = huff_code[p - 1] as i32;
