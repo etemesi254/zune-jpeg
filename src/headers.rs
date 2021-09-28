@@ -226,13 +226,6 @@ where
     // set number of components
     img.info.components = num_components;
 
-    //    if (sof == SOFMarkers::ProgressiveDctHuffman || sof ==
-    // SOFMarkers::ProgressiveDctArithmetic)      && num_components > 4
-    // {
-    //    return Err(DecodeErrors::SofError(
-    //       format!("An Image encoded with Progressive DCT cannot have more than 4
-    // components in the frame, image has {}",num_components  )));
-    //}
     let mut components = Vec::with_capacity(num_components as usize);
 
     let mut temp = [0; 3];
@@ -266,7 +259,6 @@ where
 
         img.mcu_y = (usize::from(img.info.height) + img.mcu_height - 1) / img.mcu_height;
 
-        // deal with quantization tables
         if img.h_max != 1 || img.v_max != 1
         {
             img.interleaved = true;
