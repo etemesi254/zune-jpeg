@@ -1,9 +1,9 @@
+use std::cmp::min;
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 use crate::components::Components;
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
-use std::cmp::min;
-use std::convert::TryInto;
 
 // In case data isn't there
 const BASE_ARRAY: [i16; 8] = [128; 8];
@@ -36,7 +36,7 @@ pub(crate) fn post_process_non_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPO
     // output colorspace.
     // This means that if the image data is stored as RGB but the user requested a grayscale image, don't
     // carry out IDCT on Cb and Cr components.
-    let x = min(output_colorspace.num_components(),input_colorspace.num_components());
+    let x = min(output_colorspace.num_components(), input_colorspace.num_components());
     (0..x).for_each(|x| {
         (idct_func)(unprocessed[x].as_mut_slice(), &component_data[x].quantization_table);
     });
@@ -69,7 +69,7 @@ pub(crate) fn post_process_non_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPO
 /// - mcu_len - Number of MCU's per width
 /// - width - Width of the image.
 /// - position: Offset from which to write the pixels
-#[allow(clippy::too_many_arguments, clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::doc_markdown,clippy::single_match)]
+#[allow(clippy::too_many_arguments, clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::doc_markdown, clippy::single_match)]
 #[rustfmt::skip]
 pub(crate) fn post_process_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPONENTS],
                                        component_data: &[Components], h_samp: usize, v_samp: usize,
@@ -80,17 +80,20 @@ pub(crate) fn post_process_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPONENT
 {
     // carry out dequantization and inverse DCT
     // for the reason for the below line, see post_process_no_interleaved
-    let x = min(input_colorspace.num_components(),output_colorspace.num_components());
-    (0..x).for_each(|z| {
-        idct_func(&mut unprocessed[z], &component_data[z].quantization_table);
-    });
+    let x = min(input_colorspace.num_components(), output_colorspace.num_components());
+    (0..x).for_each(|z|
+        {
+            idct_func(&mut unprocessed[z], &component_data[z].quantization_table);
+        }
+    );
     // carry out upsampling , the return vector overwrites the original vector
-    for i in 1..x {
+    for i in 1..x
+    {
         unprocessed[i] = (component_data[i].up_sampler)(&unprocessed[i], unprocessed[0].len());
     }
     // color convert
-    match (input_colorspace, output_colorspace) {
-
+    match (input_colorspace, output_colorspace)
+    {
         // YCBCR to RGB(A) colorspace conversion.
 
         // Match keyword is amazing..
@@ -107,7 +110,7 @@ pub(crate) fn post_process_interleaved(mut unprocessed: [Vec<i16>; MAX_COMPONENT
 /// Perform color conversion for non interleaved image
 #[allow(clippy::similar_names, clippy::too_many_arguments, clippy::needless_pass_by_value)]
 #[rustfmt::skip]
-#[allow(clippy::unwrap_used,clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], width: usize, output_colorspace: ColorSpace,
                                        color_convert_16: ColorConvert16Ptr, color_convert: ColorConvertPtr, output: Arc<Mutex<Vec<u8>>>,
                                        position_0: &mut usize, mcu_len: usize) {
@@ -120,12 +123,14 @@ fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], w
     let remainder = ((mcu_len) % 2) != 0;
 
     let mcu_width = width * output_colorspace.num_components();
+
     let mut position = 0;
-    let mut expected_pos =  mcu_width;
+    let mut expected_pos = mcu_width;
 
     // Create a temporary area to hold our color converted data
-    let temp_size =width * 8 * output_colorspace.num_components();
-    let mut temp_area = vec![0; temp_size];
+    let temp_size = width * 8 * output_colorspace.num_components();
+
+    let mut temp_area = vec![0; temp_size + 64]; // over allocate
 
     for i in 0..8 {
         // Process MCU's in batches of 2
@@ -133,21 +138,29 @@ fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], w
             //@ OPTIMIZE: This isn't cache efficient as it hops around too much
             let y_c = mcu_block[0].get(pos..pos + 8)
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
             let cb_c = mcu_block[1].get(pos..pos + 8)
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
             let cr_c = mcu_block[2].get(pos..pos + 8)
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
+
             //  8 pixels of the second MCU
             let y1_c = mcu_block[0].get(pos + 64..pos + 72)
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
             let cb2_c = mcu_block[1].get(pos + 64..pos + 72)
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
             let cr2_c = mcu_block[2].get(pos + 64..pos + 72)
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
             // Call color convert function
             (color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, &mut temp_area, &mut position);
 
             pos += 128;
+            //     println!("{}",position);
         }
         if remainder {
             // last odd MCU in the column
@@ -159,7 +172,7 @@ fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], w
                 .unwrap_or(&BASE_ARRAY).try_into().unwrap();
 
             (color_convert)(y_c, cb_c, cr_c, &mut temp_area, &mut position);
-
+            //  println!("{}",position);
         }
 
         // Reset the position to be the next row of the image
@@ -170,7 +183,9 @@ fn color_convert_ycbcr_non_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS], w
         pos = i * 8;
     }
     // update output with the values
-    output.lock().expect("Poisoned mutex")[*position_0..*position_0+ temp_size].copy_from_slice(&temp_area);
+
+    output.lock().expect("Poisoned mutex")[*position_0..*position_0 + temp_size].copy_from_slice(&temp_area[0..temp_size]);
+    
 }
 
 /// Do color-conversion for interleaved MCU
@@ -182,7 +197,6 @@ fn color_convert_ycbcr_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS],
                                    output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr,
                                    color_convert: ColorConvertPtr, output: Arc<Mutex<Vec<u8>>>,
                                    position: &mut usize, mcu_len: usize) {
-
     let mcu_count = mcu_len >> 1;
     // check if we have an MCU remaining, i.e there are odd mcu's
     let remainder = ((mcu_len) % 2) != 0;
@@ -205,14 +219,22 @@ fn color_convert_ycbcr_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS],
                 //This isn't cache efficient as it hops around too much
 
 
-                let y_c = &mcu_block[0].get(pos..pos + 8).unwrap_or(&BASE_ARRAY).try_into().unwrap();
-                let cb_c = mcu_block[1].get(pos..pos + 8).unwrap_or(&BASE_ARRAY).try_into().unwrap();
-                let cr_c = mcu_block[2].get(pos..pos + 8).unwrap_or(&BASE_ARRAY).try_into().unwrap();
+                let y_c = &mcu_block[0].get(pos..pos + 8)
+                    .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+                let cb_c = mcu_block[1].get(pos..pos + 8)
+                    .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+                let cr_c = mcu_block[2].get(pos..pos + 8)
+                    .unwrap_or(&BASE_ARRAY).try_into().unwrap();
                 //  8 pixels of the second MCU
-                let y1_c = &mcu_block[0].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY).try_into().unwrap();
-                let cb2_c = mcu_block[1].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY).try_into().unwrap();
-                let cr2_c = mcu_block[2].get(pos + 64..pos + 72).unwrap_or(&BASE_ARRAY).try_into().unwrap();
-                for _ in 0..h_max * v_max {
+                let y1_c = &mcu_block[0].get(pos + 64..pos + 72)
+                    .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+                let cb2_c = mcu_block[1].get(pos + 64..pos + 72).
+                    unwrap_or(&BASE_ARRAY).try_into().unwrap();
+                let cr2_c = mcu_block[2].get(pos + 64..pos + 72)
+                    .unwrap_or(&BASE_ARRAY).try_into().unwrap();
+
+                for _ in 0..h_max * v_max
+                {
                     (color_convert_16)(y_c, y1_c, cb_c, cb2_c, cr_c, cr2_c, &mut **tmp_output, position);
                 }
 
@@ -248,5 +270,5 @@ fn color_convert_ycbcr_interleaved(mcu_block: &[Vec<i16>; MAX_COMPONENTS],
             // next row?
         }
     }
-    //panic!();
+    panic!();
 }

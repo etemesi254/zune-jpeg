@@ -2,15 +2,21 @@
 //! JPEG image components
 //!
 //! The data is extracted from a SOF header.
+
 use crate::errors::DecodeErrors;
 use crate::misc::Aligned32;
 use crate::upsampler::upsample_no_op;
 
-/// Represents an up-sampler function, this function will be called to upsample a down-sampled image
+/// Represents an up-sampler function, this function will be called to upsample
+/// a down-sampled image
+
 pub type UpSampler = fn(&[i16], usize) -> Vec<i16>;
+
 /// Component Data from start of frame
 #[derive(Clone)]
-pub(crate) struct Components {
+
+pub(crate) struct Components
+{
     /// The type of component that has the metadata below, can be Y,Cb or Cr
     pub component_id: ComponentID,
     /// Sub-sampling ratio of this component in the x-plane
@@ -36,10 +42,14 @@ pub(crate) struct Components {
     /// SSE one is magnitudes faster than basic
     pub up_sampler: UpSampler,
 }
-impl Components {
+
+impl Components
+{
     /// Create a new instance from three bytes from the start of frame
     #[inline]
-    pub fn from(a: [u8; 3]) -> Result<Components, DecodeErrors> {
+
+    pub fn from(a: [u8; 3]) -> Result<Components, DecodeErrors>
+    {
         let id = match a[0] {
             1 => ComponentID::Y,
             2 => ComponentID::Cb,
@@ -52,12 +62,15 @@ impl Components {
             }
         };
 
-        // first 4 bits are horizontal sample, we discard bottom 4 bits by a right shift.
+        // first 4 bits are horizontal sample, we discard bottom 4 bits by a right
+        // shift.
         let horizontal_sample = (a[1] >> 4) as usize;
+
         // last 4 bits are vertical samples, we get bottom n bits
         let vertical_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
+
         debug!(
             "Component ID:{:?}\tHS:{} VS:{} QT:{}",
             id, horizontal_sample, vertical_sample, quantization_table_number
@@ -80,9 +93,12 @@ impl Components {
         })
     }
 }
+
 /// Component ID's
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
-pub enum ComponentID {
+
+pub enum ComponentID
+{
     /// Luminance channel
     Y,
     /// Blue chrominance

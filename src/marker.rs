@@ -1,6 +1,9 @@
 #![allow(clippy::upper_case_acronyms)]
+
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Marker {
+
+pub enum Marker
+{
     /// Start Of Frame markers
     ///
     /// - SOF(0):  Baseline DCT (Huffman coding)
@@ -53,13 +56,17 @@ pub enum Marker {
     RES,
 }
 
-impl Marker {
-    pub fn from_u8(n: u8) -> Option<Marker> {
+impl Marker
+{
+    pub fn from_u8(n: u8) -> Option<Marker>
+    {
         use self::Marker::{
             JPGn, APP, COM, DAC, DHP, DHT, DNL, DQT, DRI, EOI, EXP, JPG, RES, RST, SOF, SOI, SOS,
             TEM,
         };
-        match n {
+
+        match n
+        {
             0x01 => Some(TEM),
             0x02..=0xBF => Some(RES),
             0xC0 => Some(SOF(0)),

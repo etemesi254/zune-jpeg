@@ -1,0 +1,4 @@
+blank_lines_lower_bound = 0
+brace_style="AlwaysNextLine"
+wrap_comments=false
+control_brace_style = "AlwaysNextLine"
