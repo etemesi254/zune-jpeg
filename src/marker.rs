@@ -60,6 +60,7 @@ impl Marker
 {
     pub fn from_u8(n: u8) -> Option<Marker>
     {
+
         use self::Marker::{
             JPGn, APP, COM, DAC, DHP, DHT, DNL, DQT, DRI, EOI, EXP, JPG, RES, RST, SOF, SOI, SOS,
             TEM,

@@ -13,6 +13,7 @@ mod sse;
 
 pub fn upsample_vertical(_input: &[i16], _output_len: usize) -> Vec<i16>
 {
+
     return Vec::new();
 }
 
@@ -23,6 +24,7 @@ pub fn upsample_vertical(_input: &[i16], _output_len: usize) -> Vec<i16>
 
 pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 {
+
     let mut out = vec![0; output_len];
 
     out[0] = input[0];
@@ -34,6 +36,7 @@ pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
     // duplicate, number of MCU's are 2
     for i in 1..input_len - 1
     {
+
         let sample = 3 * input[i] + 2;
 
         out[i * 2] = (sample + input[i - 1]) >> 2;
@@ -51,6 +54,7 @@ pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 
 pub fn upsample_horizontal_vertical(_input: &[i16], _output_len: usize) -> Vec<i16>
 {
+
     return Vec::new();
 }
 
@@ -58,5 +62,6 @@ pub fn upsample_horizontal_vertical(_input: &[i16], _output_len: usize) -> Vec<i
 
 pub fn upsample_no_op(_: &[i16], _: usize) -> Vec<i16>
 {
+
     return Vec::new();
 }

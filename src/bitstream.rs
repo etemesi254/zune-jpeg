@@ -53,6 +53,7 @@ impl BitStream
 
     pub(crate) const fn new() -> BitStream
     {
+
         BitStream {
             buffer: 0,
             lsb_buffer: 0,
@@ -69,6 +70,7 @@ impl BitStream
 
     pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream
     {
+
         BitStream {
             buffer: 0,
             lsb_buffer: 0,
@@ -102,6 +104,7 @@ impl BitStream
 
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
+
         // Ps i know inline[always] is frowned upon
 
         /// Macro version of a single byte refill.
@@ -112,6 +115,7 @@ impl BitStream
 
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
+
                 // read a byte from the stream
                 $byte = read_u8(reader);
 
@@ -129,20 +133,24 @@ impl BitStream
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff
                 {
+
                     // read next byte
                     let mut next_byte = read_u8(reader);
 
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00
                     {
+
                         // skip that byte we read
                         while next_byte == 0xFF
                         {
+
                             next_byte = read_u8(reader);
                         }
 
                         if next_byte != 0x00
                         {
+
                             // Undo the byte append and return
                             $buffer &= !0xf;
 
@@ -164,6 +172,7 @@ impl BitStream
         // If we have less than 32 bits we refill
         if self.bits_left <= 32
         {
+
             // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse
@@ -202,10 +211,12 @@ impl BitStream
         dc_prediction: &mut i32,
     ) -> bool
     {
+
         let (mut s, mut l, r);
 
         if !self.refill(reader)
         {
+
             return false;
         };
 
@@ -221,10 +232,12 @@ impl BitStream
 
         if l > i32::from(HUFF_LOOKAHEAD)
         {
+
             s = ((self.buffer >> self.bits_left) & ((1 << (l)) - 1)) as i32;
 
             while s > dc_table.maxcode[l as usize]
             {
+
                 s <<= 1;
 
                 s |= self.get_bits(1);
@@ -234,16 +247,19 @@ impl BitStream
 
             if l > 16
             {
+
                 s = 0;
             }
             else
             {
+
                 s = i32::from(dc_table.values[((s + dc_table.offset[l as usize]) & 0xFF) as usize]);
             }
         }
 
         if s != 0
         {
+
             r = self.get_bits(s as u8);
 
             s = huff_extend(r, s);
@@ -303,23 +319,28 @@ impl BitStream
                 // found a marker , stop processing
                 return false;
             };
+
             s = self.peek_bits::<HUFF_LOOKAHEAD>();
-            // Safety:
-            //     S can never go past 1<<HUFF_LOOKAHEAD and lookup table is
-            // 1<<HUFF_LOOKAHEAD
+
             let v = ac_lookup[s as usize];
+
             if v != 0
             {
                 //  FAST AC path
                 k += ((v >> 4) & 15) as usize; // run
-                self.drop_bits((v & 15) as u8); // combined length
+
                 block[UN_ZIGZAG[k]] = v >> 8;
+
+                self.drop_bits((v & 15) as u8); // combined length
+
                 k += 1;
             }
             else
             {
                 s = ac_table.lookup[s as usize];
+
                 l = s >> HUFF_LOOKAHEAD;
+
                 s &= (1 << HUFF_LOOKAHEAD) - 1;
 
                 self.drop_bits(l as u8);
@@ -327,6 +348,7 @@ impl BitStream
                 if l > i32::from(HUFF_LOOKAHEAD)
                 {
                     s = ((self.buffer >> self.bits_left) & ((1 << (l)) - 1)) as i32;
+
                     while s > ac_table.maxcode[l as usize]
                     {
                         s <<= 1;
@@ -376,6 +398,7 @@ impl BitStream
 
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
+
         // for the LSB buffer peek bits doesn't require an and to remove/zero out top
         // bits
         (self.lsb_buffer >> (64 - LOOKAHEAD)) as i32
@@ -386,7 +409,9 @@ impl BitStream
 
     fn drop_bits(&mut self, n: u8)
     {
+
         self.bits_left -= n;
+
         // remove top n bits  in lsb buffer
         self.lsb_buffer <<= n;
     }
@@ -398,16 +423,21 @@ impl BitStream
 
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
+
         let bits = (self.lsb_buffer >> (64 - n_bits)) as i32;
+
         // Reduce the bits left, this influences the MSB buffer
         self.bits_left -= n_bits;
+
         // shift out bits read in the LSB buffer
         self.lsb_buffer <<= n_bits;
+
         bits
     }
 
     /// Decode a DC block
     #[allow(clippy::cast_possible_truncation)]
+
     pub fn decode_block_dc(
         &mut self,
         reader: &mut Cursor<Vec<u8>>,
@@ -416,8 +446,10 @@ impl BitStream
         dc_prediction: &mut i32,
     ) -> Result<bool, DecodeErrors>
     {
+
         if self.spec_end == 0
         {
+
             return Err(DecodeErrors::HuffmanDecode(
                 "Can't merge dc and AC corrupt jpeg".to_string(),
             ));
@@ -425,12 +457,14 @@ impl BitStream
 
         if self.successive_high == 0
         {
+
             self.decode_dc(reader, dc_table, dc_prediction);
 
             block[0] = (*dc_prediction as i16) * (1_i16 << self.successive_low);
         }
         else
         {
+
             // refinement scan
             self.get_bit(reader);
 
@@ -444,8 +478,10 @@ impl BitStream
 
     fn get_bit(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
+
         if self.bits_left < 1
         {
+
             return self.refill(reader);
         }
 
@@ -465,6 +501,7 @@ impl BitStream
 
     pub fn reset(&mut self)
     {
+
         self.bits_left = 0;
 
         self.marker = None;
@@ -480,6 +517,7 @@ impl BitStream
 
 fn huff_extend(x: i32, s: i32) -> i32
 {
+
     // if x<s return x else return x+offset[s] where offset[s] = ( (-1<<s)+1)
 
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
@@ -493,6 +531,7 @@ fn huff_extend(x: i32, s: i32) -> i32
 
 fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64
 {
+
     let pos = reader.position();
 
     reader.set_position(pos + 1);

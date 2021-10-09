@@ -31,10 +31,12 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
 pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64]>)
 {
+
     let mut tmp = [0; 64];
 
     for vector in vector.chunks_exact_mut(64)
     {
+
         let mut i = 0;
 
         // Putting this in a separate function makes it really bad
@@ -42,6 +44,7 @@ pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64
         // leave it here check out [idct_int_slow, and idct_int_1D to get what i mean ] https://godbolt.org/z/8hqW9z9j9
         for ptr in 0..8
         {
+
             // Due to quantization, we may find that all AC elements are zero, the IDCT of
             // that column Becomes a (scaled) DCT coefficient
 
@@ -142,6 +145,7 @@ pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64
         // This is vectorised in architectures supporting SSE 4.1
         while i < 64
         {
+
             // We won't try to short circuit here because it rarely works
 
             // Even part
@@ -249,6 +253,7 @@ pub fn dequantize_and_idct_int(vector: &mut [i16], qt_table: &Aligned32<[i32; 64
 
 fn f2f(x: f32) -> i32
 {
+
     (x * 4096.0 + 0.5) as i32
 }
 
@@ -257,6 +262,7 @@ fn f2f(x: f32) -> i32
 
 fn fsh(x: i32) -> i32
 {
+
     x << 12
 }
 
@@ -266,6 +272,7 @@ fn fsh(x: i32) -> i32
 
 fn clamp(a: i32) -> i16
 {
+
     a.max(0).min(255) as i16
 }
 
@@ -273,6 +280,7 @@ fn clamp(a: i32) -> i16
 
 fn dequantize(a: i16, b: i32) -> i32
 {
+
     i32::from(a) * b
 }
 
@@ -280,10 +288,13 @@ fn dequantize(a: i16, b: i32) -> i32
 
 pub fn choose_idct_func() -> IDCTPtr
 {
+
     #[cfg(feature = "x86")]
     {
+
         if is_x86_feature_detected!("avx2")
         {
+
             // use avx one
             return crate::idct::avx2::dequantize_and_idct_avx2;
         }

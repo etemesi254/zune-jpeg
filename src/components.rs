@@ -23,10 +23,6 @@ pub(crate) struct Components
     pub vertical_sample: usize,
     /// Sub-sampling ratio of this component in the y-plane
     pub horizontal_sample: usize,
-    /// DC quantization table position of this component
-    pub dc_qt_pos: usize,
-    /// Ac quantization table position of this component
-    pub ac_qt_pos: usize,
     /// DC huffman table position
     pub dc_huff_table: usize,
     /// AC huffman table position for this element.
@@ -39,8 +35,10 @@ pub(crate) struct Components
     pub dc_pred: i32,
     /// An upsampling function, can be basic or SSE, depending
     /// on the platform
-    /// SSE one is magnitudes faster than basic
     pub up_sampler: UpSampler,
+    /// Keep tabs on where we are supposed to be writing in
+    /// self.mcu_block
+    pub counter: usize,
 }
 
 impl Components
@@ -50,23 +48,26 @@ impl Components
 
     pub fn from(a: [u8; 3]) -> Result<Components, DecodeErrors>
     {
-        let id = match a[0] {
+
+        let id = match a[0]
+        {
             1 => ComponentID::Y,
             2 => ComponentID::Cb,
             3 => ComponentID::Cr,
-            r => {
+            r =>
+            {
+
                 return Err(DecodeErrors::Format(format!(
                     "Unknown component id found,{}, expected value between 1 and 3\nNote I and Q components are not supported yet",
                     r
-                )))
+                )));
             }
         };
 
-        // first 4 bits are horizontal sample, we discard bottom 4 bits by a right
-        // shift.
+        // top 4 bits are horizontal sampling factors
         let horizontal_sample = (a[1] >> 4) as usize;
 
-        // last 4 bits are vertical samples, we get bottom n bits
+        // last 4 bits are vertical sampling factors
         let vertical_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
@@ -81,8 +82,6 @@ impl Components
             vertical_sample,
             horizontal_sample,
             quantization_table_number,
-            dc_qt_pos: quantization_table_number as usize,
-            ac_qt_pos: quantization_table_number as usize,
             // These two will be set with sof marker
             dc_huff_table: 0,
             ac_huff_table: 0,
@@ -90,6 +89,8 @@ impl Components
             quantization_table: Aligned32([0; 64]),
             dc_pred: 0,
             up_sampler: upsample_no_op,
+
+            counter: 0,
         })
     }
 }

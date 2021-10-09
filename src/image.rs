@@ -11,7 +11,7 @@ use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
-use crate::misc::{read_u16_be, read_u8, Aligned32, ColorSpace, SOFMarkers};
+use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
 use crate::upsampler::{upsample_horizontal, upsample_horizontal_vertical, upsample_vertical};
 
 // avx optimized color IDCT
@@ -136,6 +136,7 @@ impl Default for Decoder
 {
     fn default() -> Self
     {
+
         let mut d = Decoder {
             info: ImageInfo::default(),
             qt_tables: [None, None, None],
@@ -183,6 +184,7 @@ impl Decoder
 
     fn get_mut_info(&mut self) -> &mut ImageInfo
     {
+
         &mut self.info
     }
 
@@ -205,6 +207,7 @@ impl Decoder
 
     pub fn decode_buffer(&mut self, buf: &[u8]) -> Result<Vec<u8>, DecodeErrors>
     {
+
         self.decode_internal(Cursor::new(buf.to_vec()))
     }
 
@@ -213,22 +216,17 @@ impl Decoder
 
     pub fn new() -> Decoder
     {
+
         Decoder::default()
     }
 
-    /// Decode a Decoder file
-    ///
-    /// # Errors
-    ///  - `IllegalMagicBytes` - The first two bytes of the image are not
-    ///    `0xffd8`
-    ///  - `UnsupportedImage`  - The image encoding scheme is not yet supported,
-    ///    for now we only support
-    /// Baseline DCT which is suitable for most images out there
+    /// Decode a valid jpeg file
 
     pub fn decode_file<P>(&mut self, file: P) -> Result<Vec<u8>, DecodeErrors>
     where
         P: AsRef<Path> + Clone,
     {
+
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file)?);
 
@@ -260,12 +258,14 @@ impl Decoder
 
     pub fn info(&self) -> Option<ImageInfo>
     {
+
         // we check for fails to that call by comparing what we have to the default, if
         // it's default we assume that the caller failed to uphold the
         // guarantees. We can be sure that an image cannot be the default since
         // its a hard panic in-case width or height are set to zero.
         if self.info == ImageInfo::default()
         {
+
             return None;
         }
 
@@ -291,13 +291,15 @@ impl Decoder
     where
         R: Read + BufRead,
     {
+
         let mut buf = buf;
 
-        // First two bytes should indicate the image buff
+        // First two bytes should be jpeg soi marker
         let magic_bytes = read_u16_be(&mut buf)?;
 
         if magic_bytes != 0xffd8
         {
+
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
 
@@ -305,32 +307,38 @@ impl Decoder
 
         loop
         {
+
             // read a byte
-            let m = read_u8(&mut buf);
+            let m = read_byte(&mut buf);
 
             // Last byte should be 0xFF to confirm existence of a marker since markers look
             // like OxFF(some marker data)
             if last_byte == 0xFF
             {
+
                 let marker = Marker::from_u8(m);
 
                 // Check http://www.vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
                 // for meanings of the values below
                 if let Some(m) = marker
                 {
+
                     match m
                     {
                         Marker::SOF(0 | 2) =>
                         {
+
                             let marker = {
+
                                 // choose marker
                                 if m == Marker::SOF(0)
                                 {
+
                                     SOFMarkers::BaselineDct
                                 }
                                 else
                                 {
-                                    // set progressive to be true
+
                                     self.is_progressive = true;
 
                                     SOFMarkers::ProgressiveDctHuffman
@@ -345,10 +353,12 @@ impl Decoder
                         // Start of Frame Segments not supported
                         Marker::SOF(v) =>
                         {
+
                             let feature = UnsupportedSchemes::from_int(v);
 
                             if let Some(feature) = feature
                             {
+
                                 return Err(DecodeErrors::Unsupported(feature));
                             }
 
@@ -359,21 +369,25 @@ impl Decoder
                         // APP(0) segment
                         Marker::APP(_) =>
                         {
+
                             parse_app(&mut buf, m, self.get_mut_info())?;
                         }
                         // Quantization tables
                         Marker::DQT =>
                         {
+
                             parse_dqt(self, &mut buf)?;
                         }
                         // Huffman tables
                         Marker::DHT =>
                         {
+
                             parse_huffman(self, &mut buf)?;
                         }
                         // Start of Scan Data
                         Marker::SOS =>
                         {
+
                             parse_sos(&mut buf, self)?;
 
                             // break after reading the start of scan.
@@ -383,6 +397,7 @@ impl Decoder
 
                         Marker::DAC | Marker::DNL =>
                         {
+
                             return Err(DecodeErrors::Format(format!(
                                 "Parsing of the following header `{:?}` is not supported,\
                                 cannot continue",
@@ -391,6 +406,7 @@ impl Decoder
                         }
                         _ =>
                         {
+
                             warn!(
                                 "Capabilities for processing marker \"{:?}\" not implemented",
                                 m
@@ -411,36 +427,22 @@ impl Decoder
 
     pub fn get_output_colorspace(&self) -> ColorSpace
     {
+
         return self.output_colorspace;
     }
 
     fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors>
     {
+
         let mut buf = buf;
 
         self.decode_headers(&mut buf)?;
 
         // if the image is interleaved
-        if self.interleaved
-        {
-            if self.is_progressive
-            {
-                self.decode_mcu_ycbcr_non_interleaved_prog(&mut buf)
-            }
-            else
-            {
-                self.decode_mcu_ycbcr_interleaved_baseline(&mut buf)
-            }
-        }
-        // non interleaved
-        else
-        {
-            if self.is_progressive
-            {
-                // TODO: do something important..
-            }
-
-            self.decode_mcu_ycbcr_non_interleaved_baseline(&mut buf)
+        if self.is_progressive{
+            self.decode_mcu_ycbcr_non_interleaved_prog(&mut buf)
+        }else{
+            self.decode_mcu_ycbcr_baseline(&mut buf)
         }
     }
 
@@ -448,6 +450,7 @@ impl Decoder
     #[allow(clippy::unwrap_used)] // can't panic if we know it won't panic
     fn init(&mut self)
     {
+
         // set color convert function
         // it's safe to unwrap because  we know Colorspace::RGB will return
         let p = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
@@ -480,12 +483,14 @@ impl Decoder
 
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
     {
+
         self.output_colorspace = colorspace;
 
         match colorspace
         {
             ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA | ColorSpace::GRAYSCALE =>
             {
+
                 let p = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
 
                 self.color_convert_16 = p.0;
@@ -501,10 +506,12 @@ impl Decoder
 
     pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors>
     {
+
         // no sampling, return early
         // check if horizontal max ==1
         if self.h_max == self.v_max && self.h_max == 1
         {
+
             return Ok(());
         }
 
@@ -513,6 +520,7 @@ impl Decoder
         {
             (2, 1) =>
             {
+
                 // horizontal sub-sampling
                 debug!("Horizontal sub-sampling (2,1)");
 
@@ -521,27 +529,31 @@ impl Decoder
                 // responsibility of the caller to ensure that
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                 {
+
                     if is_x86_feature_detected!("sse2")
                     {
+
                         #[cfg(feature = "x86")]
                         {
+
                             use crate::upsampler::upsample_horizontal_sse;
 
                             self.components
                                 .iter_mut()
                                 .for_each(|x| x.up_sampler = upsample_horizontal_sse);
+
+                            return Ok(());
                         }
                     }
-                    else
-                    {
-                        self.components
-                            .iter_mut()
-                            .for_each(|x| x.up_sampler = upsample_horizontal);
-                    }
                 }
+
+                self.components
+                    .iter_mut()
+                    .for_each(|x| x.up_sampler = upsample_horizontal);
             }
             (1, 2) =>
             {
+
                 // Vertical sub-sampling
                 debug!("Vertical sub-sampling (1,2)");
 
@@ -551,6 +563,7 @@ impl Decoder
             }
             (2, 2) =>
             {
+
                 // vertical and horizontal sub sampling
                 debug!("Vertical and horizontal sub-sampling(2,2)");
 
@@ -560,6 +573,7 @@ impl Decoder
             }
             (_, _) =>
             {
+
                 // no op. Do nothing
                 // Jokes , panic...
                 return Err(DecodeErrors::Format(
@@ -580,6 +594,7 @@ impl Decoder
 
     pub fn rgba(&mut self)
     {
+
         // told you so
         self.set_output_colorspace(ColorSpace::RGBA);
     }
@@ -591,6 +606,7 @@ impl Decoder
 
     pub fn width(&self) -> u16
     {
+
         self.info.width
     }
 
@@ -601,6 +617,7 @@ impl Decoder
 
     pub fn height(&self) -> u16
     {
+
         self.info.height
     }
 }
@@ -635,6 +652,7 @@ impl ImageInfo
 
     pub(crate) fn set_width(&mut self, width: u16)
     {
+
         self.width = width;
     }
 
@@ -644,6 +662,7 @@ impl ImageInfo
 
     pub(crate) fn set_height(&mut self, height: u16)
     {
+
         self.height = height;
     }
 
@@ -653,6 +672,7 @@ impl ImageInfo
 
     pub(crate) fn set_density(&mut self, density: u8)
     {
+
         self.pixel_density = density;
     }
 
@@ -662,6 +682,7 @@ impl ImageInfo
 
     pub(crate) fn set_sof_marker(&mut self, marker: SOFMarkers)
     {
+
         self.sof = marker;
     }
 
@@ -671,6 +692,7 @@ impl ImageInfo
 
     pub(crate) fn set_x(&mut self, sample: u16)
     {
+
         self.x_density = sample;
     }
 
@@ -680,6 +702,7 @@ impl ImageInfo
 
     pub(crate) fn set_y(&mut self, sample: u16)
     {
+
         self.y_density = sample;
     }
 }
