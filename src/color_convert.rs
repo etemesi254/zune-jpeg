@@ -40,21 +40,23 @@ pub mod sse;
 
 fn clamp(a: i16) -> u8
 {
+
     min(max(a, 0), 255) as u8
 }
 
 pub fn ycbcr_to_rgb(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8], pos: &mut usize)
 {
+
     let mut p = 0;
 
     //Okay Rust sucks with this bound's checking.
     // To get it to vectorize this  we need the below lines of code
 
-    let (_, v) = output.split_at_mut(*pos);
+    let (_, output_position) = output.split_at_mut(*pos);
 
     // Convert into a slice with 24 elements for Rust to FINALLY SEE WE WON'T GO OUT
     // OF BOUNDS
-    let opt: &mut [u8; 24] = v
+    let opt: &mut [u8; 24] = output_position
         .get_mut(0..24)
         .expect("Slice to small cannot write")
         .try_into()
@@ -62,6 +64,7 @@ pub fn ycbcr_to_rgb(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8
 
     for (y, (cb, cr)) in y.iter().zip(cb.iter().zip(cr.iter()))
     {
+
         let cr = cr - 128;
 
         let cb = cb - 128;
@@ -87,6 +90,7 @@ pub fn ycbcr_to_rgb(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8
 
 pub fn ycbcr_to_rgba(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8], pos: &mut usize)
 {
+
     let mut p = 0;
 
     //Okay Rust sucks with this bound's checking.
@@ -104,6 +108,7 @@ pub fn ycbcr_to_rgba(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u
 
     for (y, (cb, cr)) in y.iter().zip(cb.iter().zip(cr.iter()))
     {
+
         let cr = cr - 128;
 
         let cb = cb - 128;
@@ -142,6 +147,7 @@ pub fn ycbcr_to_rgba_16(
     pos: &mut usize,
 )
 {
+
     // first mcu
     ycbcr_to_rgba(y, cb, cr, output, pos);
 
@@ -160,6 +166,7 @@ pub fn ycbcr_to_rgb_16(
     pos: &mut usize,
 )
 {
+
     // first mcu
     ycbcr_to_rgb(y, cb, cr, output, pos);
 
@@ -186,6 +193,7 @@ pub fn ycbcr_to_grayscale_16(
     pos: &mut usize,
 )
 {
+
     // copy fist block
     output[*pos..*pos + 8].copy_from_slice(&y1.iter().map(|x| *x as u8).collect::<Vec<u8>>());
 
@@ -206,6 +214,7 @@ pub fn ycbcr_to_grayscale_8(
     pos: &mut usize,
 )
 {
+
     // write
     output[*pos + 8..*pos + 16].copy_from_slice(&y.iter().map(|x| *x as u8).collect::<Vec<u8>>());
 
@@ -220,10 +229,13 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     type_need: ColorSpace,
 ) -> Option<(ColorConvert16Ptr, ColorConvertPtr)>
 {
+
     #[cfg(feature = "x86")]
     {
+
         if is_x86_feature_detected!("avx2")
         {
+
             debug!("Using AVX optimised color conversion functions");
 
             // I believe avx2 means sse4 is also available
@@ -232,11 +244,13 @@ pub fn choose_ycbcr_to_rgb_convert_func(
             {
                 ColorSpace::RGB =>
                 {
+
                     // Avx for 16, sse for 8
                     Some((ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse))
                 }
                 ColorSpace::RGBA =>
                 {
+
                     // Avx for 16, sse for 8
                     Some((ycbcr_to_rgba_avx2, ycbcr_to_rgba_sse))
                 }
@@ -248,6 +262,7 @@ pub fn choose_ycbcr_to_rgb_convert_func(
         // try sse
         else if is_x86_feature_detected!("sse4.1")
         {
+
             // I believe avx2 means sse4 is also available
             // match colorspace
             debug!("No support for avx2 switching to sse");
