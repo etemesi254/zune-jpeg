@@ -110,7 +110,6 @@ fn color_convert_ycbcr(
 
     // chunk output according to an MCU, allows us to write more than one MCU(for interleaved):
     let mcu_chunks = width * 8;
-
     for ((y_chunk, cb_chunk), cr_chunk) in mcu_block[0]
         .chunks(mcu_chunks)
         .zip(mcu_block[1].chunks(mcu_chunks))

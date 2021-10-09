@@ -34,7 +34,7 @@ impl Decoder
 
             mcu_width = self.mcu_x;
 
-            mcu_height = self.mcu_x;
+            mcu_height = self.mcu_y;
         } else {
             mcu_width = ((self.info.width + 7) / 8) as usize;
 
@@ -46,8 +46,7 @@ impl Decoder
         // Size of our output image(width*height)
         let capacity = usize::from(self.info.width + 7) * usize::from(self.info.height + 7);
 
-        let component_capacity = mcu_width * DCT_BLOCK;
-
+        let component_capacity = usize::from((self.info.width + 7) / 8) * DCT_BLOCK;
         // for those pointers storing unprocessed items, zero them out here
         for (pos, comp) in self.components.iter().enumerate() {
             // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
@@ -84,7 +83,6 @@ impl Decoder
         let h_max = self.h_max;
 
         let v_max = self.v_max;
-
 
         // check that dc and AC tables exist outside the hot path
         for i in 0..self.input_colorspace.num_components()
@@ -125,20 +123,21 @@ impl Decoder
                     // if image is interleaved iterate over scan-n components,
                     // otherwise if it-s non-interleaved, these routines iterate in
                     // trivial scanline order(Y,Cb,Cr)
-                    for _ in 0..self.h_max {
-                        for _ in 0..self.v_max {
-                            let component = &mut self.components[pos];
-                            let dc_table = unsafe
-                                {
-                                    self.dc_huffman_tables
-                                        .get_unchecked(component.dc_huff_table).as_ref()
-                                        .unwrap_or_else(|| std::hint::unreachable_unchecked())
-                                };
-                            let ac_table = unsafe {
-                                self.ac_huffman_tables
-                                    .get_unchecked(component.ac_huff_table).as_ref()
-                                    .unwrap_or_else(|| std::hint::unreachable_unchecked())
-                            };
+                    let component = &mut self.components[pos];
+                    let dc_table = unsafe
+                        {
+                            self.dc_huffman_tables
+                                .get_unchecked(component.dc_huff_table).as_ref()
+                                .unwrap_or_else(|| std::hint::unreachable_unchecked())
+                        };
+                    let ac_table = unsafe {
+                        self.ac_huffman_tables
+                            .get_unchecked(component.ac_huff_table).as_ref()
+                            .unwrap_or_else(|| std::hint::unreachable_unchecked())
+                    };
+                    for _ in 0..component.horizontal_sample{
+                        for _ in 0..component.vertical_sample {
+
                             let mut tmp = [0; DCT_BLOCK];
                             // decode the MCU
                             if !(stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred))
@@ -170,7 +169,6 @@ impl Decoder
                             // improves speed when we do a clone(less items to clone)
                             if min(self.output_colorspace.num_components() - 1, pos) == pos {
                                 let counter = component.counter;
-
                                 self.mcu_block[pos][counter..counter + 64].copy_from_slice(&tmp);
 
                                 component.counter += 64;

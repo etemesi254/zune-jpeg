@@ -5,6 +5,7 @@
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::convert::TryInto;
 
 #[inline]
 
@@ -37,23 +38,25 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
     // paranoid guy.
     assert!(out.len() > 8 && input.len() > 5);
 
-    // The process of writing ugly code begins here
+    let f_out:&mut [i16;8]= out.split_at_mut(8).0.try_into().unwrap();
 
-    out[0] = input[0];
+    // We can do better here, since Rust loads input[y] twice but it can store it in
+    // a register but enough ugly code
+    f_out[0] = input[0];
 
-    out[1] = (input[0] * 3 + input[1] + 2) >> 2;
+    f_out[1] = (input[0] * 3 + input[1] + 2) >> 2;
 
-    out[2] = (input[1] * 3 + input[0] + 2) >> 2;
+    f_out[2] = (input[1] * 3 + input[0] + 2) >> 2;
 
-    out[3] = (input[1] * 3 + input[2] + 2) >> 2;
+    f_out[3] = (input[1] * 3 + input[2] + 2) >> 2;
 
-    out[4] = (input[2] * 3 + input[1] + 2) >> 2;
+    f_out[4] = (input[2] * 3 + input[1] + 2) >> 2;
 
-    out[5] = (input[2] * 3 + input[3] + 2) >> 2;
+    f_out[5] = (input[2] * 3 + input[3] + 2) >> 2;
 
-    out[6] = (input[3] * 3 + input[2] + 2) >> 2;
+    f_out[6] = (input[3] * 3 + input[2] + 2) >> 2;
 
-    out[7] = (input[3] * 3 + input[4] + 2) >> 2;
+    f_out[7] = (input[3] * 3 + input[4] + 2) >> 2;
 
     // maths
     // The poop here is to calculate how many 8 items we can interleave without
@@ -108,25 +111,27 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
     // Do the last 8 manually because we can't  do it  with SSE because of boundary
     // filters .
-    let ol = output_len - 8;
+    let ol = out.len() - 8;
 
     let il = input.len() - 4;
 
-    out[ol] = (input[il] * 3 + input[il - 1] + 2) >> 2;
+    let l_out:&mut [i16;8] = out.split_at_mut(ol).1.try_into().unwrap();
 
-    out[ol + 1] = (input[il] * 3 + input[il + 1] + 2) >> 2;
+    l_out[0] = (input[il] * 3 + input[il - 1] + 2) >> 2;
 
-    out[ol + 2] = (input[il + 1] * 3 + input[il] + 2) >> 2;
+    l_out[1] = (input[il] * 3 + input[il + 1] + 2) >> 2;
 
-    out[ol + 3] = (input[il + 1] * 3 + input[il + 1] + 2) >> 2;
+    l_out[2] = (input[il + 1] * 3 + input[il] + 2) >> 2;
 
-    out[ol + 4] = (input[il + 2] * 3 + input[il + 2] + 2) >> 2;
+    l_out[3] = (input[il + 1] * 3 + input[il + 1] + 2) >> 2;
 
-    out[ol + 5] = (input[il + 2] * 3 + input[il + 1] + 2) >> 2;
+    l_out[4] = (input[il + 2] * 3 + input[il + 2] + 2) >> 2;
 
-    out[ol + 6] = (input[il + 2] * 3 + input[il + 3] + 2) >> 2;
+    l_out[5] = (input[il + 2] * 3 + input[il + 1] + 2) >> 2;
 
-    out[ol + 7] = input[il + 3];
+    l_out[6] = (input[il + 2] * 3 + input[il + 3] + 2) >> 2;
+
+    l_out[7] = input[il + 3];
 
     return out;
 }

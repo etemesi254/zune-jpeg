@@ -201,6 +201,7 @@ impl HuffmanTable
                         (i32::from(l) << HUFF_LOOKAHEAD) | i32::from(self.values[p]);
 
                     look_bits += 1;
+
                 }
 
                 p += 1;

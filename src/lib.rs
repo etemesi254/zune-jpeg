@@ -75,6 +75,7 @@ pub use image::*;
 
 fn decode_jpeg()
 {
+
     let mut x = Decoder::new();
 
     x.set_output_colorspace(ColorSpace::RGB);
@@ -91,11 +92,17 @@ fn decode_jpeg()
 
 fn decode_jpeg_interleaved()
 {
+
     let mut x = Decoder::new();
 
     x.set_output_colorspace(ColorSpace::RGB);
 
-    let image = x.decode_file("/home/caleb/IMG_6128.JPG").unwrap();
+    let image = x.decode_file("/home/caleb/IMG_8867.JPG").unwrap();
+
+    println!(
+        "{}",
+        usize::from(x.width()) * x.output_colorspace.num_components()
+    );
 
     println!("{:?}", &image[0..30]);
     //println!("{:?}", &image[10000..10512]);
@@ -105,6 +112,7 @@ fn decode_jpeg_interleaved()
 
 fn decode_jpeg_prog()
 {
+
     let _pixels = Decoder::new()
         .decode_file("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg")
         .unwrap();
