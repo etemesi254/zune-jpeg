@@ -4,16 +4,17 @@
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{
-    _mm_add_epi16, _mm_insert_epi16, _mm_set1_epi16, _mm_slli_epi16, _mm_srai_epi16,
-    _mm_store_si128, _mm_undefined_si128,
-};
+use std::arch::x86_64::*;
 
-use crate::unsafe_utils::align_zero_alloc;
+#[inline]
 
 pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 {
-    unsafe { upsample_horizontal_sse_u(input, output_len) }
+
+    unsafe {
+
+        upsample_horizontal_sse_u(input, output_len)
+    }
 }
 
 /// Upsample using SSE to improve speed
@@ -22,20 +23,22 @@ pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 #[target_feature(enable = "sse2")]
 //Some things are weird...
 #[target_feature(enable = "sse4.1")]
+#[inline]
 
 pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec<i16>
 {
-    let mut out = align_zero_alloc::<i16, 32>(output_len);
 
-    //println!("{}",output_len);
+    //let mut out = align_zero_alloc::<i16, 16>(output_len);
+    let mut out = vec![0; output_len];
+
     // set first 8 pixels linearly
     // Assert that out has more than 8 elements and input has more than 4
     // Do this before otherwise Rust will bounds check all of these items like some
     // paranoid guy.
     assert!(out.len() > 8 && input.len() > 5);
 
-    // We can do better here, since Rust loads input[y] twice yer it can store it in
-    // a register but enough ugly code
+    // The process of writing ugly code begins here
+
     out[0] = input[0];
 
     out[1] = (input[0] * 3 + input[1] + 2) >> 2;
@@ -63,71 +66,25 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
     // For the rest of the pixels use normal instructions
     // Process using SSE for as many times as we can
+
     for i in 1..(inl >> 2) - 1
     {
-        // Safety
-        // 1. inl is divided by 8 , basically it tells us how many times we can divide
-        // the input into 8 chunks
-        // 2. We iterate to 8 chunks before the end of the array because that is the
-        // limit of SSE instructions, the last 8 are done manually after this
-        // function.
-        let i4_4 = *input.get_unchecked((i * 4) + 4);
 
-        let i4_2 = *input.get_unchecked((i * 4) + 2);
+        let pos = i << 2;
 
-        let i4_3 = *input.get_unchecked((i * 4) + 3);
+        let mut yn = _mm_loadl_epi64(input.get_unchecked(pos..).as_ptr().cast());
 
-        let i4_1 = *input.get_unchecked((i * 4) + 1);
+        yn = _mm_unpacklo_epi16(yn, yn); //[a,a,b,b,c,c,d,d]
 
-        let i4 = *input.get_unchecked(i * 4);
+        let v = _mm_loadl_epi64(input.get_unchecked(pos - 1..).as_ptr().cast());
 
-        let i4_0 = *input.get_unchecked((i * 4) - 1);
+        let y = _mm_loadl_epi64(input.get_unchecked(pos + 1..).as_ptr().cast());
 
-        // again seriously Rust compiler, you choose the worst way to do things
-        // sincerely
-        // Manually insert values into register, because RUST chooses some crazily in
-        // efficient way to do this
+        let even = _mm_unpacklo_epi16(v, v); //[a,a,b,b,c,c,d,d]
 
-        //let nn = _mm_set_epi16(i4_4, i4_2, i4_3, i4_1,
-        //                      i4_2, i4, i4_1, i4_0);
-        //
-        //let yn = _mm_set_epi16(i4_3, i4_3, i4_2, i4_2, i4_1,
-        //                       i4_1, i4, i4);
-        let mut nn = _mm_undefined_si128();
+        let odd = _mm_unpacklo_epi16(y, y); //[ e,e,f,f,g,g,g.h,h]
 
-        let mut yn = _mm_undefined_si128();
-
-        nn = _mm_insert_epi16::<7>(nn, i32::from(i4_4));
-
-        yn = _mm_insert_epi16::<7>(yn, i32::from(i4_3));
-
-        nn = _mm_insert_epi16::<6>(nn, i32::from(i4_2));
-
-        yn = _mm_insert_epi16::<6>(yn, i32::from(i4_3));
-
-        nn = _mm_insert_epi16::<5>(nn, i32::from(i4_3));
-
-        yn = _mm_insert_epi16::<5>(yn, i32::from(i4_2));
-
-        nn = _mm_insert_epi16::<4>(nn, i32::from(i4_1));
-
-        yn = _mm_insert_epi16::<4>(yn, i32::from(i4_2));
-
-        nn = _mm_insert_epi16::<3>(nn, i32::from(i4_2));
-
-        yn = _mm_insert_epi16::<3>(yn, i32::from(i4_1));
-
-        nn = _mm_insert_epi16::<2>(nn, i32::from(i4));
-
-        yn = _mm_insert_epi16::<2>(yn, i32::from(i4_1));
-
-        nn = _mm_insert_epi16::<1>(nn, i32::from(i4_1));
-
-        yn = _mm_insert_epi16::<1>(yn, i32::from(i4));
-
-        nn = _mm_insert_epi16::<0>(nn, i32::from(i4_0));
-
-        yn = _mm_insert_epi16::<0>(yn, i32::from(i4));
+        let nn = _mm_blend_epi16::<0b1010_1010>(even, odd);  // [a,e,b,f,c,g,d,h]
 
         // a multiplication by 3 can be seen as a shift by 1 and add by itself, let's
         // use that to reduce latency
@@ -135,7 +92,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
         // input[x]*3
         // Change multiplication by 3 to be a shift left by 1(multiplication by 2) and
         // add, removes latency arising from multiplication, but it seems RUST
-        // is straight up ignoring me and my optimization techniques
+        // is straight up ignoring me and my (cool) optimization techniques
         // it has converted it to a multiplication  RUST WHY DON'T YOU TRUST ME...
         let an = _mm_add_epi16(_mm_slli_epi16::<1>(yn), yn);
 
@@ -146,7 +103,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
         let cn = _mm_srai_epi16::<2>(_mm_add_epi16(an, bn));
 
         // write to array
-        _mm_store_si128(out.as_mut_ptr().add(i * 8).cast(), cn);
+        _mm_storeu_si128(out.as_mut_ptr().add(i * 8).cast(), cn);
     }
 
     // Do the last 8 manually because we can't  do it  with SSE because of boundary
@@ -179,6 +136,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
 fn upsample_sse_plain()
 {
+
     use crate::upsampler::upsample_horizontal;
 
     let v: Vec<i16> = (0..128).collect();

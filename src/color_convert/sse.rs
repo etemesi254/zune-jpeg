@@ -25,8 +25,9 @@ pub fn ycbcr_to_rgb_sse(
     offset: &mut usize,
 )
 {
+
     unsafe {
-        // we can't merge ycbcr to
+
         ycbcr_to_rgb_sse41(y, cb, cr, out, offset);
     }
 }
@@ -42,6 +43,7 @@ unsafe fn ycbcr_to_rgb_sse41(
     offset: &mut usize,
 )
 {
+
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -118,6 +120,7 @@ unsafe fn ycbcr_to_rgb_sse41(
     // vectorised with some cool blend and broadcast instructions
     for i in 0..8
     {
+
         // Reason
         //  - Bounds checking will prevent autovectorization of this
         // Safety
@@ -141,6 +144,7 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
     offset: &mut usize,
 )
 {
+
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -239,6 +243,7 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
 
 unsafe fn clamp_sse(a: __m128i) -> __m128i
 {
+
     // the lowest value
     let min: __m128i = _mm_set1_epi16(0);
 
@@ -268,7 +273,9 @@ unsafe fn ycbcr_to_rgb_16(
     offset: &mut usize,
 )
 {
+
     {
+
         //  do the first batch
         ycbcr_to_rgb_sse41(y1, cb1, cr1, out, offset);
 
@@ -288,7 +295,9 @@ pub fn ycbcr_to_rgb_sse_16(
     offset: &mut usize,
 )
 {
+
     unsafe {
+
         ycbcr_to_rgb_16(y1, y2, cb1, cb2, cr1, cr2, out, offset);
     }
 }
@@ -304,7 +313,9 @@ pub fn ycbcr_to_rgba_sse_16(
     offset: &mut usize,
 )
 {
+
     unsafe {
+
         // not so random he he
         // First batch
         ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
@@ -322,13 +333,15 @@ pub fn ycbcr_to_rgba_sse(
     offset: &mut usize,
 )
 {
+
     unsafe {
+
         ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
     }
 }
 
 /// Calculate YCBCR to Grayscale
-
+#[rustfmt::skip]
 pub fn ycbcr_to_grayscale_16_sse(
     u: &[i16; 8],
     v: &[i16; 8],
@@ -340,7 +353,9 @@ pub fn ycbcr_to_grayscale_16_sse(
     offset: &mut usize,
 )
 {
+
     unsafe {
+
         let x = _mm_loadu_si128(u.as_ptr().cast());
 
         let y = _mm_loadu_si128(v.as_ptr().cast());
@@ -363,5 +378,6 @@ pub fn ycbcr_to_grayscale_16_sse(
 
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
 {
+
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
