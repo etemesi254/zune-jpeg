@@ -4,10 +4,12 @@
     clippy::inline_always,
     clippy::doc_markdown
 )]
+#![allow(dead_code)]
 //! This file exposes a single struct that can decode a huffman encoded
 //! Bitstream in a JPEG file
 
 use std::io::Cursor;
+use std::ops::AddAssign;
 
 use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
@@ -53,7 +55,6 @@ impl BitStream
 
     pub(crate) const fn new() -> BitStream
     {
-
         BitStream {
             buffer: 0,
             lsb_buffer: 0,
@@ -70,7 +71,6 @@ impl BitStream
 
     pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream
     {
-
         BitStream {
             buffer: 0,
             lsb_buffer: 0,
@@ -101,10 +101,8 @@ impl BitStream
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(always)]
-
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
-
         // Ps i know inline[always] is frowned upon
 
         /// Macro version of a single byte refill.
@@ -115,7 +113,6 @@ impl BitStream
 
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
-
                 // read a byte from the stream
                 $byte = read_u8(reader);
 
@@ -124,33 +121,26 @@ impl BitStream
                 // to the lower end (0..8) of the buffer and push the rest bits above..
                 $buffer = ($buffer << 8) | $byte;
 
-                //$lsb_byte |= $byte << ( 56 - $bits_left);
-                //println!("{:b},{}",$byte,56-$bits_left);
-
                 // Increment bits left
                 $bits_left += 8;
 
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff
                 {
-
                     // read next byte
                     let mut next_byte = read_u8(reader);
 
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00
                     {
-
                         // skip that byte we read
                         while next_byte == 0xFF
                         {
-
                             next_byte = read_u8(reader);
                         }
 
                         if next_byte != 0x00
                         {
-
                             // Undo the byte append and return
                             $buffer &= !0xf;
 
@@ -172,7 +162,6 @@ impl BitStream
         // If we have less than 32 bits we refill
         if self.bits_left <= 32
         {
-
             // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse
@@ -197,13 +186,11 @@ impl BitStream
     }
 
     #[allow(
-        clippy::many_single_char_names,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         clippy::unwrap_used
     )]
     #[inline(always)]
-
     fn decode_dc(
         &mut self,
         reader: &mut Cursor<Vec<u8>>,
@@ -211,64 +198,64 @@ impl BitStream
         dc_prediction: &mut i32,
     ) -> bool
     {
+        let (mut symbol, mut code_length, r);
 
-        let (mut s, mut l, r);
-
+        // in the instance that refill returns false,
+        // it means a marker was found in the stream, stop execution..
         if !self.refill(reader)
         {
-
             return false;
         };
+        // look a head HUFF_LOOKAHEAD bits into the bitstream
+        symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
 
-        s = self.peek_bits::<HUFF_LOOKAHEAD>();
+        symbol = dc_table.lookup[symbol as usize];
 
-        s = dc_table.lookup[s as usize];
+        // Extract code length of the DC coefficient
+        code_length = symbol >> HUFF_LOOKAHEAD;
 
-        l = s >> HUFF_LOOKAHEAD;
+        // Drop bits from the bitstream.
+        self.drop_bits(code_length as u8);
 
-        self.drop_bits(l as u8);
+        // Get symbol for the DC coefficient.
+        symbol &= (1 << HUFF_LOOKAHEAD) - 1;
 
-        s &= (1 << HUFF_LOOKAHEAD) - 1;
-
-        if l > i32::from(HUFF_LOOKAHEAD)
+        if code_length > i32::from(HUFF_LOOKAHEAD)
         {
+            // If code length is greater than HUFF_LOOKAHEAD, read in bits the hard way way
+            symbol = ((self.buffer >> self.bits_left) & ((1 << (code_length)) - 1)) as i32;
 
-            s = ((self.buffer >> self.bits_left) & ((1 << (l)) - 1)) as i32;
-
-            while s > dc_table.maxcode[l as usize]
+            while symbol > dc_table.maxcode[code_length as usize]
             {
+                symbol <<= 1;
 
-                s <<= 1;
+                symbol |= self.get_bits(1);
 
-                s |= self.get_bits(1);
-
-                l += 1;
+                code_length += 1;
             }
 
-            if l > 16
+            if code_length > 16
             {
-
-                s = 0;
+                // corrupt image?
+                symbol = 0;
             }
             else
             {
-
-                s = i32::from(dc_table.values[((s + dc_table.offset[l as usize]) & 0xFF) as usize]);
+                symbol = i32::from(
+                    dc_table.values
+                        [((symbol + dc_table.offset[code_length as usize]) & 0xFF) as usize],
+                );
             }
         }
-
-        if s != 0
+        if symbol != 0
         {
+            r = self.get_bits(symbol as u8);
 
-            r = self.get_bits(s as u8);
-
-            s = huff_extend(r, s);
+            symbol = huff_extend(r, symbol);
         }
 
         // Update DC prediction
-        // (multiply by successive low if it's a progressive image, it should not matter
-        // for baseline).
-        *dc_prediction += s;
+        *dc_prediction += symbol;
 
         return true;
     }
@@ -306,13 +293,13 @@ impl BitStream
         // set dc to be the dc prediction.
         block[0] = *dc_prediction as i16;
 
-        let (mut s, mut l, mut r);
+        let (mut symbol, mut code_length, mut r);
         // Decode AC coefficients
-        let mut k: usize = 1;
+        let mut pos: usize = 1;
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
 
-        while k < 64
+        while pos < 64
         {
             if !self.refill(reader)
             {
@@ -320,64 +307,75 @@ impl BitStream
                 return false;
             };
 
-            s = self.peek_bits::<HUFF_LOOKAHEAD>();
+            symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
 
-            let v = ac_lookup[s as usize];
+            let v = ac_lookup[symbol as usize];
+
 
             if v != 0
             {
                 //  FAST AC path
-                k += ((v >> 4) & 15) as usize; // run
 
-                block[UN_ZIGZAG[k]] = v >> 8;
+                // run
+                pos += ((v >> 4) & 63) as usize;
 
-                self.drop_bits((v & 15) as u8); // combined length
+                // Value
+                block[*UN_ZIGZAG.get(pos).unwrap_or(&63)] = v >> 10;
 
-                k += 1;
+                // combined length
+                self.drop_bits((v & 15) as u8);
+
+                pos += 1;
             }
             else
             {
-                s = ac_table.lookup[s as usize];
+                symbol = ac_table.lookup[symbol as usize];
 
-                l = s >> HUFF_LOOKAHEAD;
+                code_length = symbol >> HUFF_LOOKAHEAD;
 
-                s &= (1 << HUFF_LOOKAHEAD) - 1;
+                symbol &= (1 << HUFF_LOOKAHEAD) - 1;
 
-                self.drop_bits(l as u8);
+                self.drop_bits(code_length as u8);
 
-                if l > i32::from(HUFF_LOOKAHEAD)
+                if code_length > i32::from(HUFF_LOOKAHEAD)
                 {
-                    s = ((self.buffer >> self.bits_left) & ((1 << (l)) - 1)) as i32;
+                    symbol = ((self.buffer >> self.bits_left) & ((1 << (code_length)) - 1)) as i32;
 
-                    while s > ac_table.maxcode[l as usize]
+                    while symbol > ac_table.maxcode[code_length as usize]
                     {
-                        s <<= 1;
-                        s |= self.get_bits(1);
-                        l += 1;
+                        symbol <<= 1;
+
+                        symbol |= self.get_bits(1);
+
+                        code_length += 1;
                     }
-                    if l > 16
+                    if code_length > 16
                     {
-                        s = 0;
+                        symbol = 0;
                     }
                     else
                     {
-                        s = i32::from(
-                            ac_table.values[((s + ac_table.offset[l as usize]) & 0xFF) as usize],
+                        symbol = i32::from(
+                            ac_table.values[((symbol + ac_table.offset[code_length as usize])
+                                & 0xFF) as usize],
                         );
                     }
                 };
-                r = s >> 4;
-                s &= 15;
 
-                if s != 0
+                r = symbol >> 4;
+                symbol &= 15;
+
+                if symbol != 0
                 {
-                    k += r as usize;
-                    r = self.get_bits(s as u8);
-                    s = huff_extend(r, s);
+                    pos += r as usize;
 
-                    block[UN_ZIGZAG[k as usize]] = s as i16;
+                    r = self.get_bits(symbol as u8);
 
-                    k += 1;
+                    symbol = huff_extend(r, symbol);
+
+                    block[UN_ZIGZAG[pos as usize]] = symbol as i16;
+
+                    pos += 1;
                 }
                 else
                 {
@@ -385,7 +383,7 @@ impl BitStream
                     {
                         return true;
                     }
-                    k += 15;
+                    pos += 15;
                 }
             }
         }
@@ -395,10 +393,8 @@ impl BitStream
     /// Peek `look_ahead` bits ahead without discarding them from the buffer
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
-
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
-
         // for the LSB buffer peek bits doesn't require an and to remove/zero out top
         // bits
         (self.lsb_buffer >> (64 - LOOKAHEAD)) as i32
@@ -406,10 +402,8 @@ impl BitStream
 
     /// Discard the next `N` bits without checking
     #[inline]
-
     fn drop_bits(&mut self, n: u8)
     {
-
         self.bits_left -= n;
 
         // remove top n bits  in lsb buffer
@@ -420,10 +414,8 @@ impl BitStream
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
-
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
-
         let bits = (self.lsb_buffer >> (64 - n_bits)) as i32;
 
         // Reduce the bits left, this influences the MSB buffer
@@ -437,7 +429,6 @@ impl BitStream
 
     /// Decode a DC block
     #[allow(clippy::cast_possible_truncation)]
-
     pub fn decode_block_dc(
         &mut self,
         reader: &mut Cursor<Vec<u8>>,
@@ -446,10 +437,8 @@ impl BitStream
         dc_prediction: &mut i32,
     ) -> Result<bool, DecodeErrors>
     {
-
         if self.spec_end == 0
         {
-
             return Err(DecodeErrors::HuffmanDecode(
                 "Can't merge dc and AC corrupt jpeg".to_string(),
             ));
@@ -457,14 +446,12 @@ impl BitStream
 
         if self.successive_high == 0
         {
-
             self.decode_dc(reader, dc_table, dc_prediction);
 
             block[0] = (*dc_prediction as i16) * (1_i16 << self.successive_low);
         }
         else
         {
-
             // refinement scan
             self.get_bit(reader);
 
@@ -478,10 +465,8 @@ impl BitStream
 
     fn get_bit(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
-
         if self.bits_left < 1
         {
-
             return self.refill(reader);
         }
 
@@ -498,10 +483,8 @@ impl BitStream
     /// Restart markers indicate drop those bits in the stream and zero out
     /// everything
     #[cold]
-
     pub fn reset(&mut self)
     {
-
         self.bits_left = 0;
 
         self.marker = None;
@@ -514,10 +497,8 @@ impl BitStream
 
 /// Do the equivalent of JPEG HUFF_EXTEND
 #[inline(always)]
-
 fn huff_extend(x: i32, s: i32) -> i32
 {
-
     // if x<s return x else return x+offset[s] where offset[s] = ( (-1<<s)+1)
 
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
@@ -528,10 +509,8 @@ fn huff_extend(x: i32, s: i32) -> i32
 /// Function is inlined (as always)
 #[inline(always)]
 #[allow(clippy::cast_possible_truncation)]
-
 fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64
 {
-
     let pos = reader.position();
 
     reader.set_position(pos + 1);

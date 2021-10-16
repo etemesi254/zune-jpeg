@@ -22,7 +22,7 @@ pub struct HuffmanTable
     pub(crate) offset: [i32; 18],
     /// lookup table for fast decoding
     ///
-    /// top  bits above HUFF_LOOKAHEAD (8) contain the code length.
+    /// top  bits above HUFF_LOOKAHEAD contain the code length.
     ///
     /// Lower (8) bits contain the symbol in order of increasing code length.
     pub(crate) lookup: [i32; 1 << HUFF_LOOKAHEAD],
@@ -45,7 +45,6 @@ impl HuffmanTable
     pub fn new(codes: &[u8; 17], values: Vec<u8>, is_dc: bool)
         -> Result<HuffmanTable, DecodeErrors>
     {
-
         let mut p = HuffmanTable {
             maxcode: [0; 18],
             offset: [0; 18],
@@ -68,10 +67,8 @@ impl HuffmanTable
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss
     )]
-
     fn make_derived_table(&mut self, is_dc: bool) -> Result<(), DecodeErrors>
     {
-
         // build a list of code size
         let mut huff_size = [0; 257];
 
@@ -83,13 +80,11 @@ impl HuffmanTable
 
         for l in 1..=16
         {
-
             let mut i = i32::from(self.bits[l]);
 
             // table overrun is checked before ,so we dont need to check
             while i != 0
             {
-
                 huff_size[p] = l as u8;
 
                 p += 1;
@@ -112,10 +107,8 @@ impl HuffmanTable
 
         while huff_size[p] != 0
         {
-
             while i32::from(huff_size[p]) == si
             {
-
                 huff_code[p] = code;
 
                 code += 1;
@@ -127,7 +120,6 @@ impl HuffmanTable
             // it must still fit in si bits, since no code is allowed to be all ones.
             if (code as i32) >= (1 << si)
             {
-
                 return Err(DecodeErrors::HuffmanDecode("Bad Huffman Table".to_string()));
             }
 
@@ -141,16 +133,13 @@ impl HuffmanTable
 
         for l in 0..=16
         {
-
             if self.bits[l] == 0
             {
-
                 // -1 if no codes of this length
                 self.maxcode[l] = -1;
             }
             else
             {
-
                 // offset[l]=codes[index of 1st symbol of code length l
                 // minus minimum code of length l]
                 self.offset[l] = (p as i32) - (huff_code[p]) as i32;
@@ -177,7 +166,6 @@ impl HuffmanTable
 
         for i in 0..(1 << HUFF_LOOKAHEAD)
         {
-
             self.lookup[i] = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
         }
 
@@ -185,10 +173,8 @@ impl HuffmanTable
 
         for l in 1..=HUFF_LOOKAHEAD
         {
-
             for _ in 1..=i32::from(self.bits[usize::from(l)])
             {
-
                 // l -> Current code length,
                 // p => Its index in self.code and self.values
                 // Generate left justified code followed by all possible bit sequences
@@ -196,12 +182,10 @@ impl HuffmanTable
 
                 for _ in 0..1 << (HUFF_LOOKAHEAD - l)
                 {
-
                     self.lookup[look_bits] =
                         (i32::from(l) << HUFF_LOOKAHEAD) | i32::from(self.values[p]);
 
                     look_bits += 1;
-
                 }
 
                 p += 1;
@@ -211,24 +195,20 @@ impl HuffmanTable
         // build an ac table that does an equivalent of decode and receive_extend
         if !is_dc
         {
-
             let mut fast = [255; 1 << HUFF_LOOKAHEAD];
 
             for i in 0..num_symbols
             {
-
                 let s = huff_size[i];
 
                 if s <= HUFF_LOOKAHEAD
                 {
-
                     let c = (huff_code[i] << (HUFF_LOOKAHEAD - s)) as usize;
 
                     let m = (1 << (HUFF_LOOKAHEAD - s)) as usize;
 
                     for j in 0..m
                     {
-
                         fast[c + j] = i as i16;
                     }
                 }
@@ -240,12 +220,10 @@ impl HuffmanTable
 
             for i in 0..(1 << HUFF_LOOKAHEAD)
             {
-
                 let fast = fast[i];
 
                 if fast < 255
                 {
-
                     let rs = self.values[fast as usize];
 
                     let run = i16::from((rs >> 4) & 15);
@@ -254,26 +232,31 @@ impl HuffmanTable
 
                     let len = i16::from(huff_size[fast as usize]);
 
-                    if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
+                    if len == 1
                     {
-
-                        // magnitude code followed by receive_extend code
-                        let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
-                            >> (i16::from(HUFF_LOOKAHEAD) - mag_bits);
-
-                        let m = 1 << (mag_bits - 1);
-
-                        if k < m
+                        // Handle End Of Block case.
+                        fast_ac[i] = (0 << 10) + (63 << 4) + 1;
+                    }
+                    else
+                    {
+                        if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
                         {
+                            // magnitude code followed by receive_extend code
+                            let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
+                                >> (i16::from(HUFF_LOOKAHEAD) - mag_bits);
 
-                            k += (!0_i16 << mag_bits) + 1;
-                        };
+                            let m = 1 << (mag_bits - 1);
 
-                        // if result is small enough fit into fast ac table
-                        if k >= -128 && k <= 127
-                        {
+                            if k < m
+                            {
+                                k += (!0_i16 << mag_bits) + 1;
+                            };
 
-                            fast_ac[i] = (k << 8) + (run << 4) + (len + mag_bits);
+                            // if result is small enough fit into fast ac table
+                            if k >= -128 && k <= 127
+                            {
+                                fast_ac[i] = (k << 10) + (run << 4) + (len + mag_bits);
+                            }
                         }
                     }
                 }
@@ -287,15 +270,12 @@ impl HuffmanTable
         // For DC tables, we require symbols to be in range 0..15
         if is_dc
         {
-
             for i in 0..num_symbols
             {
-
                 let sym = self.values[i];
 
                 if sym > 15
                 {
-
                     return Err(DecodeErrors::HuffmanDecode("Bad Huffman Table".to_string()));
                 }
             }
