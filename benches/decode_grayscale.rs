@@ -1,14 +1,13 @@
 //! Benchmarks for grayscale decoding
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::fs::read;
 use std::time::Duration;
 
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use zune_jpeg::{ColorSpace, Decoder};
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
-
     let mut d = Decoder::new();
 
     d.set_output_colorspace(ColorSpace::GRAYSCALE);
@@ -18,9 +17,7 @@ fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 
 fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 1]>
 {
-
     let p = std::panic::catch_unwind(|| {
-
         let d = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS)
             .from_mem(buf)
             .unwrap();
@@ -41,18 +38,15 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 1]>
 
 fn criterion_benchmark(c: &mut Criterion)
 {
-
     let a = String::from("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg");
 
     let data = read(a).unwrap();
 
     c.bench_function("Baseline JPEG Decoding zune-jpeg-Grayscale", |b| {
-
         b.iter(|| black_box(decode_jpeg(data.as_slice())))
     });
 
     c.bench_function("Baseline JPEG Decoding  mozjpeg-Grayscale", |b| {
-
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 }
