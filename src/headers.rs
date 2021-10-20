@@ -166,9 +166,7 @@ where
 /// Section:`B.2.2 Frame header syntax`
 
 pub(crate) fn parse_start_of_frame<R>(
-    buf: &mut R,
-    sof: SOFMarkers,
-    img: &mut Decoder,
+    buf: &mut R, sof: SOFMarkers, img: &mut Decoder,
 ) -> Result<(), DecodeErrors>
 where
     R: Read,
@@ -388,9 +386,7 @@ where
 }
 
 pub fn parse_app<R>(
-    mut buf: &mut R,
-    marker: Marker,
-    info: &mut ImageInfo,
+    mut buf: &mut R, marker: Marker, info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
 where
     R: BufRead + Read,
