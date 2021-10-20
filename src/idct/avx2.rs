@@ -6,7 +6,7 @@ use std::arch::x86::*;
 use std::arch::x86_64::*;
 
 use crate::misc::Aligned32;
-use crate::unsafe_utils::YmmRegister;
+use crate::unsafe_utils::{align_alloc, YmmRegister};
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
@@ -23,28 +23,29 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 /// - The bottleneck becomes memory loads and stores, which we can't sadly force
 ///   to be faster
 
-pub fn dequantize_and_idct_avx2(vector: &mut [i16], qt_table: &Aligned32<[i32; 64]>)
+pub fn dequantize_and_idct_avx2(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize)->Vec<i16>
 {
-
     unsafe {
-
         // We don't call this method directly because we need to flag the code function
         // with #[target_feature] so that the compiler does do weird stuff with
         // it
-        dequantize_and_idct_int_avx2(vector, qt_table);
+        dequantize_and_idct_int_avx2(vector, qt_table, stride)
     }
 }
 
 #[target_feature(enable = "avx2")]
 #[allow(
-    clippy::too_many_lines,
-    clippy::cast_possible_truncation,
-    clippy::similar_names
+clippy::too_many_lines,
+clippy::cast_possible_truncation,
+clippy::similar_names,
+unused_assignments
 )]
-unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[i32; 64]>)
+unsafe fn dequantize_and_idct_int_avx2(coeff: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize) -> Vec<i16>
 {
-
-    // since QT tables are reused, we can lift them from the loop and multiply them
+    let mut tmp_vector = align_alloc::<i16,16>(coeff.len());
+    let mut pos=0 ;
+    let mut x = 0;
+    // calculate position
     // inside This is still slow because cache misses
     let qt_row0 = _mm256_load_si256(qt_table.0[0..=7].as_ptr().cast());
 
@@ -63,9 +64,8 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
     let qt_row7 = _mm256_load_si256(qt_table.0[56..=63].as_ptr().cast());
 
     // Iterate in chunks of 64
-    for vector in coeff.chunks_exact_mut(64)
+    for vector in coeff.chunks_exact(64)
     {
-
         // load into registers
         //
         // We sign extend i16's to i32's and calculate them with extended precision and
@@ -88,7 +88,6 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         let rw7 = _mm_loadu_si128(vector[56..=63].as_ptr().cast());
 
         {
-
             // Forward DCT and quantization may cause all the AC terms to be zero, for such
             // cases we can try to accelerate it
 
@@ -127,23 +126,32 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
 
             if v == 1
             {
-
                 // AC terms all zero, idct of the block is  is (coeff[0] *qt[0])/8 + bias(128)
                 // (and clamped to 255)
-                let idct_value = _mm256_set1_epi16(
+                let idct_value = _mm_set1_epi16(
                     (((vector[0] * qt_table.0[0] as i16) >> 3) + 128)
                         .max(0)
                         .min(255),
                 );
+                macro_rules! store {
+                    ($pos:tt,$value:tt) => {
+                    // store
+                    _mm_store_si128(tmp_vector.get_unchecked_mut($pos..$pos+8).as_mut_ptr().cast(),$value);
+                    $pos+=stride;
+                    };
+                }
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                store!(pos,idct_value);
+                x += 8;
+                pos = x;
 
-                // store
-                _mm256_storeu_si256(vector[0..16].as_mut_ptr().cast(), idct_value);
-
-                _mm256_storeu_si256(vector[16..32].as_mut_ptr().cast(), idct_value);
-
-                _mm256_storeu_si256(vector[32..48].as_mut_ptr().cast(), idct_value);
-
-                _mm256_storeu_si256(vector[48..64].as_mut_ptr().cast(), idct_value);
+                // reset pos
 
                 // Go to the next coefficient block
                 continue;
@@ -201,7 +209,6 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
 
         macro_rules! dct_pass {
             ($SCALE_BITS:tt,$scale:tt) => {
-
                 // There are a lot of ways to do this
                 // but to keep it simple(and beautiful), ill make a direct translation of the
                 // above to also make this code fully transparent(this version and the non
@@ -304,38 +311,42 @@ unsafe fn dequantize_and_idct_int_avx2(coeff: &mut [i16], qt_table: &Aligned32<[
         // Store back to array
         macro_rules! permute_store {
             ($x:tt,$y:tt,$index:tt,$out:tt) => {
-
                 let a = _mm256_packs_epi32($x, $y);
 
-                // Clamp the values after packing, we can clamp more values at once
+                // Clamp the values after packing, 3535we can clamp more values at once
                 let b = clamp_avx(a);
 
                 // /Undo shuffling,
                 // Magic number 216 is what does it for us..
                 let c = _mm256_permute4x64_epi64(b, shuffle(3, 1, 2, 0));
 
-                // Store back,the memory is aligned to a 32 byte boundary
-                _mm256_storeu_si256(($out)[$index..$index + 16].as_mut_ptr().cast(), c);
+                // store first vector
+                 _mm_store_si128(($out).get_unchecked_mut($index..$index+8).as_mut_ptr().cast(), _mm256_extractf128_si256::<0>(c));
+                // second vector
+                 _mm_store_si128(($out)[$index+stride..$index+stride+8].as_mut_ptr().cast(),_mm256_extractf128_si256::<1>(c));
             };
         }
 
+
         // Pack and write the values back to the array
-        permute_store!((row0.mm256), (row1.mm256), 0, vector);
+        permute_store!((row0.mm256), (row1.mm256), pos, tmp_vector);
+        pos += stride;
+        permute_store!((row0.mm256), (row1.mm256), pos, tmp_vector);
+        pos += stride;
+        permute_store!((row0.mm256), (row1.mm256), pos, tmp_vector);
+        pos += stride;
+        permute_store!((row0.mm256), (row1.mm256), pos, tmp_vector);
 
-        permute_store!((row2.mm256), (row3.mm256), 16, vector);
-
-        permute_store!((row4.mm256), (row5.mm256), 32, vector);
-
-        permute_store!((row6.mm256), (row7.mm256), 48, vector);
+        x += 8;
+        pos = x;
     }
+    return tmp_vector;
 }
 
 #[inline]
 #[target_feature(enable = "avx2")]
-
 unsafe fn clamp_avx(reg: __m256i) -> __m256i
 {
-
     // the lowest value
     let min_s = _mm256_set1_epi16(0);
 
@@ -354,22 +365,13 @@ type Reg = YmmRegister;
 /// This was translated from [here](https://newbedev.com/transpose-an-8x8-float-using-avx-avx2)
 #[allow(unused_parens, clippy::too_many_arguments)]
 #[target_feature(enable = "avx2")]
-
 unsafe fn transpose(
-    v0: &mut Reg,
-    v1: &mut Reg,
-    v2: &mut Reg,
-    v3: &mut Reg,
-    v4: &mut Reg,
-    v5: &mut Reg,
-    v6: &mut Reg,
-    v7: &mut Reg,
+    v0: &mut Reg, v1: &mut Reg, v2: &mut Reg, v3: &mut Reg, v4: &mut Reg, v5: &mut Reg,
+    v6: &mut Reg, v7: &mut Reg,
 )
 {
-
     macro_rules! merge_epi32 {
         ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
-
             let va = _mm256_permute4x64_epi64($v0, shuffle(3, 1, 2, 0));
 
             let vb = _mm256_permute4x64_epi64($v1, shuffle(3, 1, 2, 0));
@@ -382,7 +384,6 @@ unsafe fn transpose(
 
     macro_rules! merge_epi64 {
         ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
-
             let va = _mm256_permute4x64_epi64($v0, shuffle(3, 1, 2, 0));
 
             let vb = _mm256_permute4x64_epi64($v1, shuffle(3, 1, 2, 0));
@@ -395,7 +396,6 @@ unsafe fn transpose(
 
     macro_rules! merge_si128 {
         ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
-
             $v2 = _mm256_permute2x128_si256($v0, $v1, shuffle(0, 2, 0, 0));
 
             $v3 = _mm256_permute2x128_si256($v0, $v1, shuffle(0, 3, 0, 1));
@@ -434,9 +434,7 @@ unsafe fn transpose(
 /// A copy of `_MM_SHUFFLE()` that doesn't require
 /// a nightly compiler
 #[inline]
-
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
 {
-
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
