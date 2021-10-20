@@ -48,7 +48,6 @@ impl Components
 
     pub fn from(a: [u8; 3]) -> Result<Components, DecodeErrors>
     {
-
         let id = match a[0]
         {
             1 => ComponentID::Y,
@@ -56,7 +55,6 @@ impl Components
             3 => ComponentID::Cr,
             r =>
             {
-
                 return Err(DecodeErrors::Format(format!(
                     "Unknown component id found,{}, expected value between 1 and 3\nNote I and Q components are not supported yet",
                     r

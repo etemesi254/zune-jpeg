@@ -39,9 +39,7 @@
     clippy::pedantic,
     clippy::inline_always,
     clippy::missing_errors_doc,
-    clippy::panic,
-    clippy::unwrap_used,
-    clippy::expect_used
+    clippy::panic
 )]
 //clippy::missing_docs_in_private_items,
 #![deny(missing_docs)]
@@ -75,13 +73,12 @@ pub use image::*;
 
 fn decode_jpeg()
 {
-
     let mut x = Decoder::new();
 
-    x.set_output_colorspace(ColorSpace::RGB);
+    x.set_output_colorspace(ColorSpace::GRAYSCALE);
 
     let image = x
-        .decode_file("/home/caleb/CLionProjects/zune-jpeg/test-images/speed_bench.jpg")
+        .decode_file("/home/caleb/temp/WallhavenSexyWomen/4x11dn.jpg")
         .unwrap();
 
     println!("{:?}", &image[0..30]);
@@ -92,12 +89,11 @@ fn decode_jpeg()
 
 fn decode_jpeg_interleaved()
 {
-
     let mut x = Decoder::new();
 
     x.set_output_colorspace(ColorSpace::RGB);
 
-    let image = x.decode_file("/home/caleb/IMG_8867.JPG").unwrap();
+    let image = x.decode_file("/home/caleb/CLionProjects/zune-jpeg/test-images/speed_bench_horizontal_subsampling.jpg").unwrap();
 
     println!(
         "{}",
@@ -112,10 +108,9 @@ fn decode_jpeg_interleaved()
 
 fn decode_jpeg_prog()
 {
-
-    let _pixels = Decoder::new()
+    let pixels = Decoder::new()
         .decode_file("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg")
         .unwrap();
 
-    println!("{:?}", &_pixels[0..30]);
+    println!("{:?}", &pixels[0..30]);
 }

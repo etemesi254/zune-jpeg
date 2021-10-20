@@ -235,28 +235,25 @@ impl HuffmanTable
                     if len == 1
                     {
                         // Handle End Of Block case.
-                        fast_ac[i] = (0 << 10) + (63 << 4) + 1;
+                        fast_ac[i] =  (63 << 4) + 1;
                     }
-                    else
+                    else if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
                     {
-                        if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
+                        // magnitude code followed by receive_extend code
+                        let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
+                            >> (i16::from(HUFF_LOOKAHEAD) - mag_bits);
+
+                        let m = 1 << (mag_bits - 1);
+
+                        if k < m
                         {
-                            // magnitude code followed by receive_extend code
-                            let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
-                                >> (i16::from(HUFF_LOOKAHEAD) - mag_bits);
+                            k += (!0_i16 << mag_bits) + 1;
+                        };
 
-                            let m = 1 << (mag_bits - 1);
-
-                            if k < m
-                            {
-                                k += (!0_i16 << mag_bits) + 1;
-                            };
-
-                            // if result is small enough fit into fast ac table
-                            if k >= -128 && k <= 127
-                            {
-                                fast_ac[i] = (k << 10) + (run << 4) + (len + mag_bits);
-                            }
+                        // if result is small enough fit into fast ac table
+                        if k >= -128 && k <= 127
+                        {
+                            fast_ac[i] = (k << 10) + (run << 4) + (len + mag_bits);
                         }
                     }
                 }

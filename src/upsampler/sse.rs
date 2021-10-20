@@ -1,21 +1,18 @@
 #![cfg(feature = "x86")]
-#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::module_name_repetitions, clippy::wildcard_imports)]
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 use std::convert::TryInto;
+use crate::unsafe_utils::align_alloc;
 
 #[inline]
 
 pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 {
-
-    unsafe {
-
-        upsample_horizontal_sse_u(input, output_len)
-    }
+    unsafe { upsample_horizontal_sse_u(input, output_len) }
 }
 
 /// Upsample using SSE to improve speed
@@ -28,9 +25,8 @@ pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 
 pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec<i16>
 {
-
     //let mut out = align_zero_alloc::<i16, 16>(output_len);
-    let mut out = vec![0; output_len];
+    let mut out = align_alloc::<i16,16>(output_len);
 
     // set first 8 pixels linearly
     // Assert that out has more than 8 elements and input has more than 4
@@ -38,7 +34,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
     // paranoid guy.
     assert!(out.len() > 8 && input.len() > 5);
 
-    let f_out:&mut [i16;8]= out.split_at_mut(8).0.try_into().unwrap();
+    let f_out: &mut [i16; 8] = out.split_at_mut(8).0.try_into().unwrap();
 
     // We can do better here, since Rust loads input[y] twice but it can store it in
     // a register but enough ugly code
@@ -72,7 +68,6 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
     for i in 1..(inl >> 2) - 1
     {
-
         let pos = i << 2;
 
         let mut yn = _mm_loadl_epi64(input.get_unchecked(pos..).as_ptr().cast());
@@ -87,7 +82,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
         let odd = _mm_unpacklo_epi16(y, y); //[ e,e,f,f,g,g,g.h,h]
 
-        let nn = _mm_blend_epi16::<0b1010_1010>(even, odd);  // [a,e,b,f,c,g,d,h]
+        let nn = _mm_blend_epi16::<0b1010_1010>(even, odd); // [a,e,b,f,c,g,d,h]
 
         // a multiplication by 3 can be seen as a shift by 1 and add by itself, let's
         // use that to reduce latency
@@ -109,13 +104,12 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
         _mm_storeu_si128(out.as_mut_ptr().add(i * 8).cast(), cn);
     }
 
-    // Do the last 8 manually because we can't  do it  with SSE because of boundary
-    // filters .
+    // Do the last 8 manually because we can't  do it  with SSE because of out of bounds access
     let ol = out.len() - 8;
 
     let il = input.len() - 4;
 
-    let l_out:&mut [i16;8] = out.split_at_mut(ol).1.try_into().unwrap();
+    let l_out: &mut [i16; 8] = out.split_at_mut(ol).1.try_into().unwrap();
 
     l_out[0] = (input[il] * 3 + input[il - 1] + 2) >> 2;
 
@@ -141,7 +135,6 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
 fn upsample_sse_plain()
 {
-
     use crate::upsampler::upsample_horizontal;
 
     let v: Vec<i16> = (0..128).collect();
