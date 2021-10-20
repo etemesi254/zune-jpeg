@@ -9,7 +9,6 @@
 //! Bitstream in a JPEG file
 
 use std::io::Cursor;
-use std::ops::AddAssign;
 
 use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
@@ -49,10 +48,6 @@ pub(crate) struct BitStream
 impl BitStream
 {
     /// Create a new BitStream
-    ///
-    /// The buffer and bits_left values are initialized to 0
-    /// (it would be crazy to initialize to another value :>) )
-
     pub(crate) const fn new() -> BitStream
     {
         BitStream {
@@ -192,10 +187,7 @@ impl BitStream
     )]
     #[inline(always)]
     fn decode_dc(
-        &mut self,
-        reader: &mut Cursor<Vec<u8>>,
-        dc_table: &HuffmanTable,
-        dc_prediction: &mut i32,
+        &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
     ) -> bool
     {
         let (mut symbol, mut code_length, r);
@@ -223,6 +215,8 @@ impl BitStream
         if code_length > i32::from(HUFF_LOOKAHEAD)
         {
             // If code length is greater than HUFF_LOOKAHEAD, read in bits the hard way way
+
+            // Read the bits we initially discarded when we called drop_bits.
             symbol = ((self.buffer >> self.bits_left) & ((1 << (code_length)) - 1)) as i32;
 
             while symbol > dc_table.maxcode[code_length as usize]
@@ -283,6 +277,7 @@ impl BitStream
         ac_table: &HuffmanTable,
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
+
     ) -> bool
     {
         // decode DC, dc prediction will contain the value
@@ -309,28 +304,28 @@ impl BitStream
 
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
 
-            let v = ac_lookup[symbol as usize];
+            let fast_ac = ac_lookup[symbol as usize];
+
+            symbol = ac_table.lookup[symbol as usize];
 
 
-            if v != 0
+            if fast_ac != 0
             {
                 //  FAST AC path
 
                 // run
-                pos += ((v >> 4) & 63) as usize;
+                pos += ((fast_ac >> 4) & 63) as usize;
 
                 // Value
-                block[*UN_ZIGZAG.get(pos).unwrap_or(&63)] = v >> 10;
+                block[*UN_ZIGZAG.get(pos).unwrap_or(&63)] = fast_ac >> 10;
 
                 // combined length
-                self.drop_bits((v & 15) as u8);
+                self.drop_bits((fast_ac & 15) as u8);
 
                 pos += 1;
             }
             else
             {
-                symbol = ac_table.lookup[symbol as usize];
-
                 code_length = symbol >> HUFF_LOOKAHEAD;
 
                 symbol &= (1 << HUFF_LOOKAHEAD) - 1;
@@ -430,10 +425,7 @@ impl BitStream
     /// Decode a DC block
     #[allow(clippy::cast_possible_truncation)]
     pub fn decode_block_dc(
-        &mut self,
-        reader: &mut Cursor<Vec<u8>>,
-        dc_table: &HuffmanTable,
-        block: &mut [i16; 64],
+        &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, block: &mut [i16; 64],
         dc_prediction: &mut i32,
     ) -> Result<bool, DecodeErrors>
     {
