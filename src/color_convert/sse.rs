@@ -10,6 +10,7 @@
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::convert::TryInto;
 
 union XmmRegister
 {
@@ -18,16 +19,10 @@ union XmmRegister
 }
 
 pub fn ycbcr_to_rgb_sse(
-    y: &[i16; 8],
-    cb: &[i16; 8],
-    cr: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], out: &mut [u8], offset: &mut usize,
 )
 {
-
     unsafe {
-
         ycbcr_to_rgb_sse41(y, cb, cr, out, offset);
     }
 }
@@ -36,14 +31,9 @@ pub fn ycbcr_to_rgb_sse(
 #[target_feature(enable = "sse4.1")]
 
 unsafe fn ycbcr_to_rgb_sse41(
-    y: &[i16; 8],
-    cb: &[i16; 8],
-    cr: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], out: &mut [u8], offset: &mut usize,
 )
 {
-
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -120,7 +110,6 @@ unsafe fn ycbcr_to_rgb_sse41(
     // vectorised with some cool blend and broadcast instructions
     for i in 0..8
     {
-
         // Reason
         //  - Bounds checking will prevent autovectorization of this
         // Safety
@@ -137,14 +126,9 @@ unsafe fn ycbcr_to_rgb_sse41(
 }
 
 unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
-    y: &[i16; 8],
-    cb: &[i16; 8],
-    cr: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], out: &mut [u8], offset: &mut usize,
 )
 {
-
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
     // which is wasteful(since the values are always clamped to 0..255)
@@ -243,7 +227,6 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
 
 unsafe fn clamp_sse(a: __m128i) -> __m128i
 {
-
     // the lowest value
     let min: __m128i = _mm_set1_epi16(0);
 
@@ -263,121 +246,50 @@ unsafe fn clamp_sse(a: __m128i) -> __m128i
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 
 unsafe fn ycbcr_to_rgb_16(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
     {
+        ycbcr_to_rgb_sse(y[0..8].try_into().unwrap(), cb[0..8].try_into().unwrap(), cr[0..8].try_into().unwrap(), out, offset);
 
-        //  do the first batch
-        ycbcr_to_rgb_sse41(y1, cb1, cr1, out, offset);
-
-        // Do the second batch
-        ycbcr_to_rgb_sse41(y2, cb2, cr2, out, offset);
+        // second MCU
+        ycbcr_to_rgb_sse(y[8..16].try_into().unwrap(), cb[8..16].try_into().unwrap(), cr[8..16].try_into().unwrap(), out, offset);
     }
 }
 
 pub fn ycbcr_to_rgb_sse_16(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
     unsafe {
-
-        ycbcr_to_rgb_16(y1, y2, cb1, cb2, cr1, cr2, out, offset);
+        ycbcr_to_rgb_16(y,cb,cr ,out, offset);
     }
 }
 
 pub fn ycbcr_to_rgba_sse_16(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
     unsafe {
-
         // not so random he he
-        // First batch
-        ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
+        // first mcu
+        ycbcr_to_rgb_ax_sse41::<255>(y[0..8].try_into().unwrap(), cb[0..8].try_into().unwrap(), cr[0..8].try_into().unwrap(), out ,offset);
 
-        // second batch
-        ycbcr_to_rgb_ax_sse41::<255>(y2, cb2, cr2, out, offset);
+        // second MCU
+        ycbcr_to_rgb_ax_sse41::<255>(y[8..16].try_into().unwrap(), cb[8..16].try_into().unwrap(), cr[8..16].try_into().unwrap(), out, offset);
     }
+
 }
 
 pub fn ycbcr_to_rgba_sse(
-    y1: &[i16; 8],
-    cb1: &[i16; 8],
-    cr1: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y1: &[i16; 8], cb1: &[i16; 8], cr1: &[i16; 8], out: &mut [u8], offset: &mut usize,
 )
 {
-
     unsafe {
-
         ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
     }
 }
 
-/// Calculate YCBCR to Grayscale
-#[rustfmt::skip]
-pub fn ycbcr_to_grayscale_16_sse(
-    u: &[i16; 8],
-    v: &[i16; 8],
-    _: &[i16; 8],
-    _: &[i16; 8],
-    _: &[i16; 8],
-    _: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
-)
-{
-
-    unsafe {
-
-        let x = _mm_loadu_si128(u.as_ptr().cast());
-
-        let y = _mm_loadu_si128(v.as_ptr().cast());
-
-        // pack them
-        let z = _mm_packus_epi16(x, y);
-
-        // undo shuffling
-        let a2 = _mm_shuffle_epi32::<{ shuffle(3, 2, 1, 0) }>(z);
-
-        // store
-        _mm_storeu_si128(out.as_mut_ptr().add(*offset).cast(), a2);
-
-        // increment
-        *offset += 16;
-    }
-}
-
-#[inline]
-
-const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
-{
-
-    ((z << 6) | (y << 4) | (x << 2) | w) as i32
-}

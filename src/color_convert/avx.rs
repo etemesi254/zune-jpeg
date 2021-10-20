@@ -43,22 +43,14 @@ pub union YmmRegister
 #[inline(always)]
 
 pub fn ycbcr_to_rgb_avx2(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
     // call this in another function to tell RUST to vectorize this
     // storing
     unsafe {
-
-        ycbcr_to_rgb_avx2_1(y1, y2, cb1, cb2, cr1, cr2, out, offset);
+        ycbcr_to_rgb_avx2_1(y,cb,cr,out, offset);
     }
 }
 
@@ -66,26 +58,18 @@ pub fn ycbcr_to_rgb_avx2(
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
 
-unsafe fn ycbcr_to_rgb_avx2_1(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+unsafe  fn ycbcr_to_rgb_avx2_1(
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
-    let (r, g, b) = ycbcr_to_rgb_baseline(y1, y2, cb1, cb2, cr1, cr2);
+    let (r, g, b) = ycbcr_to_rgb_baseline(y,cb,cr);
 
     // This is badly vectorised in AVX2,
     // With it extracting values from ymm to xmm registers
     // Hence it might be a tad slower than sse(9 more instructions)
     for i in 0..16
     {
-
         // Reason
         //  - Bounds checking will prevent autovectorization of this
         // Safety
@@ -117,24 +101,18 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 #[target_feature(enable = "avx")]
 
 pub unsafe fn ycbcr_to_rgb_baseline(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
 ) -> (YmmRegister, YmmRegister, YmmRegister)
 {
-
     // Load values into a register
     //
     // dst[127:0] := MEM[loaddr+127:loaddr]
     // dst[255:128] := MEM[hiaddr+127:hiaddr]
-    let y_c = _mm256_loadu2_m128i(y2.as_ptr().cast(), y1.as_ptr().cast());
+    let y_c = _mm256_loadu_si256(y.as_ptr().cast());
 
-    let cb_c = _mm256_loadu2_m128i(cb2.as_ptr().cast(), cb1.as_ptr().cast());
+    let cb_c = _mm256_loadu_si256(cb.as_ptr().cast());
 
-    let cr_c = _mm256_loadu2_m128i(cr2.as_ptr().cast(), cr1.as_ptr().cast());
+    let cr_c = _mm256_loadu_si256(cr.as_ptr().cast());
 
     // AVX version of integer version in https://stackoverflow.com/questions/4041840/function-to-convert-ycbcr-to-rgb
 
@@ -202,24 +180,17 @@ pub unsafe fn ycbcr_to_rgb_baseline(
 /// routines
 
 pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
 ) -> (__m256i, __m256i, __m256i)
 {
-
     // Load values into a register
     //
-    // dst[127:0] := MEM[loaddr+127:loaddr]
-    // dst[255:128] := MEM[hiaddr+127:hiaddr]
-    let y_c = _mm256_loadu2_m128i(y2.as_ptr().cast(), y1.as_ptr().cast());
+    let y_c = _mm256_loadu_si256(y.as_ptr().cast());
 
-    let cb_c = _mm256_loadu2_m128i(cb2.as_ptr().cast(), cb1.as_ptr().cast());
+    let cb_c = _mm256_loadu_si256(cb.as_ptr().cast());
 
-    let cr_c = _mm256_loadu2_m128i(cr2.as_ptr().cast(), cr1.as_ptr().cast());
+    let cr_c = _mm256_loadu_si256(cr.as_ptr().cast());
+
 
     // AVX version of integer version in https://stackoverflow.com/questions/4041840/function-to-convert-ycbcr-to-rgb
 
@@ -275,20 +246,12 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 #[inline(always)]
 
 pub fn ycbcr_to_rgba_avx2(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
     unsafe {
-
-        ycbcr_to_rgba_unsafe(y1, y2, cb1, cb2, cr1, cr2, out, offset);
+        ycbcr_to_rgba_unsafe(y,cb,cr, out, offset);
     }
 }
 
@@ -296,18 +259,13 @@ pub fn ycbcr_to_rgba_avx2(
 #[target_feature(enable = "avx2")]
 #[rustfmt::skip]
 pub unsafe fn ycbcr_to_rgba_unsafe(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
     out: &mut [u8],
     offset: &mut usize,
 )
 {
 
-    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y1, y2, cb1, cb2, cr1, cr2);
+    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y,cb,cr);
 
     // set alpha channel to 255 for opaque
 
@@ -356,20 +314,12 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
 #[inline(always)]
 
 pub fn ycbcr_to_rgbx_avx2(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
-    out: &mut [u8],
-    offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    out: &mut [u8], offset: &mut usize,
 )
 {
-
     unsafe {
-
-        ycbcr_to_rgbx_unsafe(y1, y2, cb1, cb2, cr1, cr2, out, offset);
+        ycbcr_to_rgbx_unsafe(y,cb,cr, out, offset);
     }
 }
 
@@ -378,18 +328,13 @@ pub fn ycbcr_to_rgbx_avx2(
 #[target_feature(enable = "avx2")]
 #[rustfmt::skip]
 pub unsafe fn ycbcr_to_rgbx_unsafe(
-    y1: &[i16; 8],
-    y2: &[i16; 8],
-    cb1: &[i16; 8],
-    cb2: &[i16; 8],
-    cr1: &[i16; 8],
-    cr2: &[i16; 8],
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
     out: &mut [u8],
     offset: &mut usize,
 )
 {
 
-    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y1, y2, cb1, cb2, cr1, cr2);
+    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y,cb,cr);
 
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
@@ -437,7 +382,6 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
 
 unsafe fn clamp_avx(reg: __m256i) -> __m256i
 {
-
     // the lowest value
     let min_s = _mm256_set1_epi16(0);
 
@@ -453,6 +397,5 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i
 
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
 {
-
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
