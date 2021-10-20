@@ -62,7 +62,6 @@ where
 {
     fn default() -> Self
     {
-
         Aligned16(T::default())
     }
 }
@@ -79,7 +78,6 @@ where
 {
     fn default() -> Self
     {
-
         Aligned32(T::default())
     }
 }
@@ -88,7 +86,6 @@ where
 ///
 /// This enumerates over supported color conversion types the image can decode
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-
 pub enum ColorSpace
 {
     /// Red,Green,Blue
@@ -118,7 +115,6 @@ impl ColorSpace
 
     pub const fn num_components(self) -> usize
     {
-
         match self
         {
             Self::RGB | Self::BGR | Self::YCbCr => 3,
@@ -136,7 +132,6 @@ impl Default for ColorSpace
 
     fn default() -> Self
     {
-
         ColorSpace::RGB
     }
 }
@@ -169,7 +164,6 @@ impl Default for SOFMarkers
 {
     fn default() -> Self
     {
-
         Self::BaselineDct
     }
 }
@@ -180,7 +174,6 @@ impl SOFMarkers
 
     pub fn is_sequential_dct(self) -> bool
     {
-
         matches!(
             self,
             Self::BaselineDct
@@ -193,7 +186,6 @@ impl SOFMarkers
 
     pub fn is_lossless(self) -> bool
     {
-
         matches!(self, Self::LosslessHuffman | Self::LosslessArithmetic)
     }
 
@@ -201,7 +193,6 @@ impl SOFMarkers
 
     pub fn is_progressive(self) -> bool
     {
-
         matches!(
             self,
             Self::ProgressiveDctHuffman | Self::ProgressiveDctArithmetic
@@ -212,7 +203,6 @@ impl SOFMarkers
 
     pub fn from_int(int: u16) -> Option<SOFMarkers>
     {
-
         match int
         {
             START_OF_FRAME_BASE => Some(Self::BaselineDct),
@@ -231,20 +221,17 @@ impl fmt::Debug for SOFMarkers
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
     {
-
         match &self
         {
             Self::BaselineDct => write!(f, "Baseline DCT"),
             Self::ExtendedSequentialHuffman =>
             {
-
                 write!(f, "Extended sequential DCT, Huffman Coding")
             }
             Self::ProgressiveDctHuffman => write!(f, "Progressive DCT,Huffman Encoding"),
             Self::LosslessHuffman => write!(f, "Lossless (sequential) Huffman encoding"),
             Self::ExtendedSequentialDctArithmetic =>
             {
-
                 write!(f, "Extended sequential DCT, arithmetic coding")
             }
             Self::ProgressiveDctArithmetic => write!(f, "Progressive DCT, arithmetic coding"),
@@ -269,7 +256,6 @@ pub fn read_byte<R>(reader: &mut R) -> u8
 where
     R: Read,
 {
-
     let mut tmp = [0; 1];
 
     // if there is no more data fill with zero
@@ -302,12 +288,10 @@ pub fn read_u16_be<R>(reader: &mut R) -> Result<u16, DecodeErrors>
 where
     R: Read,
 {
-
     let mut tmp: [u8; 2] = [0, 0];
 
     if reader.read(&mut tmp)? != 2
     {
-
         return Err(DecodeErrors::ExhaustedData);
     };
 
@@ -328,12 +312,10 @@ pub fn read_u16_into<R>(reader: &mut BufReader<R>, buf: &mut [u16]) -> Result<()
 where
     R: Read,
 {
-
     let mut reader = reader;
 
     for i in buf
     {
-
         *i = read_u16_be(&mut reader)?;
     }
 
