@@ -8,6 +8,7 @@
 //! This file exposes a single struct that can decode a huffman encoded
 //! Bitstream in a JPEG file
 
+use std::cmp::min;
 use std::io::Cursor;
 
 use crate::errors::DecodeErrors;
@@ -317,7 +318,7 @@ impl BitStream
                 pos += ((fast_ac >> 4) & 63) as usize;
 
                 // Value
-                block[*UN_ZIGZAG.get(pos).unwrap_or(&63)] = fast_ac >> 10;
+                block[UN_ZIGZAG[min(pos,63)]] = fast_ac >> 10;
 
                 // combined length
                 self.drop_bits((fast_ac & 15) as u8);
@@ -405,7 +406,6 @@ impl BitStream
         self.lsb_buffer <<= n;
     }
 
-    //noinspection ALL
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
