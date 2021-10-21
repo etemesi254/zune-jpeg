@@ -65,7 +65,7 @@ pub type ColorConvertPtr = fn(&[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut u
 /// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 
-pub type IDCTPtr = fn(&[i16], &Aligned32<[i32; 64]>,usize)->Vec<i16>;
+pub type IDCTPtr = fn(&[i16], &Aligned32<[i32; 64]>,usize,usize)->Vec<i16>;
 
 /// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]

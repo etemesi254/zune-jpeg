@@ -49,9 +49,9 @@ pub(crate) fn post_process(
         // Calculate stride
         let length = unprocessed[z].len();
 
-        let stride = length / (h_samp * v_samp) >> 3;
+        let stride = (length / (h_samp * v_samp)) >> 3;
         // carry out IDCT.
-        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride);
+        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride,h_samp*v_samp);
     });
 
     if h_samp != 1 || v_samp != 1
@@ -72,6 +72,7 @@ pub(crate) fn post_process(
 
             let x = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
             // copy data
+                
             output.lock().unwrap()[position..position + num_elements].copy_from_slice(x.get(0..num_elements).unwrap());
         }
         (
