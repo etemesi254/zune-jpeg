@@ -14,6 +14,7 @@ use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
 use crate::upsampler::{upsample_horizontal, upsample_horizontal_vertical, upsample_vertical};
 
+
 // avx optimized color IDCT
 
 /// Maximum components
@@ -462,11 +463,11 @@ impl Decoder
         {
             ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA  =>
             {
-                let p = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
+                let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
 
-                self.color_convert_16 = p.0;
+                self.color_convert_16 = func_ptr.0;
 
-                self.color_convert = p.1;
+                self.color_convert = func_ptr.1;
             }
             // do nothing for others
             _ => (),

@@ -34,7 +34,9 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
     // paranoid guy.
     assert!(out.len() > 8 && input.len() > 5);
 
-    let f_out: &mut [i16; 8] = out.split_at_mut(8).0.try_into().unwrap();
+    //@ OPTIMIZE TIP: Borrow slices of a definite length and turn them into a reference
+    // array to eliminate bounds checking.
+    let f_out: &mut [i16; 8] = out.get_mut(0..8).unwrap().try_into().unwrap();
 
     // We can do better here, since Rust loads input[y] twice but it can store it in
     // a register but enough ugly code
@@ -109,7 +111,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
     let il = input.len() - 4;
 
-    let l_out: &mut [i16; 8] = out.split_at_mut(ol).1.try_into().unwrap();
+    let l_out: &mut [i16; 8] = out.get_mut(ol..ol+8).unwrap().try_into().unwrap();
 
     l_out[0] = (input[il] * 3 + input[il - 1] + 2) >> 2;
 
