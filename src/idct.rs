@@ -34,7 +34,7 @@ pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, 
 {
     // Temporary variables.
 
-    let mut out_vector = vec![128; vector.len()];
+    let mut out_vector = vec![0; vector.len()];
     let mut tmp = [0; 64];
     let chunks = vector.len() / samp_factors;
     // calculate position

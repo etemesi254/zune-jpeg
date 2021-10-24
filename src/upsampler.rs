@@ -48,7 +48,8 @@ pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
 
 pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 {
-    let mut out = vec![128; output_len];
+
+    let mut out = vec![0; output_len];
 
     out[0] = input[0];
 
@@ -65,7 +66,6 @@ pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 
         out[i * 2 + 1] = (sample + input[i + 1]) >> 2;
     }
-
     // write last mcu
     out[(input_len - 1) * 2] = (input[input_len - 2] * 3 + input[input_len - 1] + 2) >> 2;
 
