@@ -1,6 +1,5 @@
 use std::cmp::min;
 use std::convert::TryInto;
-
 use std::sync::{Arc, Mutex};
 
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
@@ -51,7 +50,7 @@ pub(crate) fn post_process(
 
         let stride = (length / (h_samp * v_samp)) >> 3;
         // carry out IDCT.
-        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride,h_samp*v_samp);
+        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride, h_samp * v_samp);
     });
 
     if h_samp != 1 || v_samp != 1
@@ -68,12 +67,31 @@ pub(crate) fn post_process(
     {
         (ColorSpace::YCbCr, ColorSpace::GRAYSCALE) =>
             {
-            let num_elements = width * 8 * h_samp * v_samp;
+                let num_elements = width * 8 * h_samp * v_samp;
 
-            let x = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
-            // copy data
-                
-            output.lock().unwrap()[position..position + num_elements].copy_from_slice(x.get(0..num_elements).unwrap());
+                let x = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
+                // copy data
+                output.lock().unwrap()[position..position + num_elements].copy_from_slice(x.get(0..num_elements).unwrap());
+            }
+        (ColorSpace::YCbCr, ColorSpace::YCbCr) => {
+            // copy to a temporary vector.
+            let mut temp_output = vec![0; unprocessed[0].len() + unprocessed[1].len() + unprocessed[2].len()];
+
+            // OPTIMIZE-TIP: Don't do loops in Rust, use iterators in such manners to ensure super
+            // powers on optimization.
+            // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
+            // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
+            for (((y, cb), cr), out) in unprocessed[0].iter()
+                    .zip(unprocessed[1].iter())
+                    .zip(unprocessed[2].iter())
+                    .zip(temp_output.chunks_exact_mut(3))
+            {
+                out[0] = *y as u8;
+                out[1] = *cb as u8;
+                out[2] = *cr as u8;
+            }
+            // Finally add data to output
+            output.lock().unwrap()[position..position + temp_output.len()].copy_from_slice(&temp_output);
         }
         (
             ColorSpace::YCbCr,
@@ -112,11 +130,9 @@ fn color_convert_ycbcr(
     mcu_len: usize,
 )
 {
-
-
     let remainder = ((mcu_len) % 2) != 0;
 
-    let mcu_width = width * output_colorspace.num_components();
+    let mcu_width = width * output_colorspace.num_components() * 8;
 
     let mut expected_pos = mcu_width;
 
@@ -135,9 +151,10 @@ fn color_convert_ycbcr(
         .zip(mcu_block[1].chunks_exact(mcu_chunks))
         .zip(mcu_block[2].chunks_exact(mcu_chunks))
     {
-
         for (y, (cb, cr)) in y_chunk.chunks_exact(16).zip(cb_chunk.chunks_exact(16).zip(cr_chunk.chunks_exact(16)))
         {
+            // @ OPTIMIZE-TIP, use slices with known sizes, can turn on some optimization,
+            // e.g autovectorization.
             (color_convert_16)(y.try_into().unwrap(), cb.try_into().unwrap(), cr.try_into().unwrap(), &mut temp_area, &mut position);
         }
 
@@ -161,7 +178,7 @@ fn color_convert_ycbcr(
 
         expected_pos += mcu_width;
     }
-
+    // @ OPTIMIZE-TIP don't lock and write directly, it will cause all other threads to stall
+    // but a write to a temporary area and a lock to write temporary data to the mutex will be way faster.
     output.lock().expect("Poisoned mutex")[*position_0..*position_0 + temp_size].copy_from_slice(&temp_area[0..temp_size]);
-
 }
