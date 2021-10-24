@@ -61,24 +61,24 @@ fn criterion_benchmark(c: &mut Criterion)
         b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
     });
 
-    // let x = read(
-    //     env!("CARGO_MANIFEST_DIR").to_string()
-    //         + "/test-images/speed_bench_horizontal_subsampling.jpg",
-    // )
-    // .unwrap();
-    //
-    // c.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
-    //     b.iter(|| black_box(decode_jpeg(x.as_slice())))
-    // });
-    //
-    // c.bench_function("Horizontal sampling JPEG Decoding  mozjpeg", |b| {
-    //     b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
-    // });
-    //
-    // c.bench_function(
-    //     "Horizontal sampling JPEG Decoding  imagers/jpeg-decoder",
-    //     |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
-    // );
+    let x = read(
+        env!("CARGO_MANIFEST_DIR").to_string()
+            + "/test-images/speed_bench_horizontal_subsampling.jpg",
+    )
+    .unwrap();
+
+    c.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
+        b.iter(|| black_box(decode_jpeg(x.as_slice())))
+    });
+
+    c.bench_function("Horizontal sampling JPEG Decoding  mozjpeg", |b| {
+        b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
+    });
+
+    c.bench_function(
+        "Horizontal sampling JPEG Decoding  imagers/jpeg-decoder",
+        |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
+    );
 }
 
 criterion_group!(name=benches;
