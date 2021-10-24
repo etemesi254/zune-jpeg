@@ -143,7 +143,8 @@ impl Decoder
             'label: for _ in 0..mcu_width
             {
                 // iterate over components
-                for pos in 0..self.input_colorspace.num_components()
+
+                'rst: for pos in 0..self.input_colorspace.num_components()
                 {
                     let component = &mut self.components[pos];
                     // Safety:The tables were confirmed to exist in self.check_tables();
@@ -177,9 +178,11 @@ impl Decoder
                                     {
                                         // reset stream
                                         stream.reset();
+
                                         // Initialize dc predictions to zero for all components
-                                        // self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                                        // continue;
+                                        self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                                        // Start iterating again. from position.
+                                        break 'rst;
                                     }
                                 Marker::EOI =>
                                     {
@@ -201,14 +204,15 @@ impl Decoder
                         // improves speed when we do a clone(less items to clone)
                         if min(self.output_colorspace.num_components() - 1, pos) == pos
                         {
-                            let counter = component.counter;
-                            self.mcu_block[pos][counter..counter + 64].copy_from_slice(&tmp);
+                            let start = component.counter;
+
+                            self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
+
                             component.counter += 64;
                         }
                     }
                 }
             }
-
             // reset counter
             self.components.iter_mut().for_each(|x| x.counter = 0);
 
