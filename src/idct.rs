@@ -1,18 +1,36 @@
 //! Routines for IDCT
+//!
+//! Essentially we provide 2 routines for IDCT, a scalar implementation and a not super optimized
+//! AVX2 one, i'll talk about them here.
+//!
+//! There are 2 reasons why we have the avx one
+//! 1. No one compiles with -C target-features=avx2 hence binaries won't probably take advantage(even
+//! if it exists).
+//! 2. AVX employs zero short circuit in a way the scalar code cannot employ it.
+//!     - AVX does this by checking for MCU's whose 63 AC coefficients are zero and if true, it writes
+//!        values directly, if false, it goes the long way of calculating.
+//!     -   Although this can be trivially implemented in the scalar version, it  generates code
+//!         I'm not happy width(scalar version that basically loops and that is too many branches for me)
+//!         The avx one does a better job of using bitwise or's with (_mm256_or_si256) which is magnitudes of faster
+//!         than anything I could come up with
+//!
+//! The AVx code also has some cool transpose instructions which look so complicated to be cool
+//! (spoiler alert, i barely understand how it works, that's why I credited the owner).
+//!
 #![allow(
-clippy::excessive_precision,
-clippy::unreadable_literal,
-clippy::module_name_repetitions,
-unused_parens,
-clippy::wildcard_imports
+    clippy::excessive_precision,
+    clippy::unreadable_literal,
+    clippy::module_name_repetitions,
+    unused_parens,
+    clippy::wildcard_imports
 )]
 
 use std::convert::TryInto;
 
 #[cfg(feature = "X86")]
 use crate::idct::avx2::dequantize_and_idct_avx2;
-use crate::IDCTPtr;
 use crate::misc::Aligned32;
+use crate::IDCTPtr;
 
 #[cfg(feature = "x86")]
 mod avx2;
@@ -29,8 +47,9 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 ///  - `qt_table`: A quantization table fro the MCU
 ///
 /// [`stbi_image.h`]:https://github.com/nothings/stb/blob/c9064e317699d2e495f36ba4f9ac037e88ee371a/stb_image.h#L2356
-#[allow(arithmetic_overflow)]
-pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize) -> Vec<i16>
+pub fn dequantize_and_idct_int(
+    vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
+) -> Vec<i16>
 {
     // Temporary variables.
 
@@ -38,11 +57,15 @@ pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, 
     let mut tmp = [0; 64];
     let chunks = vector.len() / samp_factors;
     // calculate position
-    for (in_vector, out_vector) in vector.chunks_exact(chunks).zip(out_vector.chunks_exact_mut(chunks)) {
+    for (in_vector, out_vector) in vector
+        .chunks_exact(chunks)
+        .zip(out_vector.chunks_exact_mut(chunks))
+    {
         let mut pos = 0;
         let mut x = 0;
         for vector in in_vector.chunks_exact(64)
         {
+
             let mut i = 0;
 
             // Putting this in a separate function makes it really bad
@@ -69,7 +92,9 @@ pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, 
                     tmp[ptr + 40] = dc_term;
                     tmp[ptr + 48] = dc_term;
                     tmp[ptr + 56] = dc_term;
-                } else {
+                }
+                else
+                {
                     let p2 = dequantize(vector[ptr + 16], qt_table.0[ptr + 16]);
 
                     let p3 = dequantize(vector[ptr + 48], qt_table.0[ptr + 48]);
@@ -223,13 +248,13 @@ pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, 
 
                 t3 *= 6149;
 
-                let p1 = p5.wrapping_add(p1.wrapping_mul(-3685));
+                let p1 = p5 + p1 * -3685;
 
-                let p2 = p5.wrapping_add(p2.wrapping_mul(-10497));
+                let p2 = p5 + p2 * -10497;
 
-                let p3 = p3.wrapping_mul(-8034);
+                let p3 = p3 * -8034;
 
-                let p4 = p4.wrapping_mul(-1597);
+                let p4 = p4 * -1597;
 
                 t3 += p1 + p4;
 
@@ -239,8 +264,11 @@ pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, 
 
                 t0 += p1 + p3;
 
-
-                let out: &mut [i16; 8] = out_vector.get_mut(pos..pos + 8).unwrap().try_into().unwrap();
+                let out: &mut [i16; 8] = out_vector
+                    .get_mut(pos..pos + 8)
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
 
                 out[0] = clamp((x0 + t3) >> 17);
 
@@ -258,16 +286,15 @@ pub fn dequantize_and_idct_int(vector: &[i16], qt_table: &Aligned32<[i32; 64]>, 
 
                 out[7] = clamp((x0 - t3) >> 17);
 
-
                 i += 8;
 
                 pos += stride;
             }
             x += 8;
             pos = x;
-        };
-    };
- //   panic!();
+        }
+    }
+    //   panic!();
     return out_vector;
 }
 
@@ -305,13 +332,13 @@ fn dequantize(a: i16, b: i32) -> i32
 pub fn choose_idct_func() -> IDCTPtr
 {
     #[cfg(feature = "x86")]
+    {
+        if is_x86_feature_detected!("avx2")
         {
-            if is_x86_feature_detected!("avx2")
-            {
-                // use avx one
-                return crate::idct::avx2::dequantize_and_idct_avx2;
-            }
+            // use avx one
+            return crate::idct::avx2::dequantize_and_idct_avx2;
         }
+    }
 
     // use generic one
     return dequantize_and_idct_int;

@@ -232,10 +232,10 @@ impl HuffmanTable
 
                     let len = i16::from(huff_size[fast as usize]);
 
-                    if len == 1
+                    if len == 1 && mag_bits == 0
                     {
                         // Handle End Of Block case.
-                        fast_ac[i] =  (63 << 4) + 1;
+                        fast_ac[i] = (63 << 4) + 1;
                     }
                     else if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
                     {

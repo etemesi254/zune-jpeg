@@ -1,14 +1,44 @@
 //! Implements routines to decode a MCU
-
+//!
+//! # Side notes
+//! Yes, I pull in some dubious tricks, like really dubious here, they're not hard to come up
+//!  but I know they're hard to understand(e.g how I don't allocate space for Cb and Cr
+//! channels if output colorspace is grayscale) but bear with me, it's the search for fast softwaew
+//! that got me here.
+//!
+//! # Multithreading
+//!
+//!This isn't exposed so I can dump all the info here
+//!
+//! To make multithreading work, we want to break dependency chains but in cool ways.
+//! i.e we want to find out where we can forward one section as another one does something.
+//!
+//! For JPEG decoding, I found a sweet spot of doing it per MCU width, I.e since the longest time
+//! for jpeg decoding is probably bitstream decoding, we can allow it to continue on the main thread
+//! as new threads are spawned to handle post processing(i.e IDCT, upsampling and color conversion).
+//!
+//!But as easy as this sounds in theory, in practice, it sucks...
+//!
+//! We essentially have to consider that down-sampled images have weird MCU arrangement and for such cases
+//! ! choose the path of decoding 2 whole MCU heights for horizontal/vertical upsampling and
+//! 4 whole MCU heights for horizontal and vertical upsampling, which when expressed in code doesn't look nice.
+//!
+//! There is also the overhead of synchronization which makes some things annoying.
+//!
+//! Also there is the overhead of `cloning` and allocating intermediate memory to ensure multithreading is safe.
+//! This may make this library almost 3X slower if someone chooses to disable `threadpool` (please don't) feature because
+//! we are optimized for the multithreading path.
+//!
+//!
 use std::cmp::min;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
 use crate::bitstream::BitStream;
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
+use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -17,33 +47,44 @@ pub const DCT_BLOCK: usize = 64;
 impl Decoder
 {
     /// Check for existence of DC and AC Huffman Tables
-    fn check_tables(&self) -> Result<(), DecodeErrors> {
+    fn check_tables(&self) -> Result<(), DecodeErrors>
+    {
         // check that dc and AC tables exist outside the hot path
         for i in 0..self.input_colorspace.num_components()
         {
-            let _ = &self.dc_huffman_tables
-                .get(self.components[i].dc_huff_table).as_ref()
+            let _ = &self
+                .dc_huffman_tables
+                .get(self.components[i].dc_huff_table)
+                .as_ref()
                 .ok_or_else(|| {
-                    DecodeErrors::HuffmanDecode(format!("No Huffman DC table for component {:?} ",
-                                                        self.components[i].component_id
+                    DecodeErrors::HuffmanDecode(format!(
+                        "No Huffman DC table for component {:?} ",
+                        self.components[i].component_id
                     ))
-                })?.as_ref()
+                })?
+                .as_ref()
                 .ok_or_else(|| {
-                    DecodeErrors::HuffmanDecode(format!("No DC table for component {:?}",
-                                                        self.components[i].component_id
+                    DecodeErrors::HuffmanDecode(format!(
+                        "No DC table for component {:?}",
+                        self.components[i].component_id
                     ))
                 })?;
 
-            let _ = &self.ac_huffman_tables
-                .get(self.components[i].ac_huff_table).as_ref()
+            let _ = &self
+                .ac_huffman_tables
+                .get(self.components[i].ac_huff_table)
+                .as_ref()
                 .ok_or_else(|| {
-                    DecodeErrors::HuffmanDecode(format!("No Huffman AC table for component {:?} ",
-                                                        self.components[i].component_id
+                    DecodeErrors::HuffmanDecode(format!(
+                        "No Huffman AC table for component {:?} ",
+                        self.components[i].component_id
                     ))
-                })?.as_ref()
+                })?
+                .as_ref()
                 .ok_or_else(|| {
-                    DecodeErrors::HuffmanDecode(format!("No AC table for component {:?}",
-                                                        self.components[i].component_id
+                    DecodeErrors::HuffmanDecode(format!(
+                        "No AC table for component {:?}",
+                        self.components[i].component_id
                     ))
                 })?;
         }
@@ -163,6 +204,7 @@ impl Decoder
                     // trivial scanline order(Y,Cb,Cr)
                     for _ in 0..component.vertical_sample * component.horizontal_sample
                     {
+
                         let mut tmp = [0; DCT_BLOCK];
                         // decode the MCU
                         if !(stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred))

@@ -2,13 +2,11 @@
 //! This module provides unsafe ways to do some things
 #![allow(clippy::wildcard_imports)]
 
-use std::alloc::Layout;
+use std::alloc::{alloc, Layout};
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
-use std::alloc::alloc;
-
 use std::mem::size_of;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
@@ -16,7 +14,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 ///allows some things to not look ugly
 #[derive(Clone, Copy)]
 
-pub struct  YmmRegister
+pub struct YmmRegister
 {
     /// An AVX register
     pub(crate) mm256: __m256i,
@@ -177,7 +175,6 @@ where
 
     // Call alloc this returns uninit memory
     let ptr = alloc(layout);
-
 
     // This is cheating, IT will allocate uninit memory
     Vec::<T>::from_raw_parts(ptr.cast(), capacity, capacity)

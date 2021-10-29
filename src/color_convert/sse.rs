@@ -135,11 +135,6 @@ unsafe fn ycbcr_to_rgb_ax_sse41<const X: i16>(
     // so a solution is to load into to different registers and pack them into
     // one register, which is what we do here
 
-    // Safety,
-    // - This method is called with arrays of 8 vectors
-    // - Also arrays are explicitly aligned to 32 byte boundaries otherwise
-    //   _mm_load_si128 would
-    // segfault
     let y = _mm_loadu_si128(y.as_ptr().cast());
 
     let cb = _mm_loadu_si128(cb.as_ptr().cast());
@@ -246,42 +241,62 @@ unsafe fn clamp_sse(a: __m128i) -> __m128i
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 
 unsafe fn ycbcr_to_rgb_16(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
-    out: &mut [u8], offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
 {
     {
-        ycbcr_to_rgb_sse(y[0..8].try_into().unwrap(), cb[0..8].try_into().unwrap(), cr[0..8].try_into().unwrap(), out, offset);
+        ycbcr_to_rgb_sse(
+            y[0..8].try_into().unwrap(),
+            cb[0..8].try_into().unwrap(),
+            cr[0..8].try_into().unwrap(),
+            out,
+            offset,
+        );
 
         // second MCU
-        ycbcr_to_rgb_sse(y[8..16].try_into().unwrap(), cb[8..16].try_into().unwrap(), cr[8..16].try_into().unwrap(), out, offset);
+        ycbcr_to_rgb_sse(
+            y[8..16].try_into().unwrap(),
+            cb[8..16].try_into().unwrap(),
+            cr[8..16].try_into().unwrap(),
+            out,
+            offset,
+        );
     }
 }
 
 pub fn ycbcr_to_rgb_sse_16(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
-    out: &mut [u8], offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
 {
     unsafe {
-        ycbcr_to_rgb_16(y,cb,cr ,out, offset);
+        ycbcr_to_rgb_16(y, cb, cr, out, offset);
     }
 }
 
 pub fn ycbcr_to_rgba_sse_16(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
-    out: &mut [u8], offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
 {
     unsafe {
         // not so random he he
         // first mcu
-        ycbcr_to_rgb_ax_sse41::<255>(y[0..8].try_into().unwrap(), cb[0..8].try_into().unwrap(), cr[0..8].try_into().unwrap(), out ,offset);
+        ycbcr_to_rgb_ax_sse41::<255>(
+            y[0..8].try_into().unwrap(),
+            cb[0..8].try_into().unwrap(),
+            cr[0..8].try_into().unwrap(),
+            out,
+            offset,
+        );
 
         // second MCU
-        ycbcr_to_rgb_ax_sse41::<255>(y[8..16].try_into().unwrap(), cb[8..16].try_into().unwrap(), cr[8..16].try_into().unwrap(), out, offset);
+        ycbcr_to_rgb_ax_sse41::<255>(
+            y[8..16].try_into().unwrap(),
+            cb[8..16].try_into().unwrap(),
+            cr[8..16].try_into().unwrap(),
+            out,
+            offset,
+        );
     }
-
 }
 
 pub fn ycbcr_to_rgba_sse(
@@ -292,4 +307,3 @@ pub fn ycbcr_to_rgba_sse(
         ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
     }
 }
-

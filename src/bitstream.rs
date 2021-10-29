@@ -7,7 +7,23 @@
 #![allow(dead_code)]
 //! This file exposes a single struct that can decode a huffman encoded
 //! Bitstream in a JPEG file
-
+//!
+//! This code is optimized for speed.
+//! It's meant to be super duper super fast, because everyone else depends on this being fast.
+//! It's (annoyingly) serial hence we cant use parallel bitstreams(it's variable length coding..)
+//!
+//! Furthermore, on the case of refills, we have to do bytewise processing because the standard decided
+//! that we want to support markers in the middle of streams(seriously few people use RST markers).
+//!
+//! So we pull in all optimization steps, use `inline[always]`? ✅ ,pre-execute most common cases ✅,
+//! add random comments ✅, fast paths ✅.
+//!
+//! Readability comes as a second priority(I tried with variable names this time, and we are wayy better than libjpeg).
+//!
+//! Anyway if you are reading this it means your cool and I hope you get whatever part of the code you are looking for
+//! (or learn something cool)
+//!
+//! Knock yourself out.
 use std::cmp::min;
 use std::io::Cursor;
 
@@ -16,13 +32,7 @@ use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
-// PS: Read this
-// This code is optimised for speed, like it's heavily optimised
-// I know 95% of whats goes on, (the merits of borrowing someone's code
-// but there is extensive use of macros and a lot of inlining
-//  A lot of things may not make sense(both to me and you), that's why there a
-// lot of comments and WTF! and ohh! moments
-// Enjoy.
+
 
 /// A `BitStream` struct, capable of decoding compressed data from the data from
 /// image
@@ -83,17 +93,7 @@ impl BitStream
     ///
     /// # Arguments
     ///  - `reader`:`&mut BufReader<R>`: A mutable reference to an underlying
-    ///    File/Memory buffer
-    ///containing a valid JPEG image
-    ///
-    /// # Performance
-    /// The code here is a lot(but hidden by macros) we move in a linear manner
-    /// avoiding loops (which suffer from branch mis-prediction) , we can
-    /// only refill 32 bits safely without overriding important bits in the
-    /// buffer
-    ///
-    /// Because the code generated here is a lot, we might affect the
-    /// instruction cache( yes it's not data that is only cached)
+    ///    File/Memory buffer containing a valid JPEG stream
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(always)]
@@ -149,7 +149,7 @@ impl BitStream
                             // that the bits stored are enough to finish MCU decoding with no hassle
                             return false;
                         }
-                    };
+                    }
                 }
             };
         }
@@ -318,7 +318,11 @@ impl BitStream
                 pos += ((fast_ac >> 4) & 63) as usize;
 
                 // Value
-                block[UN_ZIGZAG[min(pos,63)]] = fast_ac >> 10;
+
+                // The `& 63` is to remove a  branch, i.e keep it between 0 and 63 because Rust can't
+                // see that un-zig-zag returns values less than 63
+                // See https://godbolt.org/z/zrbe6qcPf
+                block[UN_ZIGZAG[min(pos,63)] & 63] = fast_ac >> 10;
 
                 // combined length
                 self.drop_bits((fast_ac & 15) as u8);
@@ -369,7 +373,7 @@ impl BitStream
 
                     symbol = huff_extend(r, symbol);
 
-                    block[UN_ZIGZAG[pos as usize]] = symbol as i16;
+                    block[UN_ZIGZAG[pos as usize] & 63] = symbol as i16;
 
                     pos += 1;
                 }

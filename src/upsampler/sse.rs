@@ -6,6 +6,7 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 use std::convert::TryInto;
+
 use crate::unsafe_utils::align_alloc;
 
 #[inline]
@@ -26,7 +27,7 @@ pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec<i16>
 {
     //let mut out = align_zero_alloc::<i16, 16>(output_len);
-    let mut out = align_alloc::<i16,16>(output_len);
+    let mut out = align_alloc::<i16, 16>(output_len);
 
     // set first 8 pixels linearly
     // Assert that out has more than 8 elements and input has more than 4
@@ -111,7 +112,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
     let il = input.len() - 4;
 
-    let l_out: &mut [i16; 8] = out.get_mut(ol..ol+8).unwrap().try_into().unwrap();
+    let l_out: &mut [i16; 8] = out.get_mut(ol..ol + 8).unwrap().try_into().unwrap();
 
     l_out[0] = (input[il] * 3 + input[il - 1] + 2) >> 2;
 
