@@ -46,9 +46,14 @@ pub(crate) fn post_process(
 
     (0..x).for_each(|z| {
         // Calculate stride
-        let length = unprocessed[z].len();
+        // Stride is basically how many pixels must we traverse to write an MCU
+        // e.g For an 8*8 MCU in a 16*16 image
+        // stride is 16
+        // The calculation is complex because we have to take into account padding MCU which
+        // the IDCT should discard.
 
-        let stride = (length / (h_samp * v_samp)) >> 3;
+        let stride = (width * 8 * component_data[z].horizontal_sample * component_data[z].vertical_sample / (h_samp * v_samp)) >> 3;
+
         // carry out IDCT.
         unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride, h_samp * v_samp);
     });
@@ -67,32 +72,73 @@ pub(crate) fn post_process(
     {
         (ColorSpace::YCbCr, ColorSpace::GRAYSCALE) =>
             {
-                let num_elements = width * 8 * h_samp * v_samp;
+                let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
 
-                let x = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
-                // copy data
-                output.lock().unwrap()[position..position + num_elements].copy_from_slice(x.get(0..num_elements).unwrap());
+                let mut pos = position;
+
+                let mcu_width = width * output_colorspace.num_components() * 8;
+
+                let mut expected_pos = mcu_width;
+
+                // Convert i16's to u8's
+                let temp_output = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
+
+                for chunk in temp_output.chunks_exact(mcu_chunks) {
+                    // copy data
+
+                    output.lock().unwrap()[pos..pos + chunk.len()].copy_from_slice(&chunk);
+
+                    pos += expected_pos;
+
+                    expected_pos += mcu_width;
+                }
             }
-        (ColorSpace::YCbCr, ColorSpace::YCbCr) => {
-            // copy to a temporary vector.
-            let mut temp_output = vec![0; unprocessed[0].len() + unprocessed[1].len() + unprocessed[2].len()];
-
-            // OPTIMIZE-TIP: Don't do loops in Rust, use iterators in such manners to ensure super
-            // powers on optimization.
-            // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
-            // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
-            for (((y, cb), cr), out) in unprocessed[0].iter()
-                    .zip(unprocessed[1].iter())
-                    .zip(unprocessed[2].iter())
-                    .zip(temp_output.chunks_exact_mut(3))
+        (ColorSpace::YCbCr, ColorSpace::YCbCr) =>
             {
-                out[0] = *y as u8;
-                out[1] = *cb as u8;
-                out[2] = *cr as u8;
+                // copy to a temporary vector.
+
+                // OPTIMIZE-TIP: Don't do loops in Rust, use iterators in such manners to ensure super
+                // powers on optimization.
+                // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
+                // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
+
+                let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
+
+                let mut pos = position;
+
+                let mcu_width = width * output_colorspace.num_components() * 8;
+
+                let mut expected_pos = mcu_width;
+
+                let temp_size = width * output_colorspace.num_components()  * 8;
+
+                let stride = width * (output_colorspace.num_components() *8);
+
+                let mut temp_output = vec![0; temp_size + (128 * output_colorspace.num_components() * h_samp * v_samp)];
+
+                for ((y_chunk, cb_chunk), cr_chunk) in unprocessed[0]
+                    .chunks_exact(mcu_chunks)
+                    .zip(unprocessed[1].chunks_exact(mcu_chunks))
+                    .zip(unprocessed[2].chunks_exact(mcu_chunks))
+                {
+                    for (((y, cb), cr), out) in y_chunk.iter()
+                        .zip(cb_chunk.iter())
+                        .zip(cr_chunk.iter())
+                        .zip(temp_output.chunks_exact_mut(3))
+                    {
+                        out[0] = *y as u8;
+                        out[1] = *cb as u8;
+                        out[2] = *cr as u8;
+                    }
+                    output.lock().unwrap()[pos..pos + stride].copy_from_slice(&temp_output[0..stride]);
+
+                    pos += expected_pos;
+                    expected_pos += mcu_width;
+                }
+                //write
+
             }
-            // Finally add data to output
-            output.lock().unwrap()[position..position + temp_output.len()].copy_from_slice(&temp_output);
-        }
+
         (
             ColorSpace::YCbCr,
             ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX,
@@ -139,18 +185,20 @@ fn color_convert_ycbcr(
     // Create a temporary area to hold our color converted data
     let temp_size = width * (output_colorspace.num_components() * h_samp) * (v_samp * 8);
 
-    let mut temp_area = vec![0; temp_size + 64];
+    let mut temp_area = vec![0; temp_size + (64 * output_colorspace.num_components() * h_samp * v_samp)];
 
     let mut position = 0;
 
     // chunk output according to an MCU, allows us to write more than one MCU(for interleaved) images.
-    let mcu_chunks = width * 8;
+    let mcu_chunks = mcu_block[0].len() / (h_samp * v_samp);
+
 
     for ((y_chunk, cb_chunk), cr_chunk) in mcu_block[0]
         .chunks_exact(mcu_chunks)
         .zip(mcu_block[1].chunks_exact(mcu_chunks))
         .zip(mcu_block[2].chunks_exact(mcu_chunks))
     {
+        // we need to chunk further, per width to ensure we can discard extra values at the end of the width.
         for (y, (cb, cr)) in y_chunk.chunks_exact(16).zip(cb_chunk.chunks_exact(16).zip(cr_chunk.chunks_exact(16)))
         {
             // @ OPTIMIZE-TIP, use slices with known sizes, can turn on some optimization,
@@ -174,11 +222,13 @@ fn color_convert_ycbcr(
         // divisible by 8 it may have to pad the last MCU with extra pixels.
 
         // The decoder is supposed to discard these extra bits
+
         position = expected_pos;
 
         expected_pos += mcu_width;
     }
+
     // @ OPTIMIZE-TIP don't lock and write directly, it will cause all other threads to stall
     // but a write to a temporary area and a lock to write temporary data to the mutex will be way faster.
-    output.lock().expect("Poisoned mutex")[*position_0..*position_0 + temp_size].copy_from_slice(&temp_area[0..temp_size]);
+    output.lock().get_mut().expect("Poisoned mutex")[*position_0..*position_0 + temp_size].copy_from_slice(&temp_area[0..temp_size]);
 }
