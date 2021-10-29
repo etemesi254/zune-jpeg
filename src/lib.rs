@@ -69,48 +69,5 @@ mod worker;
 
 pub use image::*;
 
-#[test]
 
-fn decode_jpeg()
-{
-    let mut x = Decoder::new();
 
-    x.set_output_colorspace(ColorSpace::GRAYSCALE);
-
-    let image = x
-        .decode_file("/home/caleb/temp/WallhavenSexyWomen/4x11dn.jpg")
-        .unwrap();
-
-    println!("{:?}", &image[0..30]);
-    //println!("{:?}", &image[10000..10512]);
-}
-
-#[test]
-
-fn decode_jpeg_interleaved()
-{
-    let mut x = Decoder::new();
-
-    x.set_output_colorspace(ColorSpace::RGB);
-
-    let image = x.decode_file("/home/caleb/CLionProjects/zune-jpeg/test-images/speed_bench_horizontal_subsampling.jpg").unwrap();
-
-    println!(
-        "{}",
-        usize::from(x.width()) * x.output_colorspace.num_components()
-    );
-
-    println!("{:?}", &image[0..30]);
-    //println!("{:?}", &image[10000..10512]);
-}
-
-#[test]
-
-fn decode_jpeg_prog()
-{
-    let pixels = Decoder::new()
-        .decode_file("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg")
-        .unwrap();
-
-    println!("{:?}", &pixels[0..30]);
-}
