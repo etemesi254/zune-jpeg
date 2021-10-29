@@ -45,7 +45,7 @@ fn decode_jpeg_image_rs(buf: &[u8]) -> Vec<u8>
 
 fn criterion_benchmark(c: &mut Criterion)
 {
-    let a = env!("CARGO_MANIFEST_DIR").to_string() + "/test-images/speed_bench.jpg";
+    let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
     let data = read(a).unwrap();
 
@@ -63,7 +63,7 @@ fn criterion_benchmark(c: &mut Criterion)
 
     let x = read(
         env!("CARGO_MANIFEST_DIR").to_string()
-            + "/test-images/speed_bench_horizontal_subsampling.jpg",
+            + "/benches/images/speed_bench_horizontal_subsampling.jpg",
     )
     .unwrap();
 
@@ -84,7 +84,7 @@ fn criterion_benchmark(c: &mut Criterion)
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
-        c.measurement_time(Duration::from_secs(5))
+        c.measurement_time(Duration::from_secs(20))
       };
     targets=criterion_benchmark);
 

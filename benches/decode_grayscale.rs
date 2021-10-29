@@ -38,7 +38,7 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 1]>
 
 fn criterion_benchmark(c: &mut Criterion)
 {
-    let a = String::from("/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Mr. Lee.jpg");
+    let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
     let data = read(a).unwrap();
 
