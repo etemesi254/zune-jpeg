@@ -65,7 +65,6 @@ pub fn dequantize_and_idct_int(
         let mut x = 0;
         for vector in in_vector.chunks_exact(64)
         {
-
             let mut i = 0;
 
             // Putting this in a separate function makes it really bad

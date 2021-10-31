@@ -60,7 +60,9 @@ fn clamp(a: i16) -> u8
     min(max(a, 0), 255) as u8
 }
 
-pub fn ycbcr_to_rgb_scalar(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8], pos: &mut usize)
+pub fn ycbcr_to_rgb_scalar(
+    y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8], pos: &mut usize,
+)
 {
     let mut p = 0;
 
@@ -102,7 +104,9 @@ pub fn ycbcr_to_rgb_scalar(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &
     *pos += 24;
 }
 
-pub fn ycbcr_to_rgba_scalar(y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8], pos: &mut usize)
+pub fn ycbcr_to_rgba_scalar(
+    y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], output: &mut [u8], pos: &mut usize,
+)
 {
     let mut p = 0;
 
@@ -253,7 +257,10 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     return match type_need
     {
         ColorSpace::RGB => Some((ycbcr_to_rgb_16_scalar, ycbcr_to_rgb_scalar)),
-        ColorSpace::RGBA | ColorSpace::RGBX => Some((ycbcr_to_rgba_16_scalar, ycbcr_to_rgba_scalar)),
+        ColorSpace::RGBA | ColorSpace::RGBX =>
+        {
+            Some((ycbcr_to_rgba_16_scalar, ycbcr_to_rgba_scalar))
+        }
         //    ColorSpace::GRAYSCALE => Some((ycbcr_to_grayscale_16, ycbcr_to_grayscale_8)),
         _ => None,
     };

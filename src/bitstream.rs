@@ -32,8 +32,6 @@ use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
-
-
 /// A `BitStream` struct, capable of decoding compressed data from the data from
 /// image
 
@@ -307,9 +305,6 @@ impl BitStream
 
             let fast_ac = ac_lookup[symbol as usize];
 
-            symbol = ac_table.lookup[symbol as usize];
-
-
             if fast_ac != 0
             {
                 //  FAST AC path
@@ -331,6 +326,8 @@ impl BitStream
             }
             else
             {
+                symbol = ac_table.lookup[symbol as usize];
+
                 code_length = symbol >> HUFF_LOOKAHEAD;
 
                 symbol &= (1 << HUFF_LOOKAHEAD) - 1;

@@ -68,6 +68,3 @@ mod upsampler;
 mod worker;
 
 pub use image::*;
-
-
-
