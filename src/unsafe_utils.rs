@@ -2,13 +2,16 @@
 //! This module provides unsafe ways to do some things
 #![allow(clippy::wildcard_imports)]
 
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc_zeroed, Layout};
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 use std::mem::size_of;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+
+
+
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
@@ -157,24 +160,27 @@ impl MulAssign<__m256i> for YmmRegister
         }
     }
 }
-/// THIS CREATES A NEW VECTOR WITH INITIALIZED MEMORY AND SETS
-/// THE LENGTH TO BE EQUAL TO THE CAPACITY...
-///
-/// DO NOT READ THE VALUES BEFORE A PRIOR WRITE.
-///
-/// **I'M SERIOUS ON THIS ONE.**
+
+const fn check_alignment(align:usize){
+    // use debug because they are const values so we know they can't fail.
+    debug_assert!(align.is_power_of_two() && align !=0 && align<usize::MAX-1000);
+}
+/// Create an aligned vector whose start byte is aligned to an
+/// ALIGNMENT boundary.
 #[allow(clippy::expect_used)]
 #[inline]
 pub(crate) unsafe fn align_alloc<T, const ALIGNMENT: usize>(capacity: usize) -> Vec<T>
 where
     T: Default + Copy,
 {
+    check_alignment(ALIGNMENT);
     // Create a new layout
-    let layout = Layout::from_size_align(capacity * size_of::<T>(), ALIGNMENT)
-        .expect("Error creating memory alignment.");
+    let layout = Layout::from_size_align_unchecked(capacity * size_of::<T>(), ALIGNMENT);
 
-    // Call alloc this returns uninit memory
-    let ptr = alloc(layout);
+    // Call alloc this returns zeroed memory
+    // Okay weirdly its better to use alloc_zeroed than alloc because of page faults?
+    // I really don't know, but whatever it may be DO_NOT CHANGE THIS!!
+    let ptr = alloc_zeroed(layout);
 
     // This is cheating, IT will allocate uninit memory
     // But it's important because  we can do some cool optimizations with this.
