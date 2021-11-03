@@ -132,19 +132,3 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
 
     return out;
 }
-
-#[test]
-/// Ensure SSE and horizontal are identical bitwise for all inputs
-
-fn upsample_sse_plain()
-{
-    use crate::upsampler::upsample_horizontal;
-
-    let v: Vec<i16> = (0..128).collect();
-
-    assert_eq!(
-        upsample_horizontal_sse(&v, v.len() * 2),
-        upsample_horizontal(&v, v.len() * 2),
-        "Algorithms do not match"
-    );
-}

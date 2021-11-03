@@ -1,3 +1,24 @@
+//! AVX optimised IDCT.
+//!
+//! Okay not thaat optimised.
+//!
+//!
+//! # The implementation
+//! The implementation is neatly broken down into two operations.
+//!
+//! 1. Test for zeroes
+//! > There is a shortcut method for idct  where when all AC values are zero, we can get the answer really quickly.
+//!  by scaling the 1/8th of the DCT coefficient of the block to the whole block and level shifting.
+//!
+//! 2. If above fails, we proceed to carry out IDCT as a two pass one dimensional algorithm.
+//! IT does two whole scans where it carries out IDCT on all items
+//! After each successive scan, data is transposed in register(thank you x86 SIMD powers). and the second
+//! pass is carried out.
+//!
+//! The code is not super optimized, it produces bit identical results with scalar code hence it's
+//! transparent, furthermore, I've used operator overloading to hide common things like _mm256_add
+//! and it also has the advantage of making this implementation easy to maintain.
+
 #![cfg(feature = "x86")]
 
 #[cfg(target_arch = "x86")]
@@ -16,12 +37,8 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 /// It is the responsibility of the CALLER to ensure that  this function is
 /// called in contexts where the CPU supports it
 ///
-/// # Performance
-/// - This implementation contains 100 less instructions than
-///   `dequantize_and_idct_int`( with the same
-///  opt levels and parameters) while being transparent.
-/// - The bottleneck becomes memory loads and stores, which we can't sadly force
-///   to be faster
+///
+/// For documentation see module docs.
 
 pub fn dequantize_and_idct_avx2(
     vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
@@ -232,7 +249,7 @@ unsafe fn dequantize_and_idct_int_avx2(
                 ($SCALE_BITS:tt,$scale:tt) => {
                     // There are a lot of ways to do this
                     // but to keep it simple(and beautiful), ill make a direct translation of the
-                    // above to also make this code fully transparent(this version and the non
+                    // scalar code to also make this code fully transparent(this version and the non
                     // avx one should produce identical code.)
 
                     // even part

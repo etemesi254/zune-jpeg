@@ -4,9 +4,7 @@ use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
 
-use crate::color_convert::{
-    choose_ycbcr_to_rgb_convert_func, ycbcr_to_rgb_16_scalar, ycbcr_to_rgb_scalar,
-};
+use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::Components;
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
@@ -14,7 +12,9 @@ use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
-use crate::upsampler::{upsample_horizontal, upsample_horizontal_vertical, upsample_vertical};
+use crate::upsampler::{
+    choose_horizontal_samp_function, upsample_horizontal_vertical, upsample_vertical,
+};
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 3;
@@ -136,6 +136,7 @@ impl Default for Decoder
 {
     fn default() -> Self
     {
+        let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
         let mut d = Decoder {
             info: ImageInfo::default(),
             qt_tables: [None, None, None],
@@ -161,8 +162,8 @@ impl Default for Decoder
 
             // Function pointers
             idct_func: choose_idct_func(),
-            color_convert: ycbcr_to_rgb_scalar,
-            color_convert_16: ycbcr_to_rgb_16_scalar,
+            color_convert: color_convert.1,
+            color_convert_16: color_convert.0,
 
             // Colorspace
             input_colorspace: ColorSpace::YCbCr,
@@ -475,26 +476,10 @@ impl Decoder
                 // Change all sub sampling to be horizontal. This also changes the Y component
                 // which should **NOT** be up-sampled, so it's the
                 // responsibility of the caller to ensure that
-                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                {
-                    if is_x86_feature_detected!("sse2")
-                    {
-                        #[cfg(feature = "x86")]
-                        {
-                            use crate::upsampler::upsample_horizontal_sse;
-
-                            self.components
-                                .iter_mut()
-                                .for_each(|x| x.up_sampler = upsample_horizontal_sse);
-
-                            return Ok(());
-                        }
-                    }
-                }
-
+                let up_sampler = choose_horizontal_samp_function();
                 self.components
                     .iter_mut()
-                    .for_each(|x| x.up_sampler = upsample_horizontal);
+                    .for_each(|x| x.up_sampler = up_sampler);
             }
             (1, 2) =>
             {
