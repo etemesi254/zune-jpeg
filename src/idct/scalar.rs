@@ -38,7 +38,7 @@ pub fn dequantize_and_idct_int(
             let mut i = 0;
             // Don't check for zeroes inside loop, lift it and check outside
             // we want to accelerate the case with 63 0 ac coeff
-            if vector[1..] == &[0_i16; 63]
+            if &vector[1..] == &[0_i16; 63]
             {
                 // okay then if you work, yaay, let's write you really quick
                 let coeff = [((vector[0] * (qt_table.0[0] as i16)) >> 3) + 128; 8];

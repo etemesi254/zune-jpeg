@@ -27,7 +27,10 @@
 
 #[cfg(feature = "X86")]
 use crate::idct::avx2::dequantize_and_idct_avx2;
+
+use crate::idct::scalar::dequantize_and_idct_int;
 use crate::IDCTPtr;
+
 
 #[cfg(feature = "x86")]
 mod avx2;
@@ -55,13 +58,17 @@ pub fn choose_idct_func() -> IDCTPtr
 // TEST CODE
 // -----------------------------------------------------
 #[test]
+#[cfg(feature = "x86")]
 fn test_zeroes()
 {
+
+    use crate::misc::Aligned32;
+
     let qt_table = Aligned32([1; 64]);
     let stride = 8;
     let coeff = vec![0; 64];
     let output_scalar = dequantize_and_idct_int(&coeff, &qt_table, stride, 1);
-    let output_avx = dequantize_and_idct_avx2(&coeff, &qt_table, stride, 1);
+    let output_avx = crate::idct::avx2::dequantize_and_idct_avx2(&coeff, &qt_table, stride, 1);
     assert_eq!(output_scalar, output_avx, "AVX and scalar do not match");
     // output should be 128 because IDCT does level shifting too..
     assert_eq!(output_scalar, &[128; 64], "Test for zeroes failed");

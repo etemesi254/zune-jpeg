@@ -21,7 +21,6 @@
 pub use sse::upsample_horizontal_sse;
 
 use crate::components::UpSampler;
-use crate::upsampler::scalar::upsample_horizontal;
 
 mod sse;
 
@@ -88,20 +87,19 @@ pub fn upsample_no_op(_: &[i16], _: usize) -> Vec<i16>
 #[test]
 fn upsample_sse_v1()
 {
-    use crate::upsampler::upsample_horizontal;
 
     let v: Vec<i16> = (0..128).collect();
 
     assert_eq!(
         upsample_horizontal_sse(&v, v.len() * 2),
-        upsample_horizontal(&v, v.len() * 2),
+        crate::upsampler::scalar::upsample_horizontal(&v, v.len() * 2),
         "Algorithms do not match"
     );
 }
 #[test]
 fn upsample_sse_v2()
 {
-    use crate::upsampler::upsample_horizontal;
+    use crate::upsampler::scalar::upsample_horizontal;
 
     let v: Vec<i16> = (0..1280).rev().collect();
 
