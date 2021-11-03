@@ -177,5 +177,7 @@ where
     let ptr = alloc(layout);
 
     // This is cheating, IT will allocate uninit memory
+    // But it's important because  we can do some cool optimizations with this.
+    // if it were to change some things will panic.
     Vec::<T>::from_raw_parts(ptr.cast(), capacity, capacity)
 }

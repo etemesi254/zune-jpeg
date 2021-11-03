@@ -2,8 +2,8 @@ use std::cmp::min;
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
-use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
 use crate::components::Components;
+use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
 
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
@@ -48,15 +48,14 @@ pub(crate) fn post_process(
         // Calculate stride
         // Stride is basically how many pixels must we traverse to write an MCU
         // e.g For an 8*8 MCU in a 16*16 image
-        // stride is 16
-        // The calculation is complex because we have to take into account padding MCU which
-        // the IDCT should discard.
+        // stride is 16 because move 16 pixels from location, you are below where you are writing
 
-        // let stride = (width * 8 * component_data[z].horizontal_sample * component_data[z].vertical_sample / (h_samp * v_samp)) >> 3;
+        // Shift by 3 is divide by 8 for those wondering...
         let stride = (unprocessed[z].len() / (h_samp * v_samp)) >> 3;
 
         // carry out IDCT.
         unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride, h_samp * v_samp);
+
     });
 
     if h_samp != 1 || v_samp != 1
@@ -77,10 +76,6 @@ pub(crate) fn post_process(
 
                 let mut pos = position;
 
-                let mcu_width = width * output_colorspace.num_components() * 8;
-
-
-
                 // Convert i16's to u8's
                 let temp_output = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
                 // chunk according to width.
@@ -91,21 +86,19 @@ pub(crate) fn post_process(
 
                 for chunk in temp_output.chunks_exact(width_chunk) {
                     // copy data, row wise, we do it row wise to discard fill bits if the
-                    // image has an uneven width not  divisible by 8.
+                    // image has an uneven width not divisible by 8.
                     output.lock().unwrap()[pos..pos + chunk.len()].copy_from_slice(chunk);
 
                     pos = position + (width * mcu_pos);
+
                     mcu_pos += 1;
                 }
+
             }
+
         (ColorSpace::YCbCr, ColorSpace::YCbCr) =>
             {
                 // copy to a temporary vector.
-
-                // OPTIMIZE-TIP: Don't do loops in Rust, use iterators in such manners to ensure super
-                // powers on optimization.
-                // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
-                // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
 
                 let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
 
@@ -131,6 +124,11 @@ pub(crate) fn post_process(
                     .zip(unprocessed[1].chunks_exact(width_chunk))
                     .zip(unprocessed[2].chunks_exact(width_chunk))
                 {
+                    // OPTIMIZE-TIP: Don't do loops in Rust, use iterators in such manners to ensure super
+                    // powers on optimization.
+                    // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
+                    // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
+
                     for (((y, cb), cr), out) in y_chunk.iter()
                         .zip(cb_chunk.iter())
                         .zip(cr_chunk.iter())
@@ -144,6 +142,7 @@ pub(crate) fn post_process(
                     output.lock().unwrap()[pos..pos + stride].copy_from_slice(&temp_output[0..stride]);
 
                     pos = position + (width * 3) * mcu_pos;
+
                     mcu_pos += 1;
                 }
             }
@@ -181,7 +180,7 @@ fn color_convert_ycbcr(
     color_convert_16: ColorConvert16Ptr,
     color_convert: ColorConvertPtr,
     output: Arc<Mutex<Vec<u8>>>,
-    position_0: &mut usize,
+    start_position: &mut usize,
     mcu_len: usize,
 )
 {
@@ -237,5 +236,5 @@ fn color_convert_ycbcr(
     }
     // @ OPTIMIZE-TIP don't lock and write directly, it will cause all other threads to stall
     // but a write to a temporary area and a lock to write temporary data to the mutex will be way faster.
-    output.lock().expect("Poisoned mutex")[*position_0..*position_0 + temp_size].copy_from_slice(&temp_area[0..temp_size]);
+    output.lock().expect("Poisoned mutex")[*start_position..*start_position + temp_size].copy_from_slice(&temp_area[0..temp_size]);
 }
