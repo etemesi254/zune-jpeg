@@ -8,14 +8,12 @@ crate-type = ["cdylib", "rlib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 x86 = []
-# Wasm feature
-wasm = []
-default = ["x86","threadpool"]
+default = ["x86"]
 
 [dependencies]
 log = "0.4.11"
-threadpool = { version = "1.8.1", optional = true }
-
+scoped_threadpool = "0.1.9"
+num_cpus="*"
 [dev-dependencies]
 criterion = "0.3"
 mozjpeg = { version = "*" }
