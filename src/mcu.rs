@@ -3,7 +3,7 @@
 //! # Side notes
 //! Yes, I pull in some dubious tricks, like really dubious here, they're not hard to come up
 //!  but I know they're hard to understand(e.g how I don't allocate space for Cb and Cr
-//! channels if output colorspace is grayscale) but bear with me, it's the search for fast softwaew
+//! channels if output colorspace is grayscale) but bear with me, it's the search for fast software
 //! that got me here.
 //!
 //! # Multithreading
@@ -29,16 +29,31 @@
 //! This may make this library almost 3X slower if someone chooses to disable `threadpool` (please don't) feature because
 //! we are optimized for the multithreading path.
 //!
+//! # Scoped ThreadPools
+//! Things you don't want to do in the fast path. **Lock da mutex**
+//! Things you don't want to have in your code. **Mutex**
 //!
+//! Multithreading is not everyone's cake because synchronization is like battling with the devil
+//! The default way is a mutex for when threads may write to the same memory location. But in our case we
+//! don't write to the same, location, so why pay for something not used.
+//!
+//! In C/C++ land we can just pass mutable chunks to different threads but in Rust don't you know about
+//! the borrow checker?...
+//!
+//! To send different mutable chunks  to threads, we use scoped threads which guarantee that the thread
+//! won't outlive the data and finally let it compile.
+//! This allows us to not use locks during decoding avoiding that overhead. and allowing more cleaner
+//! faster code in post processing..
+
 use std::cmp::min;
 use std::io::Cursor;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::bitstream::BitStream;
+use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
-use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -101,8 +116,7 @@ impl Decoder
         reader: &mut Cursor<Vec<u8>>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
-        #[cfg(feature = "threadpool")]
-        let pool = threadpool::ThreadPool::default();
+        let mut scoped_pools = scoped_threadpool::Pool::new(num_cpus::get() as u32);
 
         let (mcu_width, mcu_height);
 
@@ -149,14 +163,13 @@ impl Decoder
                     vec![0; component_capacity * comp.vertical_sample * comp.horizontal_sample];
             }
         }
-        let mut position = 0;
+
 
         // Create an Arc of components to prevent cloning on every MCU width
         let global_component = Arc::new(self.components.clone());
 
         // Storage for decoded pixels
-        let global_channel = Arc::new(Mutex::new(
-            vec![0; capacity * self.output_colorspace.num_components()]));
+        let mut global_channel = vec![0; capacity * self.output_colorspace.num_components()];
 
         // things needed for post processing that we can remove out of the loop
         let input = self.input_colorspace;
@@ -175,13 +188,18 @@ impl Decoder
 
         let v_max = self.v_max;
 
+        let stride = self.mcu_block[0].len() >> 1;
+
         // check dc and AC tables
         self.check_tables()?;
 
+        let mut chunks = global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
+        // Argument for scoped threadpools, see file docs.
+        scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
         for _ in 0..mcu_height
         {
             // Ideally this should be one loop but I'm parallelizing per MCU width boys
-            'label: for _ in 0..mcu_width
+            'label: for j in 0..mcu_width
             {
                 // iterate over components
 
@@ -199,110 +217,99 @@ impl Decoder
                             .as_ref()
                             .unwrap_or_else(|| std::hint::unreachable_unchecked())
                     };
-                    // If image is interleaved iterate over scan-n components,
+                    // If image is interleaved iterate over scan  components,
                     // otherwise if it-s non-interleaved, these routines iterate in
                     // trivial scanline order(Y,Cb,Cr)
-                    for _ in 0..component.vertical_sample * component.horizontal_sample
-                    {
-
-                        let mut tmp = [0; DCT_BLOCK];
-                        // decode the MCU
-                        if !(stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred))
-                        {
-                            // Found a marker
-
-                            // Read stream and see what marker is stored there
-                            let marker = stream.marker.expect("No marker found");
-
-                            match marker
+                    for v_samp in 0..component.vertical_sample {
+                        for h_samp in 0..component.horizontal_sample {
+                            let mut tmp = [0; DCT_BLOCK];
+                            // decode the MCU
+                            if !(stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred))
                             {
-                                Marker::RST(_) =>
-                                    {
-                                        // reset stream
-                                        stream.reset();
+                                // Found a marker
 
-                                        // Initialize dc predictions to zero for all components
-                                        self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                                        // Start iterating again. from position.
-                                        break 'rst;
-                                    }
-                                Marker::EOI =>
-                                    {
-                                        debug!("EOI marker found, wrapping up here ");
-                                        // Okay encountered end of Image break to IDCT and color convert.
-                                        break 'label;
-                                    }
-                                _ =>
-                                    {
-                                        return Err(DecodeErrors::MCUError(format!(
-                                            "Marker {:?} found in bitstream, cannot continue",
-                                            marker
-                                        )));
-                                    }
+                                // Read stream and see what marker is stored there
+                                let marker = stream.marker.expect("No marker found");
+
+                                match marker
+                                {
+                                    Marker::RST(_) =>
+                                        {
+                                            // reset stream
+                                            stream.reset();
+                                            // Initialize dc predictions to zero for all components
+                                            self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                                            // Start iterating again. from position.
+                                            break 'rst;
+                                        }
+                                    Marker::EOI =>
+                                        {
+                                            debug!("EOI marker found, wrapping up here ");
+                                            // Okay encountered end of Image break to IDCT and color convert.
+                                            break 'label;
+                                        }
+                                    _ =>
+                                        {
+                                            return Err(DecodeErrors::MCUError(format!(
+                                                "Marker {:?} found in bitstream, cannot continue",
+                                                marker
+                                            )));
+                                        }
+                                }
                             }
-                        }
+                            // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
+                            // improves speed when we do a clone(less items to clone)
+                            if min(self.output_colorspace.num_components() - 1, pos) == pos
+                            {
+                                // calculate where to start writing. This is quite complex because MCU's
+                                // in images are weird.
+                                // A good example is vertical sub-sampling(what sent me to this rabbit hole)
+                                // The run-length encoding is
+                                // |Y1| |Cb| Cr| |Y3|
+                                // |Y2|          |Y4|
+                                //
+                                // During  decoding, we have to write |Y2| in the right place and this calculation
+                                // helps us do that.
+                                // We basically jump halfway our vector for writing |Y2| and jump to the start and an offset for
+                                // writing |Y3| and rinse and repeat.
+                                let start = (j*64*component.horizontal_sample) + (h_samp*64)+ (stride * v_samp);
 
-                        // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
-                        // improves speed when we do a clone(less items to clone)
-                        if min(self.output_colorspace.num_components() - 1, pos) == pos
-                        {
-                            let start = component.counter;
+                                self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
 
-                            self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
 
-                            component.counter += 64;
+                            }
                         }
                     }
                 }
             }
-            // reset counter
-            self.components.iter_mut().for_each(|x| x.counter = 0);
 
             // Clone things, to make multithreading safe
             let component = global_component.clone();
 
-            let gc = global_channel.clone();
 
             // FIXME: Fix this for single-threaded functions, should not be cloning
             let mut block = self.mcu_block.clone();
-            #[cfg(feature = "threadpool")]
-                {
-                    pool.execute(move || {
-                        post_process(&mut block, &component, h_max, v_max,
-                                     idct_func, color_convert_16, color_convert,
-                                     input, output, gc,
-                                     mcu_width, width, position);
-                    });
-                };
-            #[cfg(not(feature = "threadpool"))]
-                {
-                    post_process(&mut block, &component, h_max, v_max,
-                                 idct_func, color_convert_16, color_convert,
-                                 input, output, gc,
-                                 mcu_width, width, position);
-                }
+            let next_chunk = chunks.next().unwrap();
 
-            // update position here
-            position += width * output.num_components() * 8 * h_max * v_max;
+
+            scope.execute(move || {
+            post_process(&mut block, &component, h_max, v_max,
+                         idct_func, color_convert_16, color_convert,
+                         input, output, next_chunk,
+                         mcu_width, width);
+            });
         }
-        // Block this thread until worker threads have finished
-        #[cfg(feature = "threadpool")]
-            {
-                pool.join();
-            }
+        //everything is okay
+         Ok(())
+          })?;
 
         debug!("Finished decoding image");
 
-        // Global channel may be over allocated for uneven images, shrink it back
-        global_channel.lock().expect("Could not get the pixels").truncate(
+        global_channel.truncate(
             usize::from(self.width())
                 * usize::from(self.height())
                 * self.output_colorspace.num_components(),
         );
-
-        // remove the global channel from Arc and return it
-        Arc::try_unwrap(global_channel)
-            .map_err(|_| DecodeErrors::Format("Could not get pixels, Arc has more than one strong reference".to_string()))?
-            .into_inner().map_err(|x| DecodeErrors::Format(format!("Poisoned Mutex\n{}", x)))
+        return Ok(global_channel);
     }
 }
