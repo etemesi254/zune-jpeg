@@ -1,6 +1,5 @@
 use std::cmp::min;
 use std::convert::TryInto;
-use std::sync::{Arc, Mutex};
 
 use crate::components::Components;
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
@@ -33,7 +32,7 @@ pub(crate) fn post_process(
     unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components], h_samp: usize,
     v_samp: usize, idct_func: IDCTPtr, color_convert_16: ColorConvert16Ptr,
     color_convert: ColorConvertPtr, input_colorspace: ColorSpace, output_colorspace: ColorSpace,
-    output: Arc<Mutex<Vec<u8>>>, mcu_len: usize, width: usize, mut position: usize,
+    output: &mut [u8], mcu_len: usize, width: usize,
 ) // so many parameters..
 {
     // carry out dequantization and inverse DCT
@@ -74,7 +73,6 @@ pub(crate) fn post_process(
             {
                 let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
 
-                let mut pos = position;
 
                 // Convert i16's to u8's
                 let temp_output = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
@@ -82,16 +80,15 @@ pub(crate) fn post_process(
 
                 let width_chunk = mcu_chunks >> 3;
 
-                let mut mcu_pos = 1;
-
+                let mut start = 0;
+                let mut end = width;
                 for chunk in temp_output.chunks_exact(width_chunk) {
                     // copy data, row wise, we do it row wise to discard fill bits if the
                     // image has an uneven width not divisible by 8.
-                    output.lock().unwrap()[pos..pos + chunk.len()].copy_from_slice(chunk);
-
-                    pos = position + (width * mcu_pos);
-
-                    mcu_pos += 1;
+                    //output.lock().unwrap()[pos..pos + chunk.len()].copy_from_slice(chunk);
+                    output[start..end].copy_from_slice(&chunk[0..width]);
+                    start += width;
+                    end += width;
                 }
 
             }
@@ -102,7 +99,6 @@ pub(crate) fn post_process(
 
                 let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
 
-                let mut pos = position;
 
                 // pixels we write per width. since this is YcbCr we write
                 // width times color components.
@@ -113,7 +109,12 @@ pub(crate) fn post_process(
 
                 let mut temp_output = vec![0; temp_size + (128 * output_colorspace.num_components() * h_samp * v_samp)];
 
-                let mut mcu_pos = 1;
+
+                let mut start = 0;
+
+                let mut end = width*3;
+
+                let addition = width*3;
 
                 // width which accounts number of fill bytes
                 let width_chunk = mcu_chunks >> 3;
@@ -139,11 +140,13 @@ pub(crate) fn post_process(
                         out[2] = *cr as u8;
                     }
 
-                    output.lock().unwrap()[pos..pos + stride].copy_from_slice(&temp_output[0..stride]);
+                    //output.lock().unwrap()[pos..pos + stride].copy_from_slice(&temp_output[0..stride]);
+                    output[start..end].copy_from_slice(&temp_output[0..stride]);
 
-                    pos = position + (width * 3) * mcu_pos;
+                    start+=addition;
 
-                    mcu_pos += 1;
+                    end+=addition;
+
                 }
             }
 
@@ -154,7 +157,7 @@ pub(crate) fn post_process(
             {
                 color_convert_ycbcr(
                     unprocessed, width, h_samp, v_samp, output_colorspace, color_convert_16,
-                    color_convert, output, &mut position, mcu_len,
+                    color_convert, output,  mcu_len,
                 );
             }
         // For the other components we do nothing(currently)
@@ -179,13 +182,11 @@ fn color_convert_ycbcr(
     output_colorspace: ColorSpace,
     color_convert_16: ColorConvert16Ptr,
     color_convert: ColorConvertPtr,
-    output: Arc<Mutex<Vec<u8>>>,
-    start_position: &mut usize,
+    output: &mut [u8],
     mcu_len: usize,
 )
 {
     let remainder = ((mcu_len) % 2) != 0;
-
 
     // Create a temporary area to hold our color converted data
     let temp_size = width * (output_colorspace.num_components() * h_samp) * (v_samp * 8);
@@ -209,6 +210,7 @@ fn color_convert_ycbcr(
         .zip(mcu_block[1].chunks_exact(width_chunk))
         .zip(mcu_block[2].chunks_exact(width_chunk))
     {
+
         // Chunk in outputs of 16 to pass to color_convert as an array of 16 i16's.
         for ((y, cb), cr) in y_width.chunks_exact(16)
             .zip(cb_width.chunks_exact(16))
@@ -234,7 +236,6 @@ fn color_convert_ycbcr(
 
         mcu_pos += 1;
     }
-    // @ OPTIMIZE-TIP don't lock and write directly, it will cause all other threads to stall
-    // but a write to a temporary area and a lock to write temporary data to the mutex will be way faster.
-    output.lock().expect("Poisoned mutex")[*start_position..*start_position + temp_size].copy_from_slice(&temp_area[0..temp_size]);
+    output.copy_from_slice(&temp_area[0..temp_size]);
+
 }
