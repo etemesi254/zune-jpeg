@@ -196,13 +196,16 @@ impl HuffmanTable
         if !is_dc
         {
             let mut fast = [255; 1 << HUFF_LOOKAHEAD];
-
+            // Iterate over number of symbols
             for i in 0..num_symbols
             {
+                // get code size for an item
                 let s = huff_size[i];
 
                 if s <= HUFF_LOOKAHEAD
                 {
+                    // if it's lower than what we need for our lookup table create the table
+
                     let c = (huff_code[i] << (HUFF_LOOKAHEAD - s)) as usize;
 
                     let m = (1 << (HUFF_LOOKAHEAD - s)) as usize;
@@ -224,12 +227,13 @@ impl HuffmanTable
 
                 if fast < 255
                 {
+                    // get symbol value from AC table
                     let rs = self.values[fast as usize];
-
+                    // shift by 4 to get run length
                     let run = i16::from((rs >> 4) & 15);
-
+                    // get magnitude bits stored at the lower 3 bits
                     let mag_bits = i16::from(rs & 15);
-
+                    // length of the bit we've read
                     let len = i16::from(huff_size[fast as usize]);
 
                     if len == 1 && mag_bits == 0

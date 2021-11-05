@@ -365,7 +365,7 @@ impl Decoder
                                 warn!(
                                     "Capabilities for processing marker \"{:?}\" not implemented",
                                     m
-                                )
+                                );
                             };
                         }
                     }
@@ -432,6 +432,8 @@ impl Decoder
     ///
     /// - `ColorSpace::GRAYSCALE`:Convert normal image to a black and white
     ///   image(grayscale)
+    ///
+    /// - `ColorSpace::YCbCr`:Decode image
     /// # Panics
     ///  Won't panic actually
     #[allow(clippy::expect_used)]

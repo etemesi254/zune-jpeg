@@ -85,9 +85,9 @@ pub fn upsample_no_op(_: &[i16], _: usize) -> Vec<i16>
 // TEST
 //----------------------------------------------
 #[test]
+#[cfg(feature = "x86")]
 fn upsample_sse_v1()
 {
-
     let v: Vec<i16> = (0..128).collect();
 
     assert_eq!(
@@ -97,6 +97,7 @@ fn upsample_sse_v1()
     );
 }
 #[test]
+#[cfg(feature = "x86")]
 fn upsample_sse_v2()
 {
     use crate::upsampler::scalar::upsample_horizontal;

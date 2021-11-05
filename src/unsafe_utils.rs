@@ -10,9 +10,6 @@ use std::arch::x86_64::*;
 use std::mem::size_of;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
-
-
-
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
 #[derive(Clone, Copy)]
@@ -161,29 +158,43 @@ impl MulAssign<__m256i> for YmmRegister
     }
 }
 
-const fn check_alignment(align:usize){
-    // use debug because they are const values so we know they can't fail.
-    debug_assert!(align.is_power_of_two() && align !=0 && align<usize::MAX-1000);
-}
 /// Create an aligned vector whose start byte is aligned to an
 /// ALIGNMENT boundary.
+///
+/// # Panics
+/// In  in case alignment is not a power of 2 or zero.
+///
 #[allow(clippy::expect_used)]
 #[inline]
 pub(crate) unsafe fn align_alloc<T, const ALIGNMENT: usize>(capacity: usize) -> Vec<T>
 where
     T: Default + Copy,
 {
-    check_alignment(ALIGNMENT);
+    // check alignment, since we are passing it as a const parameter, the compiler either
+    // generates panicking code or  goes and allocates so this is effectively a no-op.
+    assert!(
+        ALIGNMENT.is_power_of_two() && ALIGNMENT != 0,
+        "Alignment constrains for memory not met"
+    );
+
     // Create a new layout
     let layout = Layout::from_size_align_unchecked(capacity * size_of::<T>(), ALIGNMENT);
 
     // Call alloc this returns zeroed memory
-    // Okay weirdly its better to use alloc_zeroed than alloc because of page faults?
-    // I really don't know, but whatever it may be DO_NOT CHANGE THIS!!
+
+    // Use alloc zeroed to prevent page faults .So let me talk about this
+
+    // The kernel mmap modifies page tables when calling  malloc, but doesn't allocate actual memory
+    // This is an optimization technique because allocating memory that won't  be used is wasteful.
+    // During writing to a new page, a page fault is triggered and the code moves to kernel space.
+    // The kernel maps the page to memory and returns to user space.
+
+    // This is ideally wasteful, if the memory will be written after being allocated, so what alloc_zeroed
+    // does is trigger all page faults before we actually write to ensure we have mapped memory.
+    //
+    // Although it appears in flame-graphs as taking a lot of time to call, trust me it's better than
+    // page faults every 4 KB's
     let ptr = alloc_zeroed(layout);
 
-    // This is cheating, IT will allocate uninit memory
-    // But it's important because  we can do some cool optimizations with this.
-    // if it were to change some things will panic.
     Vec::<T>::from_raw_parts(ptr.cast(), capacity, capacity)
 }

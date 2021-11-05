@@ -14,7 +14,7 @@
 //!         The avx one does a better job of using bitwise or's with (_mm256_or_si256) which is magnitudes of faster
 //!         than anything I could come up with
 //!
-//! The AVx code also has some cool transpose instructions which look so complicated to be cool
+//! The AVX code also has some cool transpose instructions which look so complicated to be cool
 //! (spoiler alert, i barely understand how it works, that's why I credited the owner).
 //!
 #![allow(
@@ -27,10 +27,8 @@
 
 #[cfg(feature = "X86")]
 use crate::idct::avx2::dequantize_and_idct_avx2;
-
 use crate::idct::scalar::dequantize_and_idct_int;
 use crate::IDCTPtr;
-
 
 #[cfg(feature = "x86")]
 mod avx2;
@@ -61,7 +59,6 @@ pub fn choose_idct_func() -> IDCTPtr
 #[cfg(feature = "x86")]
 fn test_zeroes()
 {
-
     use crate::misc::Aligned32;
 
     let qt_table = Aligned32([1; 64]);
