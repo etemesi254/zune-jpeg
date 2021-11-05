@@ -12,6 +12,7 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 ///  - `qt_table`: A quantization table fro the MCU
 ///
 /// [`stbi_image.h`]:https://github.com/nothings/stb/blob/c9064e317699d2e495f36ba4f9ac037e88ee371a/stb_image.h#L2356
+#[allow(unused_assignments)]
 pub fn dequantize_and_idct_int(
     vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
 ) -> Vec<i16>
@@ -28,7 +29,6 @@ pub fn dequantize_and_idct_int(
         .chunks_exact(chunks)
         .zip(out_vector.chunks_exact_mut(chunks))
     {
-
         let mut pos = 0;
 
         let mut x = 0;
@@ -242,6 +242,7 @@ pub fn dequantize_and_idct_int(
                     t1 += p2 + p4;
 
                     t0 += p1 + p3;
+
                     let out: &mut [i16; 8] = out_vector
                         .get_mut(pos..pos + 8)
                         .unwrap()
@@ -268,14 +269,12 @@ pub fn dequantize_and_idct_int(
 
                     pos += stride;
                 }
-
-                x += 8;
-                pos = x;
             }
+
+            x += 8;
+            pos = x;
         }
     }
-
-    //   panic!();
     return out_vector;
 }
 
