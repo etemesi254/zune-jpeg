@@ -36,9 +36,7 @@ pub(crate) struct Components
     /// An upsampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
-    /// Keep tabs on where we are supposed to be writing in
-    /// self.mcu_block
-    pub counter: usize,
+
 }
 
 impl Components
@@ -88,7 +86,6 @@ impl Components
             dc_pred: 0,
             up_sampler: upsample_no_op,
 
-            counter: 0,
         })
     }
 }
