@@ -1,8 +1,8 @@
 use std::cmp::min;
 use std::convert::TryInto;
 
-use crate::components::Components;
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
+use crate::components::Components;
 
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
@@ -54,9 +54,7 @@ pub(crate) fn post_process(
 
         // carry out IDCT.
         unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride, h_samp * v_samp);
-
     });
-
     if h_samp != 1 || v_samp != 1
     {
         // carry out upsampling , the return vector overwrites the original vector
@@ -71,26 +69,28 @@ pub(crate) fn post_process(
     {
         (ColorSpace::YCbCr, ColorSpace::GRAYSCALE) =>
             {
-                let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
-
 
                 // Convert i16's to u8's
                 let temp_output = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
                 // chunk according to width.
 
-                let width_chunk = mcu_chunks >> 3;
+                let width_mcu = unprocessed[0].len() / width;
+
+                let width_chunk = unprocessed[0].len() / width_mcu;
 
                 let mut start = 0;
+                
                 let mut end = width;
+
                 for chunk in temp_output.chunks_exact(width_chunk) {
                     // copy data, row wise, we do it row wise to discard fill bits if the
                     // image has an uneven width not divisible by 8.
-                    //output.lock().unwrap()[pos..pos + chunk.len()].copy_from_slice(chunk);
+
                     output[start..end].copy_from_slice(&chunk[0..width]);
+
                     start += width;
                     end += width;
                 }
-
             }
 
         (ColorSpace::YCbCr, ColorSpace::YCbCr) =>
@@ -112,9 +112,9 @@ pub(crate) fn post_process(
 
                 let mut start = 0;
 
-                let mut end = width*3;
+                let mut end = width * 3;
 
-                let addition = width*3;
+                let addition = width * 3;
 
                 // width which accounts number of fill bytes
                 let width_chunk = mcu_chunks >> 3;
@@ -143,10 +143,9 @@ pub(crate) fn post_process(
                     //output.lock().unwrap()[pos..pos + stride].copy_from_slice(&temp_output[0..stride]);
                     output[start..end].copy_from_slice(&temp_output[0..stride]);
 
-                    start+=addition;
+                    start += addition;
 
-                    end+=addition;
-
+                    end += addition;
                 }
             }
 
@@ -157,7 +156,7 @@ pub(crate) fn post_process(
             {
                 color_convert_ycbcr(
                     unprocessed, width, h_samp, v_samp, output_colorspace, color_convert_16,
-                    color_convert, output,  mcu_len,
+                    color_convert, output, mcu_len,
                 );
             }
         // For the other components we do nothing(currently)
@@ -237,5 +236,4 @@ fn color_convert_ycbcr(
         mcu_pos += 1;
     }
     output.copy_from_slice(&temp_area[0..temp_size]);
-
 }
