@@ -16,7 +16,45 @@
 //! | |P| | |
 //! +-+-+-+-+
 //! ```
-
+//!
+//! # Horizontal Bi-linear filter
+//! For a horizontal bi-linear it's trivial to implement,
+//!
+//! `A` becomes the input closest to the output.
+//!
+//! `B` varies depending on output.
+//!  - For odd positions, input is the `next` pixel after A
+//!  - For even positions, input is the `previous` value before A.
+//!
+//! We iterate in a classic 1-D sliding window with a window of 3.
+//! For our sliding window approach, `A` is the 1st and `B` is either the 0th term or 2nd term
+//! depending on position we are writing.(see scalar code).
+//!
+//! For vector code see see explanation.
+//!
+//! # Vertical bi-linear.
+//! Vertical up-sampling is a bit trickier.
+//!
+//! ```text
+//! +----+----+
+//! | A1 | A2 |
+//! +----+----+
+//! +----+----+
+//! | p1 | p2 |
+//! +----+-+--+
+//! +----+-+--+
+//! | p3 | p4 |
+//! +----+-+--+
+//! +----+----+
+//! | B1 | B2 |
+//! +----+----+
+//! ```
+//!
+//! For `p1`
+//! - `A1` is given a weight of `3` and `B1` is given a weight of 1.
+//!
+//! For `p3`
+//! - `B1` is given a weight of `3` and `A1` is giveb
 #[cfg(feature = "x86")]
 pub use sse::upsample_horizontal_sse;
 
@@ -25,47 +63,62 @@ use crate::components::UpSampler;
 mod sse;
 
 mod scalar;
+
 // choose best possible implementation for this platform
 pub fn choose_horizontal_samp_function() -> UpSampler
 {
     #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
-    {
-        if is_x86_feature_detected!("sse4.1")
         {
-            return sse::upsample_horizontal_sse;
+            if is_x86_feature_detected!("sse4.1")
+            {
+                return sse::upsample_horizontal_sse;
+            }
         }
-    }
     return scalar::upsample_horizontal;
 }
-/// Carry out vertical   upsampling
 
 pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
 {
-    // what we know.
-    // We have 8 rows of data and we need to make it 16 rows;
-    let mut out = vec![0; output_len];
-    let inp_row = input.len() >> 4;
-    // so we chunk output row wise
-    for (position, row_chunk) in out.chunks_exact_mut(output_len >> 4).enumerate()
-    {
-        // iterate over each row
-        row_chunk.iter_mut().enumerate().for_each(|(pos, x)| {
-            let row_far = {
-                if position % 2 == 0
-                {
-                    *input.get(inp_row * (position + 1) + pos).unwrap_or(&0)
-                }
-                else
-                {
-                    *input.get(inp_row * (position - 1) + pos).unwrap_or(&0)
-                }
-            };
-            let row_near = *input.get(pos).unwrap_or(&0);
 
-            *x = (3 * row_near + row_far + 2) >> 2;
-        });
+    // How many pixels we need to skip to the next MCU row.
+    let stride = input.len() >> 3;
+
+    // We have 8 rows and we want 16 rows
+    let mut row_near = input.chunks_exact(stride);
+
+    // row far should point one row below row_near, if row near is in row 3, row far is in
+    // row 4.
+    let mut row_far = input[stride..].chunks_exact(stride);
+
+    let mut out = vec![0; output_len];
+    // nearest row
+    let mut rw_n = row_near.next().unwrap();
+    // farthest row;
+    let mut rw_f = row_far.next().unwrap();
+    // a remainder if things go wrongly
+    let remainder = vec![0; stride];
+
+    let mut i = 0;
+
+    for _ in 0..8
+    {
+        for (near, far) in rw_n.iter().zip(rw_f.iter())
+        {
+            // near row
+            out[i] = ((*near) * 3 + (*far)) >> 2;
+            // far row
+            out[i + stride] = ((*far) * 3 + (*near)) >> 2;
+
+            i += 1;
+        }
+        i += stride;
+
+        rw_n = row_near.next().unwrap_or(&remainder);
+        //
+        rw_f = row_far.next().unwrap_or(&rw_n);
     }
-    //println!("{:?}",out);
+    //   out.chunks(output_len>>4).for_each(|x|println!("{:?}",x));
+
     return out;
 }
 
@@ -96,6 +149,7 @@ fn upsample_sse_v1()
         "Algorithms do not match"
     );
 }
+
 #[test]
 #[cfg(feature = "x86")]
 fn upsample_sse_v2()

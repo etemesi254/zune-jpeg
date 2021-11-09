@@ -196,12 +196,12 @@ impl HuffmanTable
         if !is_dc
         {
             let mut fast = [255; 1 << HUFF_LOOKAHEAD];
+
             // Iterate over number of symbols
             for i in 0..num_symbols
             {
                 // get code size for an item
                 let s = huff_size[i];
-
                 if s <= HUFF_LOOKAHEAD
                 {
                     // if it's lower than what we need for our lookup table create the table
@@ -212,10 +212,13 @@ impl HuffmanTable
 
                     for j in 0..m
                     {
+                      
                         fast[c + j] = i as i16;
                     }
                 }
             }
+            
+
 
             // build a table that decodes both magnitude and value of small ACs in
             // one go.
@@ -223,37 +226,37 @@ impl HuffmanTable
 
             for i in 0..(1 << HUFF_LOOKAHEAD)
             {
-                let fast = fast[i];
+                let fast_v = fast[i];
 
-                if fast < 255
+                if fast_v < 255
                 {
                     // get symbol value from AC table
-                    let rs = self.values[fast as usize];
+                    let rs = self.values[fast_v as usize];
                     // shift by 4 to get run length
                     let run = i16::from((rs >> 4) & 15);
                     // get magnitude bits stored at the lower 3 bits
                     let mag_bits = i16::from(rs & 15);
                     // length of the bit we've read
-                    let len = i16::from(huff_size[fast as usize]);
+                    let len = i16::from(huff_size[fast_v as usize]);
 
                     if len == 1 && mag_bits == 0
                     {
                         // Handle End Of Block case.
                         fast_ac[i] = (63 << 4) + 1;
                     }
+
                     else if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
                     {
                         // magnitude code followed by receive_extend code
                         let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
                             >> (i16::from(HUFF_LOOKAHEAD) - mag_bits);
-
                         let m = 1 << (mag_bits - 1);
 
                         if k < m
                         {
                             k += (!0_i16 << mag_bits) + 1;
                         };
-
+                      
                         // if result is small enough fit into fast ac table
                         if k >= -128 && k <= 127
                         {

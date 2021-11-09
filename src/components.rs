@@ -36,7 +36,6 @@ pub(crate) struct Components
     /// An upsampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
-
 }
 
 impl Components
@@ -68,7 +67,7 @@ impl Components
 
         let quantization_table_number = a[2];
 
-        debug!(
+        info!(
             "Component ID:{:?}\tHS:{} VS:{} QT:{}",
             id, horizontal_sample, vertical_sample, quantization_table_number
         );
@@ -85,7 +84,6 @@ impl Components
             quantization_table: Aligned32([0; 64]),
             dc_pred: 0,
             up_sampler: upsample_no_op,
-
         })
     }
 }

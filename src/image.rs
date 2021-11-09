@@ -306,7 +306,7 @@ impl Decoder
                                 }
                             };
 
-                            debug!("Image encoding scheme =`{:?}`", marker);
+                            info!("Image encoding scheme =`{:?}`", marker);
 
                             // get components
                             parse_start_of_frame(&mut buf, marker, self)?;
@@ -457,7 +457,6 @@ impl Decoder
     }
 
     /// Set upsampling routines in case an image is down sampled
-
     pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors>
     {
         // no sampling, return early
@@ -473,7 +472,7 @@ impl Decoder
             (2, 1) =>
             {
                 // horizontal sub-sampling
-                debug!("Horizontal sub-sampling (2,1)");
+                info!("Horizontal sub-sampling (2,1)");
 
                 // Change all sub sampling to be horizontal. This also changes the Y component
                 // which should **NOT** be up-sampled, so it's the
@@ -486,7 +485,7 @@ impl Decoder
             (1, 2) =>
             {
                 // Vertical sub-sampling
-                debug!("Vertical sub-sampling (1,2)");
+                info!("Vertical sub-sampling (1,2)");
 
                 self.components
                     .iter_mut()
@@ -495,7 +494,7 @@ impl Decoder
             (2, 2) =>
             {
                 // vertical and horizontal sub sampling
-                debug!("Vertical and horizontal sub-sampling(2,2)");
+                info!("Vertical and horizontal sub-sampling(2,2)");
 
                 self.components
                     .iter_mut()

@@ -10,13 +10,25 @@
 //!
 //! This code is optimized for speed.
 //! It's meant to be super duper super fast, because everyone else depends on this being fast.
-//! It's (annoyingly) serial hence we cant use parallel bitstreams(it's variable length coding..)
+//! It's (annoyingly) serial hence we cant use parallel bitstreams(it's variable length coding.)
 //!
 //! Furthermore, on the case of refills, we have to do bytewise processing because the standard decided
 //! that we want to support markers in the middle of streams(seriously few people use RST markers).
 //!
-//! So we pull in all optimization steps, use `inline[always]`? ✅ ,pre-execute most common cases ✅,
-//! add random comments ✅, fast paths ✅.
+//! So we pull in all optimization steps:
+//! - use `inline[always]`? ✅ ,
+//! - pre-execute most common cases ✅,
+//! - add random comments ✅
+//! -  fast paths ✅.
+//!
+//! Speed-wise: It is probably the fastest JPEG BitStream decoder to ever sail the seven seas because of
+//! a couple of optimization tricks.
+//! 1. Fast refills from libjpeg-turbo
+//! 2. As few as possible branches in decoder fast paths.
+//! 3. Accelerated AC table decoding borrowed from stb_image.h written by Fabian Gissen (@ rygorous),
+//! improved by me to handle more cases.
+//! 4. Safe and extensible routines(e.g. cool ways to eliminate bounds check)
+//! 5. No unsafe here
 //!
 //! Readability comes as a second priority(I tried with variable names this time, and we are wayy better than libjpeg).
 //!
@@ -32,16 +44,17 @@ use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
-/// A `BitStream` struct, capable of decoding compressed data from the data from
-/// image
-
+/// A `BitStream` struct, a bit by bit reader with super powers
+///
 pub(crate) struct BitStream
 {
     /// A MSB type buffer that is used for some certain operations
     buffer: u64,
-    /// A LSB type buffer that is used to accelerate some operations like
+    /// A TOP  aligned MSB type buffer that is used to accelerate some operations like
     /// peek_bits and get_bits.
-    lsb_buffer: u64,
+    ///
+    /// By top aligned, I mean the top bit (63) represents the top bit in the buffer.
+    aligned_buffer: u64,
     /// Tell us the bits left the two buffer
     bits_left: u8,
     /// Did we find a marker(RST/EOF) during decoding?
@@ -61,7 +74,7 @@ impl BitStream
     {
         BitStream {
             buffer: 0,
-            lsb_buffer: 0,
+            aligned_buffer: 0,
             bits_left: 0,
             marker: None,
             successive_high: 0,
@@ -77,7 +90,7 @@ impl BitStream
     {
         BitStream {
             buffer: 0,
-            lsb_buffer: 0,
+            aligned_buffer: 0,
             bits_left: 0,
             marker: None,
             successive_high: ah,
@@ -97,14 +110,12 @@ impl BitStream
     #[inline(always)]
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
-        // Ps i know inline[always] is frowned upon
 
         /// Macro version of a single byte refill.
         /// Arguments
         /// buffer-> our io buffer, because rust macros cannot get values from
         /// the surrounding environment bits_left-> number of bits left
         /// to full refill
-
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
@@ -138,13 +149,10 @@ impl BitStream
                             // Undo the byte append and return
                             $buffer &= !0xf;
 
-                            //  $lsb_byte <<= 8;
                             $bits_left -= 8;
 
                             self.marker = Some(Marker::from_u8(next_byte as u8).unwrap());
 
-                            // if we get a marker, we return immediately, and hope
-                            // that the bits stored are enough to finish MCU decoding with no hassle
                             return false;
                         }
                     }
@@ -173,7 +181,7 @@ impl BitStream
 
             // Construct an MSB buffer whose top bits are the bitstream we are currently
             // holding.
-            self.lsb_buffer = self.buffer << (64 - self.bits_left);
+            self.aligned_buffer = self.buffer << (64 - self.bits_left);
         }
 
         return true;
@@ -394,7 +402,7 @@ impl BitStream
     {
         // for the LSB buffer peek bits doesn't require an and to remove/zero out top
         // bits
-        (self.lsb_buffer >> (64 - LOOKAHEAD)) as i32
+        (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
 
     /// Discard the next `N` bits without checking
@@ -404,7 +412,7 @@ impl BitStream
         self.bits_left -= n;
 
         // remove top n bits  in lsb buffer
-        self.lsb_buffer <<= n;
+        self.aligned_buffer <<= n;
     }
 
     /// Read `n_bits` from the buffer  and discard them
@@ -412,13 +420,13 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
-        let bits = (self.lsb_buffer >> (64 - n_bits)) as i32;
+        let bits = (self.aligned_buffer >> (64 - n_bits)) as i32;
 
         // Reduce the bits left, this influences the MSB buffer
         self.bits_left -= n_bits;
 
         // shift out bits read in the LSB buffer
-        self.lsb_buffer <<= n_bits;
+        self.aligned_buffer <<= n_bits;
 
         bits
     }
@@ -466,7 +474,7 @@ impl BitStream
         // discard a bit
         self.bits_left -= 1;
 
-        self.lsb_buffer <<= 1;
+        self.aligned_buffer <<= 1;
 
         return true;
     }
@@ -484,7 +492,7 @@ impl BitStream
 
         self.buffer = 0;
 
-        self.lsb_buffer = 0;
+        self.aligned_buffer = 0;
     }
 }
 

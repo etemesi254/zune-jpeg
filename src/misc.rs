@@ -98,8 +98,6 @@ pub enum ColorSpace
     CMYK,
     /// Y/Cb/Cr/K
     YCCK,
-    /// Blue/Green/Red
-    BGR,
     /// R,G,B,A output_colorspace, we set the fourth channel as 255 to represent
     /// an opaque alpha channel
     RGBA,
@@ -117,7 +115,7 @@ impl ColorSpace
     {
         match self
         {
-            Self::RGB | Self::BGR | Self::YCbCr => 3,
+            Self::RGB | Self::YCbCr => 3,
             Self::CMYK | Self::RGBA | Self::RGBX | Self::YCCK => 4,
             Self::GRAYSCALE => 1,
         }

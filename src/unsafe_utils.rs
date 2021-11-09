@@ -13,7 +13,6 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
 #[derive(Clone, Copy)]
-
 pub struct YmmRegister
 {
     /// An AVX register
@@ -179,8 +178,6 @@ where
 
     // Create a new layout
     let layout = Layout::from_size_align_unchecked(capacity * size_of::<T>(), ALIGNMENT);
-
-    // Call alloc this returns zeroed memory
 
     // Use alloc zeroed to prevent page faults .So let me talk about this
 
