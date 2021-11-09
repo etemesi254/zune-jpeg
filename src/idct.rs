@@ -11,7 +11,7 @@
 //!        values directly, if false, it goes the long way of calculating.
 //!     -   Although this can be trivially implemented in the scalar version, it  generates code
 //!         I'm not happy width(scalar version that basically loops and that is too many branches for me)
-//!         The avx one does a better job of using bitwise or's with (_mm256_or_si256) which is magnitudes of faster
+//!         The avx one does a better job of using bitwise or's with (`_mm256_or_si256`) which is magnitudes of faster
 //!         than anything I could come up with
 //!
 //! The AVX code also has some cool transpose instructions which look so complicated to be cool
@@ -43,6 +43,7 @@ pub fn choose_idct_func() -> IDCTPtr
     {
         if is_x86_feature_detected!("avx2")
         {
+            debug!("Using AVX optimized integer IDCT");
             // use avx one
             return crate::idct::avx2::dequantize_and_idct_avx2;
         }

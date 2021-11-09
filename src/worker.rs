@@ -79,7 +79,7 @@ pub(crate) fn post_process(
                 let width_chunk = unprocessed[0].len() / width_mcu;
 
                 let mut start = 0;
-                
+
                 let mut end = width;
 
                 for chunk in temp_output.chunks_exact(width_chunk) {
