@@ -110,7 +110,6 @@ impl BitStream
     #[inline(always)]
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
-
         /// Macro version of a single byte refill.
         /// Arguments
         /// buffer-> our io buffer, because rust macros cannot get values from
@@ -186,7 +185,13 @@ impl BitStream
 
         return true;
     }
-
+    /// Decode the DC coefficient in a MCU block.
+    ///
+    /// The decoded coefficient is written to `dc_prediction`
+    ///
+    /// # Returns
+    /// - `false` if a marker was found in the bitstream
+    /// - `true` if the coefficient was successfully decoded.
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -269,6 +274,10 @@ impl BitStream
     /// - ac_table: The Huffman table used to decode AC values
     /// - block: A memory region where we will write out the decoded values
     /// - DC prediction: Last DC value for this component
+    ///
+    /// # Returns
+    /// - `false` if a marker was found in the bitstream.
+    /// - `true` if coefficients were successfully decoded.
     ///
     #[allow(
         clippy::many_single_char_names,
@@ -463,12 +472,11 @@ impl BitStream
     }
 
     /// Get a single bit from the bitstream
-
     fn get_bit(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
-        if self.bits_left < 1
-        {
-            return self.refill(reader);
+        // Yes we use short circuiting here.
+        if self.bits_left < 1 && !self.refill(reader) {
+            return false;
         }
 
         // discard a bit

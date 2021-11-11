@@ -212,13 +212,10 @@ impl HuffmanTable
 
                     for j in 0..m
                     {
-                      
                         fast[c + j] = i as i16;
                     }
                 }
             }
-            
-
 
             // build a table that decodes both magnitude and value of small ACs in
             // one go.
@@ -244,7 +241,6 @@ impl HuffmanTable
                         // Handle End Of Block case.
                         fast_ac[i] = (63 << 4) + 1;
                     }
-
                     else if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
                     {
                         // magnitude code followed by receive_extend code
@@ -256,7 +252,7 @@ impl HuffmanTable
                         {
                             k += (!0_i16 << mag_bits) + 1;
                         };
-                      
+
                         // if result is small enough fit into fast ac table
                         if k >= -128 && k <= 127
                         {

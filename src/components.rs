@@ -14,7 +14,6 @@ pub type UpSampler = fn(&[i16], usize) -> Vec<i16>;
 
 /// Component Data from start of frame
 #[derive(Clone)]
-
 pub(crate) struct Components
 {
     /// The type of component that has the metadata below, can be Y,Cb or Cr
@@ -36,13 +35,14 @@ pub(crate) struct Components
     /// An upsampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
+    /// How pixels do we need to go to get to the next line?
+    pub width_stride: usize,
 }
 
 impl Components
 {
     /// Create a new instance from three bytes from the start of frame
     #[inline]
-
     pub fn from(a: [u8; 3]) -> Result<Components, DecodeErrors>
     {
         let id = match a[0]
@@ -53,9 +53,9 @@ impl Components
             r =>
             {
                 return Err(DecodeErrors::Format(format!(
-                    "Unknown component id found,{}, expected value between 1 and 3\nNote I and Q components are not supported yet",
-                    r
-                )));
+                        "Unknown component id found,{}, expected value between 1 and 3\nNote I and Q components are not supported yet",
+                        r
+                    )));
             }
         };
 
@@ -66,6 +66,20 @@ impl Components
         let vertical_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
+
+        // check that upsampling ratios are powers of two
+        // if these fail, it's probably a corrupt image.
+        assert!(
+            horizontal_sample.is_power_of_two(),
+            "Horizontal sample is not a power of two({}) cannot decode",
+            horizontal_sample
+        );
+
+        assert!(
+            vertical_sample.is_power_of_two(),
+            "Vertical sub-sample is not power of two({}) cannot decode",
+            vertical_sample
+        );
 
         info!(
             "Component ID:{:?}\tHS:{} VS:{} QT:{}",
@@ -84,13 +98,15 @@ impl Components
             quantization_table: Aligned32([0; 64]),
             dc_pred: 0,
             up_sampler: upsample_no_op,
+            // calculated again at a later point, when all data needed
+            // is available
+            width_stride: horizontal_sample,
         })
     }
 }
 
 /// Component ID's
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
-
 pub enum ComponentID
 {
     /// Luminance channel

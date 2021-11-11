@@ -1,3 +1,4 @@
+//! Main image logic.
 #![allow(clippy::doc_markdown)]
 
 use std::fs::read;
@@ -64,7 +65,7 @@ pub type ColorConvertPtr = fn(&[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut u
 /// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 
-pub type IDCTPtr = fn(&[i16], &Aligned32<[i32; 64]>, usize, usize) -> Vec<i16>;
+pub type IDCTPtr = fn(&[i16], &Aligned32<[i32; 64]>, usize, usize, usize) -> Vec<i16>;
 
 /// A Decoder Instance
 #[allow(clippy::upper_case_acronyms)]
@@ -120,11 +121,10 @@ pub struct Decoder
 
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
-    ///
-    /// This is determined at runtime which function to run, statically it's
-    /// initialized to a platform independent one and during initialization
-    /// of this struct, we check if we can switch to a faster one which
-    /// depend on certain CPU extensions.
+    // This is determined at runtime which function to run, statically it's
+    // initialized to a platform independent one and during initialization
+    // of this struct, we check if we can switch to a faster one which
+    // depend on certain CPU extensions.
     pub(crate) idct_func: IDCTPtr,
     // Color convert function will act on 8 values of YCbCr blocks
     pub(crate) color_convert: ColorConvertPtr,
@@ -184,13 +184,6 @@ impl Default for Decoder
 
 impl Decoder
 {
-    /// Get a mutable reference to the image info class
-
-    fn get_mut_info(&mut self) -> &mut ImageInfo
-    {
-        &mut self.info
-    }
-
     /// Decode a buffer already in memory
     ///
     /// The buffer should be a valid jpeg file, perhaps created by the command
@@ -254,7 +247,7 @@ impl Decoder
     ///  - DHT -> Huffman tables
     ///  - SOS -> Start of Scan
     /// # Unsupported Headers
-    ///  - SOF(n) -> Decoder images which are not baseline
+    ///  - SOF(n) -> Decoder images which are not baseline/progressive
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
@@ -305,7 +298,6 @@ impl Decoder
                                     SOFMarkers::ProgressiveDctHuffman
                                 }
                             };
-
                             info!("Image encoding scheme =`{:?}`", marker);
 
                             // get components
@@ -328,7 +320,7 @@ impl Decoder
                         // APP(0) segment
                         Marker::APP(_) =>
                         {
-                            parse_app(&mut buf, m, self.get_mut_info())?;
+                            parse_app(&mut buf, m, &mut self.info)?;
                         }
                         // Quantization tables
                         Marker::DQT =>
@@ -391,7 +383,6 @@ impl Decoder
 
         self.decode_headers(&mut buf)?;
 
-        // if the image is interleaved
         if self.is_progressive
         {
             self.decode_mcu_ycbcr_non_interleaved_prog(&mut buf)
@@ -434,8 +425,6 @@ impl Decoder
     ///   image(grayscale)
     ///
     /// - `ColorSpace::YCbCr`:Decode image
-    /// # Panics
-    ///  Won't panic actually
     #[allow(clippy::expect_used)]
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
     {
@@ -474,11 +463,8 @@ impl Decoder
                 // horizontal sub-sampling
                 info!("Horizontal sub-sampling (2,1)");
 
-                // Change all sub sampling to be horizontal. This also changes the Y component
-                // which should **NOT** be up-sampled, so it's the
-                // responsibility of the caller to ensure that
                 let up_sampler = choose_horizontal_samp_function();
-                self.components
+                self.components[1..]
                     .iter_mut()
                     .for_each(|x| x.up_sampler = up_sampler);
             }
@@ -487,7 +473,7 @@ impl Decoder
                 // Vertical sub-sampling
                 info!("Vertical sub-sampling (1,2)");
 
-                self.components
+                self.components[1..]
                     .iter_mut()
                     .for_each(|x| x.up_sampler = upsample_vertical);
             }
@@ -496,7 +482,7 @@ impl Decoder
                 // vertical and horizontal sub sampling
                 info!("Vertical and horizontal sub-sampling(2,2)");
 
-                self.components
+                self.components[1..]
                     .iter_mut()
                     .for_each(|x| x.up_sampler = upsample_horizontal_vertical);
             }
@@ -519,7 +505,6 @@ impl Decoder
     /// use zune_jpeg::{Decoder, ColorSpace};
     /// Decoder::new().set_output_colorspace(ColorSpace::RGBA);
     /// ```
-
     pub fn rgba(&mut self)
     {
         // told you so

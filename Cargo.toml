@@ -11,9 +11,9 @@ x86 = []
 default = ["x86"]
 
 [dependencies]
-log = "0.4.11"
-scoped_threadpool = "0.1.9"
-num_cpus="*"
+log = "0.4.11" # logging facilities
+scoped_threadpool = "0.1.9" # multithreading
+num_cpus = "*" # number of threads to spawn.
 [dev-dependencies]
 criterion = "0.3"
 mozjpeg = { version = "*" }

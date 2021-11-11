@@ -68,58 +68,57 @@ mod scalar;
 pub fn choose_horizontal_samp_function() -> UpSampler
 {
     #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
+    {
+        if is_x86_feature_detected!("sse4.1")
         {
-            if is_x86_feature_detected!("sse4.1")
-            {
-                return sse::upsample_horizontal_sse;
-            }
+            return sse::upsample_horizontal_sse;
         }
+    }
     return scalar::upsample_horizontal;
 }
 
 pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
 {
-
     // How many pixels we need to skip to the next MCU row.
     let stride = input.len() >> 3;
 
     // We have 8 rows and we want 16 rows
-    let mut row_near = input.chunks_exact(stride);
+    // let mut row_near = input.chunks_exact(stride);
 
-    // row far should point one row below row_near, if row near is in row 3, row far is in
-    // row 4.
-    let mut row_far = input[stride..].chunks_exact(stride);
+    // // row far should point one row below row_near, if row near is in row 3, row far is in
+    // // row 4.
+    // let mut row_far = input[stride..].chunks_exact(stride);
 
-    let mut out = vec![0; output_len];
-    // nearest row
-    let mut rw_n = row_near.next().unwrap();
-    // farthest row;
-    let mut rw_f = row_far.next().unwrap();
-    // a remainder if things go wrongly
-    let remainder = vec![0; stride];
+    // let mut out = vec![0; output_len];
+    // // nearest row
+    // let mut rw_n = row_near.next().unwrap();
+    // // farthest row;
+    // let mut rw_f = row_far.next().unwrap();
+    // // a remainder if things go wrongly
+    // let remainder = vec![0; stride];
 
-    let mut i = 0;
+    // let mut i = 0;
 
-    for _ in 0..8
-    {
-        for (near, far) in rw_n.iter().zip(rw_f.iter())
-        {
-            // near row
-            out[i] = ((*near) * 3 + (*far)) >> 2;
-            // far row
-            out[i + stride] = ((*far) * 3 + (*near)) >> 2;
+    // for _ in 0..8
+    // {
+    //     for (near, far) in rw_n.iter().zip(rw_f.iter())
+    //     {
+    //         // near row
+    //         out[i] = ((*near) * 3 + (*far)) >> 2;
+    //         // far row
+    //         out[i + stride] = ((*far) * 3 + (*near)) >> 2;
 
-            i += 1;
-        }
-        i += stride;
+    //         i += 1;
+    //     }
+    //     i += stride;
 
-        rw_n = row_near.next().unwrap_or(&remainder);
-        //
-        rw_f = row_far.next().unwrap_or(&rw_n);
-    }
-    //   out.chunks(output_len>>4).for_each(|x|println!("{:?}",x));
-
-    return out;
+    //     rw_n = row_near.next().unwrap_or(&remainder);
+    //     //
+    //     rw_f = row_far.next().unwrap_or(rw_n);
+    // }
+    // //   out.chunks(output_len>>4).for_each(|x|println!("{:?}",x));
+   
+    return input.to_vec();
 }
 
 pub fn upsample_horizontal_vertical(_input: &[i16], _output_len: usize) -> Vec<i16>

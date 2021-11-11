@@ -29,12 +29,15 @@ clippy::single_match
 )]
 #[rustfmt::skip]
 pub(crate) fn post_process(
-    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components], h_samp: usize,
-    v_samp: usize, idct_func: IDCTPtr, color_convert_16: ColorConvert16Ptr,
+    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components],
+    idct_func: IDCTPtr, color_convert_16: ColorConvert16Ptr,
     color_convert: ColorConvertPtr, input_colorspace: ColorSpace, output_colorspace: ColorSpace,
     output: &mut [u8], mcu_len: usize, width: usize,
 ) // so many parameters..
 {
+    // maximum sampling factors are in Y-channel, no need to pass them.
+    let h_samp = component_data[0].horizontal_sample;
+    let v_samp = component_data[0].vertical_sample;
     // carry out dequantization and inverse DCT
 
     // for the reason for the below line, see post_process_no_interleaved
@@ -49,11 +52,11 @@ pub(crate) fn post_process(
         // e.g For an 8*8 MCU in a 16*16 image
         // stride is 16 because move 16 pixels from location, you are below where you are writing
 
-        // Shift by 3 is divide by 8 for those wondering...
-        let stride = (unprocessed[z].len() / (h_samp * v_samp)) >> 3;
-
         // carry out IDCT.
-        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, stride, h_samp * v_samp);
+        let v_samp_idct = {
+            if z == 0 { 1 } else { v_samp }
+        };
+        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
     });
     if h_samp != 1 || v_samp != 1
     {

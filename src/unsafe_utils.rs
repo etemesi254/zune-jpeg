@@ -173,7 +173,8 @@ where
     // generates panicking code or  goes and allocates so this is effectively a no-op.
     assert!(
         ALIGNMENT.is_power_of_two() && ALIGNMENT != 0,
-        "Alignment constrains for memory not met"
+        "Alignment constrains for memory not met. Alignment is {} not a power of two",
+        ALIGNMENT
     );
 
     // Create a new layout
@@ -194,4 +195,29 @@ where
     let ptr = alloc_zeroed(layout);
 
     Vec::<T>::from_raw_parts(ptr.cast(), capacity, capacity)
+}
+
+//-------------------------
+// TEST CODE
+//-------------------------
+#[test]
+fn test_aligned_32()
+{
+    unsafe {
+        // allocate a vector of length 100
+        let v = align_alloc::<i16, 64>(100);
+        let ptr_start = v.as_ptr() as usize;
+        println!("{}", ptr_start);
+        assert_eq!(ptr_start % 64, 0);
+    }
+}
+#[test]
+#[should_panic]
+fn test_aligned_alloc_panic()
+{
+    unsafe {
+        // allocate a vector of length 100
+        // fails because of alignment should be a power of two.
+        align_alloc::<i16, 45>(100);
+    }
 }

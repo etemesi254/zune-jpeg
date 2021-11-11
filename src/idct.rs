@@ -48,6 +48,9 @@ pub fn choose_idct_func() -> IDCTPtr
             return crate::idct::avx2::dequantize_and_idct_avx2;
         }
     }
+    // Fun fact, when compiling this with -C target-feature=+avx2, Rust won't
+    // use CPUID instructions for run-time detection and this function will boil down
+    // to a return statement above.
 
     // use generic one
     return dequantize_and_idct_int;
@@ -65,11 +68,53 @@ fn test_zeroes()
     let qt_table = Aligned32([1; 64]);
     let stride = 8;
     let coeff = vec![0; 64];
-    let output_scalar = dequantize_and_idct_int(&coeff, &qt_table, stride, 1);
-    let output_avx = crate::idct::avx2::dequantize_and_idct_avx2(&coeff, &qt_table, stride, 1);
+    let output_scalar = dequantize_and_idct_int(&coeff, &qt_table, stride, 1, 1);
+    let output_avx = crate::idct::avx2::dequantize_and_idct_avx2(&coeff, &qt_table, stride, 1, 1);
     assert_eq!(output_scalar, output_avx, "AVX and scalar do not match");
     // output should be 128 because IDCT does level shifting too..
     assert_eq!(output_scalar, &[128; 64], "Test for zeroes failed");
 }
 
-// TODO:add a max test
+#[test]
+#[cfg(feature = "x86")]
+// disable this because rust will bounds check wrapping additions which won't make sense as IDCT depends on wrapping arithmetic
+#[cfg(not(debug_assertions))]
+fn test_max()
+{
+    use crate::misc::Aligned32;
+
+    let qt_table = Aligned32([1; 64]);
+    let stride = 8;
+    let coeff = vec![i16::MAX; 64];
+    let output = [
+        0, 255, 0, 255, 0, 0, 255, 255, 255, 0, 0, 255, 0, 255, 0, 0, 0, 0, 255, 0, 255, 0, 255,
+        255, 255, 255, 0, 255, 0, 255, 0, 0, 0, 0, 255, 0, 255, 0, 255, 255, 0, 255, 0, 255, 0,
+        158, 0, 49, 255, 0, 255, 0, 255, 0, 255, 255, 255, 0, 255, 0, 255, 49, 255, 255,
+    ];
+    let output_scalar = dequantize_and_idct_int(&coeff, &qt_table, stride, 1, 1);
+    let output_avx = crate::idct::avx2::dequantize_and_idct_avx2(&coeff, &qt_table, stride, 1, 1);
+    assert_eq!(output_scalar, output_avx, "AVX and scalar do not match");
+
+    assert_eq!(output_avx, &output, "Test for max IDCT failed");
+}
+
+#[test]
+#[cfg(feature = "x86")]
+#[cfg(not(debug_assertions))] // disable this because rust will bounds check wrapping additions which won't work for debug builds
+fn test_min()
+{
+    use crate::misc::Aligned32;
+
+    let qt_table = Aligned32([1; 64]);
+    let stride = 8;
+    let coeff = vec![i16::MIN; 64];
+    let output = [
+        255, 0, 255, 0, 255, 255, 0, 0, 0, 255, 255, 0, 255, 0, 255, 255, 255, 255, 0, 255, 0, 255,
+        0, 0, 0, 0, 255, 0, 255, 0, 255, 255, 255, 255, 0, 255, 0, 255, 0, 0, 255, 0, 255, 0, 255,
+        98, 255, 207, 0, 255, 0, 255, 0, 255, 0, 0, 0, 255, 0, 255, 0, 207, 0, 0,
+    ];
+    let output_scalar = dequantize_and_idct_int(&coeff, &qt_table, stride, 1, 1);
+    let output_avx = crate::idct::avx2::dequantize_and_idct_avx2(&coeff, &qt_table, stride, 1, 1);
+    assert_eq!(output_scalar, output_avx, "AVX and scalar do not match");
+    assert_eq!(output_avx, &output, "Test for min IDCT fails");
+}

@@ -37,10 +37,10 @@ pub const START_OF_FRAME_LOS_SEQ_AR: u16 = 0xffcb;
 /// Undo run length encoding of coefficients by placing them in natural order
 #[rustfmt::skip]
 pub const UN_ZIGZAG: [usize; 64 + 16] = [
-    0, 1, 8, 16, 9, 2, 3, 10,
-    17, 24, 32, 25, 18, 11, 4, 5,
+     0,  1,  8, 16,  9,  2,  3, 10,
+    17, 24, 32, 25, 18, 11,  4,  5,
     12, 19, 26, 33, 40, 48, 41, 34,
-    27, 20, 13, 6, 7, 14, 21, 28,
+    27, 20, 13,  6,  7, 14, 21, 28,
     35, 42, 49, 56, 57, 50, 43, 36,
     29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46,
@@ -69,7 +69,6 @@ where
 /// Align data to a 32 byte boundary
 #[repr(align(32))]
 #[derive(Clone)]
-
 pub struct Aligned32<T: ?Sized>(pub T);
 
 impl<T> Default for Aligned32<T>
@@ -249,7 +248,6 @@ impl fmt::Debug for SOFMarkers
 /// If the reader cannot read the next byte
 #[inline]
 #[allow(clippy::unused_io_amount)]
-
 pub fn read_byte<R>(reader: &mut R) -> u8
 where
     R: Read,
