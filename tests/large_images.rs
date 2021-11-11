@@ -37,7 +37,7 @@ fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspa
 
 /// Decodes a large image
 #[test]
-fn large_no_sampling_factors()
+fn large_no_sampling_factors_rgb()
 {
     //
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_no_samp_7680_4320.jpg";
@@ -54,7 +54,14 @@ fn large_no_sampling_factors()
             OutColorSpace::JCS_RGB,
         );
     }
-    // Grayscale
+}
+
+#[test]
+fn large_no_sampling_factors_grayscale()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_no_samp_7680_4320.jpg";
+    let mut decoder = Decoder::new();
+
     {
         decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
         let pixels = decoder.decode_file(&path).expect("Test failed decoding");
@@ -69,7 +76,26 @@ fn large_no_sampling_factors()
 }
 
 #[test]
-fn large_horizontal_sampling_factors()
+fn large_no_sampling_factors_ycbcr()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_no_samp_7680_4320.jpg";
+    let mut decoder = Decoder::new();
+
+    {
+        decoder.set_output_colorspace(ColorSpace::YCbCr);
+        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+        write_output(
+            "large_no_samp_ycbcr_7680_4320.jpg",
+            &pixels,
+            decoder.width() as usize,
+            decoder.height() as usize,
+            OutColorSpace::JCS_YCbCr,
+        );
+    }
+}
+
+#[test]
+fn large_horizontal_sampling_rgb()
 {
     //
     let path =
@@ -87,16 +113,38 @@ fn large_horizontal_sampling_factors()
             OutColorSpace::JCS_RGB,
         );
     }
+}
+#[test]
+fn large_horizontal_sampling_grayscale()
+{
+    let path =
+        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
+    let mut decoder = Decoder::new();
     // Grayscale
-    {
-        decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
-        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
-        write_output(
-            "large_horiz_samp_grayscale_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_GRAYSCALE,
-        );
-    }
+    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "large_horiz_samp_grayscale_7680_4320.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_GRAYSCALE,
+    );
+}
+#[test]
+fn large_horizontal_sampling_ycbcr()
+{
+    let path =
+        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
+    let mut decoder = Decoder::new();
+    // Grayscale
+    decoder.set_output_colorspace(ColorSpace::YCbCr);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "large_horiz_samp_ycbcr_7680_4320.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_YCbCr,
+    );
 }

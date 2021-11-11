@@ -37,7 +37,7 @@ fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspa
 
 /// Decodes a large image
 #[test]
-fn medium_no_sampling_factors()
+fn medium_no_sampling_factors_rgb()
 {
     //
     let path =
@@ -55,61 +55,81 @@ fn medium_no_sampling_factors()
             OutColorSpace::JCS_RGB,
         );
     }
-    // Grayscale
-    {
-        decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
-        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
-        write_output(
-            "medium_no_samp_grayscale_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_GRAYSCALE,
-        );
-    }
 }
 
 #[test]
-fn medium_horizontal_sampling_factors()
+fn medium_no_sampling_factors_grayscale()
+{
+    //
+    let path =
+        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_no_samp_2500x1786.jpg";
+    let mut decoder = Decoder::new();
+    // Grayscale
+
+    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "medium_no_samp_grayscale_7680_4320.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_GRAYSCALE,
+    );
+}
+
+#[test]
+fn medium_horizontal_sampling_rgb()
 {
     //
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
     let mut decoder = Decoder::new();
-    // RGB
-    {
-        decoder.set_output_colorspace(ColorSpace::RGB);
-        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
-        write_output(
-            "medium_horiz_samp_rgb_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_RGB,
-        );
-    }
+
+    decoder.set_output_colorspace(ColorSpace::RGB);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "medium_horiz_samp_rgb_7680_4320.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_RGB,
+    );
+}
+
+#[test]
+fn medium_horizontal_sampling_grayscale()
+{
     // Grayscale
-    {
-        decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
-        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
-        write_output(
-            "medium_horiz_samp_grayscale_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_GRAYSCALE,
-        );
-    }
+    let path =
+        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
+    let mut decoder = Decoder::new();
+
+    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "medium_horiz_samp_grayscale_7680_4320.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_GRAYSCALE,
+    );
+}
+
+#[test]
+fn medium_horizontal_sampling_cymk()
+{
+    let path =
+        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
+    let mut decoder = Decoder::new();
     // cymk
-    {
-        decoder.set_output_colorspace(ColorSpace::YCbCr);
-        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
-        write_output(
-            "medium_horiz_samp_ycbcr_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_YCbCr,
-        );
-    }
+
+    decoder.set_output_colorspace(ColorSpace::YCbCr);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "medium_horiz_samp_ycbcr_7680_4320.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_YCbCr,
+    );
 }
