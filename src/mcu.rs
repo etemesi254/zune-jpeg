@@ -13,9 +13,17 @@
 //! To make multithreading work, we want to break dependency chains but in cool ways.
 //! i.e we want to find out where we can forward one section as another one does something.
 //!
-//! For JPEG decoding, I found a sweet spot of doing it per MCU width, I.e since the longest time
-//! for jpeg decoding is probably bitstream decoding, we can allow it to continue on the main thread
-//! as new threads are spawned to handle post processing(i.e IDCT, upsampling and color conversion).
+//! # The algorithm
+//!  Simply do it per MCU width taking into account sub-sampling ratios
+//!
+//! 1. Decode an MCU width taking into account how many image channels we have(either Y only or Y,Cb and Cr)
+//!
+//! 2. After successfully decoding, copy pixels decoded and spawn a thread to handle post processing(IDCT,
+//! upsampling and color conversion)
+//!
+//! 3. After successfully decoding all pixels, join threads.
+//!
+//! 4. Call it a day,
 //!
 //!But as easy as this sounds in theory, in practice, it sucks...
 //!
@@ -207,8 +215,8 @@ impl Decoder
         let h_max = self.h_max;
 
         let v_max = self.v_max;
-
-        let stride = (self.mcu_block[0].len()) >> 2;
+        // Halfway width size, used for vertical sub-sampling to write |Y2| in the right position.
+        let width_stride = (self.mcu_block[0].len()) >> 1;
 
         // check dc and AC tables
         self.check_tables()?;
@@ -222,7 +230,7 @@ impl Decoder
             {
                 // Bias only affects 4:2:0(chroma quartered) sub-sampled images. So let me explain
                 // For  4:2:0 sub-sampling, we decode 4 rows of MCU's, the hard part is
-                // determining where the Y channel is stored. Dor Y Channel it looks like this
+                // determining where the Y channel is stored. For the Y Channel it looks like this:
                 // |Y1| |Y2| |Cb| |Cr| |Y5| | Y6|
                 // |Y3| |Y4|           |Y7|  |Y8|
                 // ------------------------------
@@ -235,7 +243,7 @@ impl Decoder
                 // What we want while decoding the first row, write in the first half of the vector(Y component only).
                 // The second row, write in the second half of the vector.
                 // Ideally this means that  our offset calculation must take this into account while remaining transparent
-                // to Cb and Cr channels(those are written differently), and current whether we are in the first
+                // to Cb and Cr channels(those are written differently), and whether we are in the first
                 // row or second row. And that becomes quite complex, forgive me...
                 for v in 0..bias {
                     // Ideally this should be one loop but I'm parallelizing per MCU width boys
@@ -317,17 +325,21 @@ impl Decoder
                                         // writing |Y3| and rinse and repeat.
 
                                         // This is the most complex offset calculation in existence
+
+                                        // Used to determine whether some offsets like y_offset
+                                        // is included in start calculation(if zero, y_offset will be zero).
                                         let is_y = usize::from(component.component_id == ComponentID::Y);
 
                                         // This only affects 4:2:0 images.
-                                        let y_offset = v * ((stride * is_y)
-                                            + (stride * (component.vertical_sample - 1) * is_y));
+                                        let y_offset = is_y * v * (width_stride
+                                            + (width_stride * (component.vertical_sample - 1)));
 
                                         // offset calculator.
                                         let start = (j * 64 * component.horizontal_sample)
                                             + (h_samp * 64)
-                                            + (stride * v_samp)
+                                            + (width_stride * v_samp)
                                             + y_offset;
+
                                         self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
                                     }
                                 }
@@ -346,7 +358,7 @@ impl Decoder
 
 
                 scope.execute(move || {
-                    post_process(&mut block, &component, h_max, v_max,
+                    post_process(&mut block, &component,
                                  idct_func, color_convert_16, color_convert,
                                  input, output, next_chunk,
                                  mcu_width, width);

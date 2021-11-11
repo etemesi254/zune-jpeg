@@ -16,7 +16,7 @@
 //! pass is carried out.
 //!
 //! The code is not super optimized, it produces bit identical results with scalar code hence it's
-//! transparent, furthermore, I've used operator overloading to hide common things like _mm256_add
+//! transparent, furthermore, I've used operator overloading to hide common things like + for _mm256_add_epi16
 //! and it also has the advantage of making this implementation easy to maintain.
 
 #![cfg(feature = "x86")]
@@ -42,28 +42,30 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
 pub fn dequantize_and_idct_avx2(
     vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
+    v_samp: usize,
 ) -> Vec<i16>
 {
     unsafe {
         // We don't call this method directly because we need to flag the code function
         // with #[target_feature] so that the compiler does do weird stuff with
         // it
-        dequantize_and_idct_int_avx2(vector, qt_table, stride, samp_factors)
+        dequantize_and_idct_int_avx2(vector, qt_table, stride, samp_factors, v_samp)
     }
 }
 
 #[target_feature(enable = "avx2")]
 #[allow(
-    clippy::too_many_lines,
-    clippy::cast_possible_truncation,
-    clippy::similar_names,
-    unused_assignments
+clippy::too_many_lines,
+clippy::cast_possible_truncation,
+clippy::similar_names,
+unused_assignments
 )]
 unsafe fn dequantize_and_idct_int_avx2(
     coeff: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
+    v_samp: usize,
 ) -> Vec<i16>
 {
-    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len());
+    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len() * v_samp);
 
     // calculate position
     // inside This is still slow because cache misses
@@ -83,7 +85,7 @@ unsafe fn dequantize_and_idct_int_avx2(
 
     let qt_row7 = _mm256_load_si256(qt_table.0[56..=63].as_ptr().cast());
 
-    let chunks = coeff.len() / samp_factors;
+    let chunks = coeff.len() * v_samp / samp_factors;
 
     // calculate position
     for (in_vector, out_vector) in coeff

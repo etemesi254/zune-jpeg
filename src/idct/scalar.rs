@@ -1,3 +1,6 @@
+//! Platform independent IDCT algorithm
+//!
+//! Not as fast as AVX one.
 use crate::misc::Aligned32;
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
@@ -15,15 +18,16 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 #[allow(unused_assignments)]
 pub fn dequantize_and_idct_int(
     vector: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
+    v_samp: usize,
 ) -> Vec<i16>
 {
     // Temporary variables.
 
-    let mut out_vector = vec![0; vector.len()];
+    let mut out_vector = vec![128; vector.len() * v_samp];
 
     let mut tmp = [0; 64];
 
-    let chunks = vector.len() / samp_factors;
+    let chunks = vector.len() * v_samp / samp_factors;
     // calculate position
     for (in_vector, out_vector) in vector
         .chunks_exact(chunks)
@@ -67,9 +71,7 @@ pub fn dequantize_and_idct_int(
                 store!(pos);
                 store!(pos);
                 store!(pos);
-            }
-            else
-            {
+            } else {
                 // because the compiler fails to see that it can be auto_vectorised so i'll
                 // leave it here check out [idct_int_slow, and idct_int_1D to get what i mean ] https://godbolt.org/z/8hqW9z9j9
                 for ptr in 0..8
@@ -242,7 +244,6 @@ pub fn dequantize_and_idct_int(
                     t1 += p2 + p4;
 
                     t0 += p1 + p3;
-
                     let out: &mut [i16; 8] = out_vector
                         .get_mut(pos..pos + 8)
                         .unwrap()
@@ -274,7 +275,9 @@ pub fn dequantize_and_idct_int(
             x += 8;
             pos = x;
         }
+
     }
+   
     return out_vector;
 }
 

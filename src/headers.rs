@@ -285,6 +285,8 @@ where
             })?;
 
         component.quantization_table = Aligned32(qt_table);
+        // initially stride contains its horizontal sub-sampling
+        component.width_stride *= img.mcu_x * 8;
     }
 
     // delete quantization tables, we'll extract them from the components when
