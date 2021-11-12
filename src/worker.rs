@@ -107,12 +107,6 @@ pub(crate) fn post_process(
                 // width times color components.
                 let stride = width * 3;
 
-                // Allocate vector for temporary storage
-                let temp_size = stride * 8;
-
-                let mut temp_output = vec![0; temp_size + (128 * output_colorspace.num_components() * h_samp * v_samp)];
-
-
                 let mut start = 0;
 
                 let mut end = width * 3;
@@ -121,6 +115,8 @@ pub(crate) fn post_process(
 
                 // width which accounts number of fill bytes
                 let width_chunk = mcu_chunks >> 3;
+                // vector for temporary storage.
+                let mut temp_output = vec![0; width_chunk * 3];
 
 
                 for ((y_chunk, cb_chunk), cr_chunk) in unprocessed[0]
@@ -143,7 +139,6 @@ pub(crate) fn post_process(
                         out[2] = *cr as u8;
                     }
 
-                    //output.lock().unwrap()[pos..pos + stride].copy_from_slice(&temp_output[0..stride]);
                     output[start..end].copy_from_slice(&temp_output[0..stride]);
 
                     start += addition;
@@ -190,21 +185,19 @@ fn color_convert_ycbcr(
 {
     let remainder = ((mcu_len) % 2) != 0;
 
-    // Create a temporary area to hold our color converted data
-    let temp_size = width * (output_colorspace.num_components() * h_samp) * (v_samp * 8);
-
-    let mut temp_area = vec![0; temp_size + (64 * output_colorspace.num_components() * h_samp * v_samp)];
-
-    let mut position = 0;
 
     let mcu_chunks = mcu_block[0].len() / (h_samp * v_samp);
 
-    let mut mcu_pos = 1;
-
-    // Width of image which takes into account fill bytes(it may be larger
-    // than actual width).
+    // Width of image which takes into account fill bytes(it may be larger than actual width).
     let width_chunk = mcu_chunks >> 3;
 
+    let mut start = 0;
+
+    let stride = width * output_colorspace.num_components();
+
+    let mut end = stride;
+
+    let mut temp_area = vec![0; width_chunk * output_colorspace.num_components()];
 
     // We need to chunk per width to ensure we can discard extra values at the end of the width.
     // Since the encoder may pad bits to ensure the width is a multiple of 8.
@@ -212,6 +205,7 @@ fn color_convert_ycbcr(
         .zip(mcu_block[1].chunks_exact(width_chunk))
         .zip(mcu_block[2].chunks_exact(width_chunk))
     {
+        let mut position = 0;
 
         // Chunk in outputs of 16 to pass to color_convert as an array of 16 i16's.
         for ((y, cb), cr) in y_width.chunks_exact(16)
@@ -233,10 +227,11 @@ fn color_convert_ycbcr(
 
             (color_convert)(y_c, cb_c, cr_c, &mut temp_area, &mut position);
         }
-        // update position to next width.
-        position = width * output_colorspace.num_components() * mcu_pos;
+        // Write to our output buffer row wise.
+        output[start..end].copy_from_slice(&temp_area[0..stride]);
 
-        mcu_pos += 1;
+        start += stride;
+
+        end += stride;
     }
-    output.copy_from_slice(&temp_area[0..temp_size]);
 }
