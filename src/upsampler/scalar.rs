@@ -58,3 +58,83 @@ pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 
     return out;
 }
+/// Vertical upsampling (which I don't trust but it works anyway)
+///
+/// The algorithm is still a bi-linear filter with some caveats.
+pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
+{
+    // the caveats, row_near and row_far for the first row point to the same
+    // array, that boils to a nearest neighbour upsampling?
+
+    // if row_near doesn't have data (next returns None), it uses it's
+    // previous row, so this again becomes a nearest neighbour
+
+    // How many pixels we need to skip to the next MCU row.
+    let stride = input.len() >> 3;
+
+    // We have 8 rows and we want 16 rows
+    let mut row_near = input.chunks_exact(stride);
+
+    // row far should point one row below row_near, if row near is in row 3, row far is in
+    // row 4.
+    let mut row_far = input.chunks_exact(stride);
+
+    let mut out = vec![0; output_len];
+    // nearest row
+    let mut rw_n = row_near.next().unwrap();
+    // farthest row;
+    let mut rw_f = row_far.next().unwrap();
+    // previous row, for out of edge cases, e.g if we reach a row and
+    // we don't have data for that row, we use the previous row
+    let mut previous;
+
+    let mut i = 0;
+
+    let mut next_row = true;
+
+    for _ in 0..8
+    {
+        // A bit of cheat here.
+        //
+        // Let me explain, split at mut will return two slices, one containing 0..stride
+        // and another containing what remains.
+        //
+        // The length of out_near => stride, remainder will ALWAYS be greater than or equal to stride.
+        // now this is important with the loop below, we are using zip iterators which have an interesting
+        // property, they stop if any iterator doesn't have elements
+        //
+        // So we know remainder will be >= stride but out_near will be stride, therefore the zip will
+        // effectively stop when we write two rows.
+        //
+        // Ideally all of this is done to eliminate bounds check, the compiler will vectorize this
+        // better without the bounds check
+        let (out_near, remainder) = out[i..].split_at_mut(stride);
+
+
+        for (((near, far), on), of) in rw_n.iter().zip(rw_f.iter())
+            .zip(out_near.iter_mut()).zip(remainder.iter_mut())
+        {
+            // near row
+            *on = ((*near) * 3 + (*far)) >> 2;
+            // far row
+            *of = ((*far) * 3 + (*near)) >> 2;
+        }
+        // we wrote two adjacent lines update i to point to next position
+        // in output buffer.
+        i += stride * 2;
+
+        previous = rw_n;
+
+        rw_n = row_near.next().unwrap_or(previous);
+
+        rw_f = row_far.next().unwrap_or(rw_n);
+        // okay here I'm lazy. Ideally what i want s simply this.
+        // for the first row, keep row_near and row_far to the same, row, but for sub-sequent rows,
+        // row_far should point to the next row(1 row further than this row_near).
+        if next_row {
+            rw_f = row_far.next().unwrap_or(rw_n);
+            next_row = false;
+        }
+    }
+    return out;
+}

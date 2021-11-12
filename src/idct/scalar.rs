@@ -23,7 +23,7 @@ pub fn dequantize_and_idct_int(
 {
     // Temporary variables.
 
-    let mut out_vector = vec![128; vector.len() * v_samp];
+    let mut out_vector = vec![128; vector.len() ];
 
     let mut tmp = [0; 64];
 
@@ -71,7 +71,9 @@ pub fn dequantize_and_idct_int(
                 store!(pos);
                 store!(pos);
                 store!(pos);
-            } else {
+            }
+            else
+            {
                 // because the compiler fails to see that it can be auto_vectorised so i'll
                 // leave it here check out [idct_int_slow, and idct_int_1D to get what i mean ] https://godbolt.org/z/8hqW9z9j9
                 for ptr in 0..8
@@ -275,9 +277,8 @@ pub fn dequantize_and_idct_int(
             x += 8;
             pos = x;
         }
-
     }
-   
+
     return out_vector;
 }
 
