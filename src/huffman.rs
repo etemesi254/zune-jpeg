@@ -13,7 +13,8 @@ pub const HUFF_LOOKAHEAD: u8 = 9;
 
 pub struct HuffmanTable
 {
-    /// element `[0]` of each array is unused
+    // element `[0]` of each array is unused
+
     /// largest code of length k
     pub(crate) maxcode: [i32; 18],
     /// offset for codes of length k
@@ -34,7 +35,7 @@ pub struct HuffmanTable
     /// Directly represent contents of a JPEG DHT marker
     ///
     /// \# number of symbols with codes of length `k` bits
-    /// bits[0] is unused
+    // bits[0] is unused
     pub(crate) bits: [u8; 17],
     /// Symbols in order of increasing code length
     pub(crate) values: Vec<u8>,
@@ -45,10 +46,11 @@ impl HuffmanTable
     pub fn new(codes: &[u8; 17], values: Vec<u8>, is_dc: bool)
         -> Result<HuffmanTable, DecodeErrors>
     {
+        let too_long_code = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
         let mut p = HuffmanTable {
             maxcode: [0; 18],
             offset: [0; 18],
-            lookup: [0; 1 << HUFF_LOOKAHEAD],
+            lookup: [too_long_code; 1 << HUFF_LOOKAHEAD],
             bits: codes.to_owned(),
             values,
             ac_lookup: None,
@@ -159,15 +161,11 @@ impl HuffmanTable
         /*
          * Compute lookahead tables to speed up decoding.
          * First we set all the table entries to 0(left justified), indicating "too long";
+         * (Note too long was set during initialization)
          * then we iterate through the Huffman codes that are short enough and
          * fill in all the entries that correspond to bit sequences starting
          * with that code.
          */
-
-        for i in 0..(1 << HUFF_LOOKAHEAD)
-        {
-            self.lookup[i] = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
-        }
 
         p = 0;
 
@@ -235,13 +233,18 @@ impl HuffmanTable
                     let mag_bits = i16::from(rs & 15);
                     // length of the bit we've read
                     let len = i16::from(huff_size[fast_v as usize]);
-
-                    if len == 1 && mag_bits == 0
+                    if mag_bits == 0
                     {
-                        // Handle End Of Block case.
-                        fast_ac[i] = (63 << 4) + 1;
+                        // special case EOB run
+
+                        // On encountering an EOB run the decoder should terminate decoding
+                        // of that block
+
+                        // To force decoding to end, increment pos by 63, simulate writing of 63 zeroes
+                        // which would terminate the loop on the other end.
+                        fast_ac[i] = (63 << 4) + len;
                     }
-                    else if mag_bits != 0 && len + mag_bits <= i16::from(HUFF_LOOKAHEAD)
+                    else if (len + mag_bits) <= i16::from(HUFF_LOOKAHEAD)
                     {
                         // magnitude code followed by receive_extend code
                         let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
@@ -261,7 +264,6 @@ impl HuffmanTable
                     }
                 }
             }
-
             self.ac_lookup = Some(fast_ac);
         }
 

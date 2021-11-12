@@ -55,17 +55,17 @@ pub fn dequantize_and_idct_avx2(
 
 #[target_feature(enable = "avx2")]
 #[allow(
-clippy::too_many_lines,
-clippy::cast_possible_truncation,
-clippy::similar_names,
-unused_assignments
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::similar_names,
+    unused_assignments
 )]
 unsafe fn dequantize_and_idct_int_avx2(
     coeff: &[i16], qt_table: &Aligned32<[i32; 64]>, stride: usize, samp_factors: usize,
     v_samp: usize,
 ) -> Vec<i16>
 {
-    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len() * v_samp);
+    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len() );
 
     // calculate position
     // inside This is still slow because cache misses

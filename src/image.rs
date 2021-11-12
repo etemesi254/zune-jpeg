@@ -14,7 +14,7 @@ use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
 use crate::upsampler::{
-    choose_horizontal_samp_function, upsample_horizontal_vertical, upsample_vertical,
+    choose_horizontal_samp_function, upsample_horizontal_vertical, scalar::upsample_vertical,
 };
 
 /// Maximum components
@@ -28,10 +28,10 @@ pub(crate) const MAX_DIMENSIONS: usize = 2 << 24;
 ///
 /// The following are guarantees to the following functions
 ///
-/// 1. The `&[i16]` slices passed contain 8 items
+/// 1. The `&[i16]` slices passed contain 16 items
 ///
 /// 2. The slices passed are in the following order
-///     `y,y,cb,cb,cr,cr`
+///     `y,cb,cr`
 ///
 /// 3. `&mut [u8]` is zero initialized
 ///
@@ -54,7 +54,6 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 ///     'y,cb,cr'
 ///
 /// The other guarantees are the same as `ColorConvert16Ptr`
-
 pub type ColorConvertPtr = fn(&[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut usize);
 
 /// IDCT  function prototype
@@ -64,7 +63,6 @@ pub type ColorConvertPtr = fn(&[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut u
 ///
 /// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
-
 pub type IDCTPtr = fn(&[i16], &Aligned32<[i32; 64]>, usize, usize, usize) -> Vec<i16>;
 
 /// A Decoder Instance

@@ -156,7 +156,7 @@ impl BitStream
                         }
                     }
                 }
-            };
+            }
         }
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
@@ -280,9 +280,9 @@ impl BitStream
     /// - `true` if coefficients were successfully decoded.
     ///
     #[allow(
-        clippy::many_single_char_names,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
     )]
     #[rustfmt::skip]
     #[inline(always)]
@@ -293,7 +293,6 @@ impl BitStream
         ac_table: &HuffmanTable,
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
-
     ) -> bool
     {
         // decode DC, dc prediction will contain the value
@@ -319,7 +318,7 @@ impl BitStream
             };
 
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
-
+            
             let fast_ac = ac_lookup[symbol as usize];
 
             if fast_ac != 0
@@ -334,7 +333,7 @@ impl BitStream
                 // The `& 63` is to remove a  branch, i.e keep it between 0 and 63 because Rust can't
                 // see that un-zig-zag returns values less than 63
                 // See https://godbolt.org/z/zrbe6qcPf
-                block[UN_ZIGZAG[min(pos,63)] & 63] = fast_ac >> 10;
+                block[UN_ZIGZAG[min(pos, 63)] & 63] = fast_ac >> 10;
 
                 // combined length
                 self.drop_bits((fast_ac & 15) as u8);
@@ -366,15 +365,13 @@ impl BitStream
                     if code_length > 16
                     {
                         symbol = 0;
-                    }
-                    else
-                    {
+                    } else {
                         symbol = i32::from(
                             ac_table.values[((symbol + ac_table.offset[code_length as usize])
                                 & 0xFF) as usize],
                         );
                     }
-                };
+                }
 
                 r = symbol >> 4;
                 symbol &= 15;
@@ -390,9 +387,7 @@ impl BitStream
                     block[UN_ZIGZAG[pos as usize] & 63] = symbol as i16;
 
                     pos += 1;
-                }
-                else
-                {
+                } else {
                     if r != 15
                     {
                         return true;
@@ -409,7 +404,7 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
-        // for the LSB buffer peek bits doesn't require an and to remove/zero out top
+        // for the LSB buffer peek bits doesn't require an `AND` instruction to remove/zero out top
         // bits
         (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
@@ -475,7 +470,8 @@ impl BitStream
     fn get_bit(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
         // Yes we use short circuiting here.
-        if self.bits_left < 1 && !self.refill(reader) {
+        if self.bits_left < 1 && !self.refill(reader)
+        {
             return false;
         }
 
