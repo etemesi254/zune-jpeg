@@ -6,16 +6,14 @@ use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::Components;
+use crate::components::{Components, SubSampRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
-use crate::upsampler::{
-    choose_horizontal_samp_function, upsample_horizontal_vertical, scalar::upsample_vertical,
-};
+use crate::upsampler::{choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical};
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 3;
@@ -97,6 +95,8 @@ pub struct Decoder
     /// Is the image interleaved?
     pub(crate) interleaved: bool,
 
+    pub(crate) sub_sample_ratio: SubSampRatios,
+
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
     pub(crate) input_colorspace: ColorSpace,
@@ -150,6 +150,7 @@ impl Default for Decoder
             mcu_x: 0,
             mcu_y: 0,
             interleaved: false,
+            sub_sample_ratio: SubSampRatios::None,
 
             // Progressive information
             is_progressive: false,
@@ -458,6 +459,7 @@ impl Decoder
         {
             (2, 1) =>
             {
+                self.sub_sample_ratio = SubSampRatios::H;
                 // horizontal sub-sampling
                 info!("Horizontal sub-sampling (2,1)");
 
@@ -468,6 +470,7 @@ impl Decoder
             }
             (1, 2) =>
             {
+                self.sub_sample_ratio = SubSampRatios::V;
                 // Vertical sub-sampling
                 info!("Vertical sub-sampling (1,2)");
 
@@ -477,12 +480,14 @@ impl Decoder
             }
             (2, 2) =>
             {
+                self.sub_sample_ratio = SubSampRatios::HV;
                 // vertical and horizontal sub sampling
                 info!("Vertical and horizontal sub-sampling(2,2)");
 
                 self.components[1..]
                     .iter_mut()
-                    .for_each(|x| x.up_sampler = upsample_horizontal_vertical);
+                    .for_each(|x| x.up_sampler = choose_hv_samp_function());
+
             }
             (_, _) =>
             {

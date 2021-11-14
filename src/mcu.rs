@@ -58,7 +58,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use crate::bitstream::BitStream;
-use crate::components::ComponentID;
+use crate::components::{ComponentID, SubSampRatios};
 use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
@@ -125,12 +125,11 @@ impl Decoder
     #[inline(never)]
     #[rustfmt::skip]
     pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self,
-        reader: &mut Cursor<Vec<u8>>,
+        &mut self, reader: &mut Cursor<Vec<u8>>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         let mut scoped_pools = scoped_threadpool::Pool::new(num_cpus::get() as u32);
-        info!("Created {} worker threads",scoped_pools.thread_count());
+        info!("Created {} worker threads", scoped_pools.thread_count());
 
         let (mcu_width, mcu_height);
         let mut bias = 1;
@@ -140,7 +139,7 @@ impl Decoder
             // set upsampling functions
             self.set_upsampling()?;
 
-            if self.h_max > self.v_max
+            if self.sub_sample_ratio == SubSampRatios::H
             {
                 // horizontal sub-sampling.
 
@@ -149,11 +148,13 @@ impl Decoder
                 mcu_width = self.mcu_x * 2;
 
                 mcu_height = self.mcu_y / 2;
-            } else if self.h_max == self.v_max && self.h_max == 2 {
+            } else if self.sub_sample_ratio == SubSampRatios::HV
+            {
                 mcu_width = self.mcu_x;
 
                 mcu_height = self.mcu_y / 2;
                 bias = 2;
+                // V;
             } else {
                 mcu_width = self.mcu_x;
 
@@ -166,7 +167,6 @@ impl Decoder
 
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
-
 
         let mut stream = BitStream::new();
         // Size of our output image(width*height)
@@ -182,16 +182,12 @@ impl Decoder
             // we don't allocate for CB and Cr channels
             if min(self.output_colorspace.num_components() - 1, pos) == pos
             {
-                let mut len = component_capacity * comp.vertical_sample * comp.horizontal_sample;
+                let len = component_capacity * comp.vertical_sample * comp.horizontal_sample * bias;
                 // For 4:2:0 upsampling we need to do some tweaks, reason explained in bias
-                if bias == 2 && comp.component_id == ComponentID::Y {
-                    len *= 2;
-                }
-                self.mcu_block[pos] =
-                    vec![0; len];
+
+                self.mcu_block[pos] = vec![0; len];
             }
         }
-
 
         // Create an Arc of components to prevent cloning on every MCU width
         let global_component = Arc::new(self.components.clone());
@@ -218,11 +214,15 @@ impl Decoder
         // Halfway width size, used for vertical sub-sampling to write |Y2| in the right position.
         let width_stride = (self.mcu_block[0].len()) >> 1;
 
+        let hv_width_stride = (self.mcu_block[0].len()) >> 2;
         // check dc and AC tables
         self.check_tables()?;
 
+        let is_hv = self.sub_sample_ratio == SubSampRatios::HV;
+
         // Split output into different blocks each containing enough space for an MCU width
-        let mut chunks = global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
+        let mut chunks =
+            global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
 
         // Argument for scoped threadpools, see file docs.
         scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
@@ -245,7 +245,8 @@ impl Decoder
                 // Ideally this means that  our offset calculation must take this into account while remaining transparent
                 // to Cb and Cr channels(those are written differently), and whether we are in the first
                 // row or second row. And that becomes quite complex, forgive me...
-                for v in 0..bias {
+                for v in 0..bias
+                {
                     // Ideally this should be one loop but I'm parallelizing per MCU width boys
                     'label: for j in 0..mcu_width
                     {
@@ -260,23 +261,33 @@ impl Decoder
                             //   that becomes(1080*1080*3)/(16)-> 218700 branches in the hot path. And I'm not
                             //   paying that penalty
                             let dc_table = unsafe {
-                                self.dc_huffman_tables.get_unchecked(component.dc_huff_table)
+                                self.dc_huffman_tables
+                                    .get_unchecked(component.dc_huff_table)
                                     .as_ref()
                                     .unwrap_or_else(|| std::hint::unreachable_unchecked())
                             };
                             let ac_table = unsafe {
-                                self.ac_huffman_tables.get_unchecked(component.ac_huff_table)
+                                self.ac_huffman_tables
+                                    .get_unchecked(component.ac_huff_table)
                                     .as_ref()
                                     .unwrap_or_else(|| std::hint::unreachable_unchecked())
                             };
                             // If image is interleaved iterate over scan  components,
                             // otherwise if it-s non-interleaved, these routines iterate in
                             // trivial scanline order(Y,Cb,Cr)
-                            for v_samp in 0..component.vertical_sample {
-                                for h_samp in 0..component.horizontal_sample {
+                            for v_samp in 0..component.vertical_sample
+                            {
+                                for h_samp in 0..component.horizontal_sample
+                                {
                                     let mut tmp = [0; DCT_BLOCK];
                                     // decode the MCU
-                                    if !(stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred))
+                                    if !(stream.decode_mcu_block(
+                                        reader,
+                                        dc_table,
+                                        ac_table,
+                                        &mut tmp,
+                                        &mut component.dc_pred,
+                                    ))
                                     {
                                         // Found a marker
                                         // Read stream and see what marker is stored there
@@ -328,17 +339,30 @@ impl Decoder
 
                                         // Used to determine whether some offsets like y_offset
                                         // is included in start calculation(if zero, y_offset will be zero).
-                                        let is_y = usize::from(component.component_id == ComponentID::Y);
+                                        let is_y =
+                                            usize::from(component.component_id == ComponentID::Y);
 
                                         // This only affects 4:2:0 images.
-                                        let y_offset = is_y * v * (width_stride
-                                            + (width_stride * (component.vertical_sample - 1)));
+                                        let y_offset = is_y
+                                            * v
+                                            * (hv_width_stride
+                                            + (hv_width_stride * (component.vertical_sample - 1)));
+
+                                        let another_stride =
+                                            (width_stride * v_samp * usize::from(!is_hv))
+                                                + hv_width_stride * v_samp * usize::from(is_hv);
+
+                                        let yet_another_stride = usize::from(is_hv)
+                                            * (width_stride >> 2)
+                                            * v
+                                            * usize::from(component.component_id != ComponentID::Y);
 
                                         // offset calculator.
                                         let start = (j * 64 * component.horizontal_sample)
                                             + (h_samp * 64)
-                                            + (width_stride * v_samp)
-                                            + y_offset;
+                                            + another_stride
+                                            + y_offset
+                                            + yet_another_stride;
 
                                         self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
                                     }
@@ -347,15 +371,12 @@ impl Decoder
                         }
                     }
                 }
-
                 // Clone things, to make multithreading safe
                 let component = global_component.clone();
-
 
                 let mut block = self.mcu_block.clone();
 
                 let next_chunk = chunks.next().unwrap();
-
 
                 scope.execute(move || {
                     post_process(&mut block, &component,

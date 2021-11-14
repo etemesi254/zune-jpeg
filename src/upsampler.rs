@@ -59,29 +59,36 @@
 pub use sse::upsample_horizontal_sse;
 
 use crate::components::UpSampler;
+pub use crate::upsampler::scalar::{upsample_horizontal, upsample_vertical};
 
+mod avx2;
+mod scalar;
 mod sse;
-
-pub(crate) mod scalar;
 
 // choose best possible implementation for this platform
 pub fn choose_horizontal_samp_function() -> UpSampler
 {
     #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
+    {
+        if is_x86_feature_detected!("sse4.1")
         {
-            if is_x86_feature_detected!("sse4.1")
-            {
-                return sse::upsample_horizontal_sse;
-            }
+            return sse::upsample_horizontal_sse;
         }
+    }
     return scalar::upsample_horizontal;
 }
-
-
-pub fn upsample_horizontal_vertical(_input: &[i16], _output_len: usize) -> Vec<i16>
+pub fn choose_hv_samp_function() -> UpSampler
 {
-    return Vec::new();
+    #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
+        {
+            if is_x86_feature_detected!("avx2")
+            {
+                return avx2::upsample_hv_simd;
+            }
+        }
+    return scalar::upsample_hv;
 }
+
 
 /// Upsample nothing
 

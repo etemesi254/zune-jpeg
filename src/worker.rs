@@ -1,8 +1,8 @@
 use std::cmp::min;
 use std::convert::TryInto;
 
-use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
 use crate::components::Components;
+use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
 
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///

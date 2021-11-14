@@ -2,6 +2,7 @@
 ///
 /// The up-sampling algorithm used is libjpeg-turbo `fancy_upsampling` which is
 /// a linear interpolation or triangle filter, see module docs for explanation
+#[inline(always)] // for upsample-horizontal-vertical
 pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 {
     let mut out = vec![0; output_len];
@@ -61,6 +62,7 @@ pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 /// Vertical upsampling (which I don't trust but it works anyway)
 ///
 /// The algorithm is still a bi-linear filter with some caveats.
+#[inline(always)] // for upsample-horizontal-vertical
 pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
 {
     // the caveats, row_near and row_far for the first row point to the same
@@ -107,17 +109,19 @@ pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
         // effectively stop when we write two rows.
         //
         // Ideally all of this is done to eliminate bounds check, the compiler will vectorize this
-        // better without the bounds check
+        // better without the bounds check.
         let (out_near, remainder) = out[i..].split_at_mut(stride);
 
-
-        for (((near, far), on), of) in rw_n.iter().zip(rw_f.iter())
-            .zip(out_near.iter_mut()).zip(remainder.iter_mut())
+        for (((near, far), on), of) in rw_n
+            .iter()
+            .zip(rw_f.iter())
+            .zip(out_near.iter_mut())
+            .zip(remainder.iter_mut())
         {
             // near row
-            *on = ((*near) * 3 + (*far)) >> 2;
+            *on = ((*near) * 3 + (*far) + 2) >> 2;
             // far row
-            *of = ((*far) * 3 + (*near)) >> 2;
+            *of = ((*far) * 3 + (*near) + 2) >> 2;
         }
         // we wrote two adjacent lines update i to point to next position
         // in output buffer.
@@ -131,10 +135,28 @@ pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
         // okay here I'm lazy. Ideally what i want s simply this.
         // for the first row, keep row_near and row_far to the same, row, but for sub-sequent rows,
         // row_far should point to the next row(1 row further than this row_near).
-        if next_row {
+        if next_row
+        {
             rw_f = row_far.next().unwrap_or(rw_n);
             next_row = false;
         }
     }
     return out;
+}
+pub fn upsample_hv(input: &[i16], output_len: usize) -> Vec<i16>
+{
+    //  a hv upsample is simply a two pass sample, first sample vertically, then sample horizontally
+    // because we spent too much time writing our horizontal and vertical sub sampling  to
+    // create outputs twice their inputs, we can just do this and we know they will work
+    // Furthermore, we know it will be fast, upsample vertical and horizontal are super optimized
+    // to eliminate bounds check.
+
+    // But there is an AVX version obviously.
+
+    // first pass, do vertical sampling
+    let first_pass = upsample_vertical(input, input.len() * 2);
+    //second pass, do horizontal sampling
+    let second_pass = upsample_horizontal(&first_pass, output_len);
+
+    return second_pass;
 }
