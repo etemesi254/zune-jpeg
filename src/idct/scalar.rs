@@ -23,7 +23,7 @@ pub fn dequantize_and_idct_int(
 {
     // Temporary variables.
 
-    let mut out_vector = vec![128; vector.len() ];
+    let mut out_vector = vec![0; vector.len()];
 
     let mut tmp = [0; 64];
 
@@ -278,7 +278,6 @@ pub fn dequantize_and_idct_int(
             pos = x;
         }
     }
-
     return out_vector;
 }
 
