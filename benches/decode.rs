@@ -43,7 +43,7 @@ fn decode_jpeg_image_rs(buf: &[u8]) -> Vec<u8>
     decoder.decode().unwrap()
 }
 
-fn criterion_benchmark(c: &mut Criterion)
+fn decode_no_samp(c: &mut Criterion)
 {
     let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
@@ -61,11 +61,14 @@ fn criterion_benchmark(c: &mut Criterion)
         b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
     });
 
+
+}
+fn decode_h_samp(c:&mut Criterion){
     let x = read(
         env!("CARGO_MANIFEST_DIR").to_string()
             + "/benches/images/speed_bench_horizontal_subsampling.jpg",
     )
-    .unwrap();
+        .unwrap();
 
     c.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))
@@ -81,11 +84,52 @@ fn criterion_benchmark(c: &mut Criterion)
     );
 }
 
+fn decode_v_samp(c:&mut Criterion){
+    let x = read(
+        env!("CARGO_MANIFEST_DIR").to_string()
+            + "/benches/images/speed_bench_vertical_subsampling.jpg",
+    )
+        .unwrap();
+
+    c.bench_function("Vertical sub-sampling JPEG Decoding zune-jpeg", |b| {
+        b.iter(|| black_box(decode_jpeg(x.as_slice())))
+    });
+
+    c.bench_function("Vertical sub-sampling JPEG Decoding  mozjpeg", |b| {
+        b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
+    });
+
+    c.bench_function(
+        "Vertical sub-sampling sampling JPEG Decoding  imagers/jpeg-decoder",
+        |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
+    );
+}
+
+fn decode_hv_samp(c:&mut Criterion){
+    let x = read(
+        env!("CARGO_MANIFEST_DIR").to_string()
+            + "/benches/images/speed_bench_hv_subsampling.jpg",
+    )
+        .unwrap();
+
+    c.bench_function("HV sampling JPEG Decoding zune-jpeg", |b| {
+        b.iter(|| black_box(decode_jpeg(x.as_slice())))
+    });
+
+    c.bench_function("HV sampling JPEG Decoding  mozjpeg", |b| {
+        b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
+    });
+
+    c.bench_function(
+        "HV sampling JPEG Decoding  imagers/jpeg-decoder",
+        |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
+    );
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(20))
       };
-    targets=criterion_benchmark);
+    targets=decode_no_samp,decode_h_samp,decode_v_samp,decode_hv_samp);
 
 criterion_main!(benches);
