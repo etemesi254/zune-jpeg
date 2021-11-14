@@ -116,3 +116,12 @@ pub enum ComponentID
     /// Red chrominance
     Cr,
 }
+
+#[derive(Copy, Debug, Clone, PartialEq, Eq)]
+pub enum SubSampRatios
+{
+    HV,
+    V,
+    H,
+    None,
+}
