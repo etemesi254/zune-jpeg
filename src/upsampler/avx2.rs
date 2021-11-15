@@ -1,29 +1,29 @@
-#![cfg(feature="x86")]
+#![cfg(feature = "x86")]
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-
-use crate::unsafe_utils::align_alloc;
 use crate::upsampler::scalar::upsample_hv;
 
-pub fn upsample_hv_simd(input:&[i16],output_len:usize)->Vec<i16>{
-    if input.len() < 500 {
+pub fn upsample_hv_simd(input: &[i16], output_len: usize) -> Vec<i16>
+{
+    if input.len() < 500
+    {
+        //small inputs use scalar.
         return upsample_hv(input, output_len);
     }
-    unsafe {
-        upsample_hv_avx(input,output_len)
-    }
+    unsafe { upsample_hv_avx(input, output_len) }
 }
 // herein lies 2 days work tread lightly
 
+#[rustfmt::skip]
 #[target_feature(enable = "avx")]
-//Some things are weird...
 #[target_feature(enable = "avx2")]
 #[inline]
-pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
+pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
+{
     //to understand how it works, we have to see what vertical upsampling + horizontal upsampling do
     // Hence the illustration
     //    | A1 | A2 |
@@ -48,9 +48,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
 
     // So how do we actually implement.
 
-
-
-    let mut output = align_alloc::<i16, 16>(output_len);
+    let mut output = vec![128;output_len];
 
     // okay for the next step lets play with AVX
 
@@ -116,9 +114,9 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
             //
             //-> row_near [B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B2,B13,B14,B15,B16]
             //
-            //              |                                                |
-            //             \/                                               \/
-            //-> next_row [B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16]
+            //              |                                                   |
+            //             \/                                                  \/
+            //-> next_row [B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16,B17]
 
 
             // Next we need to get values in Avx register and stretch them.
@@ -151,7 +149,6 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
             // FINALLY START CARRYING OUT THE CALCULATIONS.
 
             // everything above was set up for this
-            // it plays out soo nicely it makes me want to cry at this marvel.
 
 
             // prev-lo->[BO,B0,B1,B1,B2,B2,B3,B3]
@@ -221,16 +218,19 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
     let end = (input.len() >> 7) - 1;
     // some calculations to determine how much will not be written per MCU.
     let v = (output.len() / 16) - (end * 32);
+    let mut x=0;
 
     // let mut scalar_temp = vec![];
 
     // we need to iterate row wise
     // we initially have 8 rows we want to make 32, new rows,
-    for j in 0..8 {
+    for j in 0..8
+    {
         // loop row wise
         // we are feed it our stuff with 16 values, therefore we can loop the number of times we can
         // chunk data. into 16
-        for _ in 0..end {
+        for _ in 0..end
+        {
             let load_near = _mm256_loadu_si256(input[pos..].as_ptr().cast());
             let load_far = _mm256_loadu_si256(input[pos + stride..].as_ptr().cast());
             // ==========================================================================
@@ -258,22 +258,20 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
             // update previous and next values
             assert!(input.len() >= pos + stride + 16);
             // Safety , the assert statement above ensures none of these goes out of bounds.
-            prev =
-                (3 * (*input.get_unchecked(pos)) + (*input.get_unchecked(pos + stride)) + 2) >> 2;
-            pixel_far = (3 * (*input.get_unchecked(pos + 16))
-                + (*input.get_unchecked(pos + stride + 16))
-                + 2)
-                >> 2;
+            prev = (3 * (*input.get_unchecked(pos)) + (*input.get_unchecked(pos + stride)) + 2) >> 2;
+
+            pixel_far = (3 * (*input.get_unchecked(pos + 16)) + (*input.get_unchecked(pos + stride + 16)) + 2) >> 2;
         }
         // now there are some more data left, since we actually don't write
         // to the end of the array.
         // those whe handle using scalar code.
 
-        let remainder = &input[pos..pos + (v / 2)];
-        let remainder_stride = &input[pos + stride..pos + (v / 2) + stride];
+        let remainder = &input[pos+x..pos +x+ (v / 2)];
+        let remainder_stride = &input[pos + stride-x..pos + (v / 2) + stride-x];
 
         // simple horizontal filter
-        for (window_near, window_far) in remainder.windows(2).zip(remainder_stride.windows(2)) {
+        for (window_near, window_far) in remainder.windows(2).zip(remainder_stride.windows(2))
+        {
             output[output_position] = (3 * window_near[0] + window_near[1] + 2) >> 2;
             output[output_position + 1] = (3 * window_near[1] + window_near[0] + 2) >> 2;
             // do the same for stride
@@ -284,20 +282,24 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
             output_position += 2;
         }
 
-        output_position += len + 2;
-        if modify_stride {
+        output_position += len;
+        if modify_stride
+        {
             stride = input.len() / 8;
             modify_stride = false;
+            x=v;
+
         }
-        if j == 6 {
+        if j == 6
+        {
             // when j is 6 it means we are at position 14, and 15, here we
             // need to revert stride to be zero to get a nearest neighbour
 
             // since there is no more row to look ahead using stride.
             stride = 0;
+            x=0;
         }
-        //  pos+=1;
-
+        // set some manually
         output[output_position - len] = output[output_position - len + 1];
 
         output[output_position - len - 2] = output[output_position - len - 4];
@@ -313,7 +315,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16> {
 }
 
 #[inline]
-const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
+{
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
-

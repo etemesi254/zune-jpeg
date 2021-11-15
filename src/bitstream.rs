@@ -392,7 +392,7 @@ impl BitStream
                     {
                         return true;
                     }
-                    pos += 15;
+                    pos += 16;
                 }
             }
         }

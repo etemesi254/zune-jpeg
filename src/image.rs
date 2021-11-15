@@ -13,7 +13,9 @@ use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
-use crate::upsampler::{choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical};
+use crate::upsampler::{
+    choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical,
+};
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 3;
@@ -135,7 +137,7 @@ impl Default for Decoder
     fn default() -> Self
     {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
-        let mut d = Decoder {
+        Decoder {
             info: ImageInfo::default(),
             qt_tables: [None, None, None],
             dc_huffman_tables: [None, None, None],
@@ -173,11 +175,7 @@ impl Default for Decoder
             // Store MCU blocks
             // This should probably be changed..
             mcu_block: [vec![], vec![], vec![]],
-        };
-
-        d.init();
-
-        return d;
+        }
     }
 }
 
@@ -384,25 +382,12 @@ impl Decoder
 
         if self.is_progressive
         {
-            self.decode_mcu_ycbcr_non_interleaved_prog(&mut buf)
+            self.decode_mcu_ycbcr_progressive(&mut buf)
         }
         else
         {
             self.decode_mcu_ycbcr_baseline(&mut buf)
         }
-    }
-
-    /// Initialize the most appropriate functions for
-    #[allow(clippy::unwrap_used)] // can't panic if we know it won't panic
-    fn init(&mut self)
-    {
-        // set color convert function
-        // it's safe to unwrap because  we know Colorspace::RGB will return
-        let p = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
-
-        self.color_convert_16 = p.0;
-
-        self.color_convert = p.1;
     }
 
     /// Set the output colorspace
@@ -427,6 +412,10 @@ impl Decoder
     #[allow(clippy::expect_used)]
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
     {
+        if self.output_colorspace == colorspace
+        {
+            return;
+        }
         self.output_colorspace = colorspace;
 
         match colorspace
@@ -487,7 +476,6 @@ impl Decoder
                 self.components[1..]
                     .iter_mut()
                     .for_each(|x| x.up_sampler = choose_hv_samp_function());
-
             }
             (_, _) =>
             {

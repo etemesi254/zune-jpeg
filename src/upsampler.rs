@@ -18,6 +18,14 @@
 //! ```
 //!
 //! # Horizontal Bi-linear filter
+//! ```text
+//! |---+------------+--+
+//! |   |           |   |
+//! | A | |p1 | p2| | B |
+//! |   |           |   |
+//! |---+-----------+----_
+//!
+//! ```
 //! For a horizontal bi-linear it's trivial to implement,
 //!
 //! `A` becomes the input closest to the output.
@@ -30,7 +38,7 @@
 //! For our sliding window approach, `A` is the 1st and `B` is either the 0th term or 2nd term
 //! depending on position we are writing.(see scalar code).
 //!
-//! For vector code see see explanation.
+//! For vector code see module sse for explanation.
 //!
 //! # Vertical bi-linear.
 //! Vertical up-sampling is a bit trickier.
@@ -54,7 +62,11 @@
 //! - `A1` is given a weight of `3` and `B1` is given a weight of 1.
 //!
 //! For `p3`
-//! - `B1` is given a weight of `3` and `A1` is giveb
+//! - `B1` is given a weight of `3` and `A1` is given a weight of 1
+//!
+//! # Horizontal vertical downsampling/chroma quartering.
+//!
+//! Carry out a vertical filter in the first pass, then a horizontal filter in the second pass.
 #[cfg(feature = "x86")]
 pub use sse::upsample_horizontal_sse;
 
@@ -72,23 +84,26 @@ pub fn choose_horizontal_samp_function() -> UpSampler
     {
         if is_x86_feature_detected!("sse4.1")
         {
+            debug!("Using sse H up-sampler");
             return sse::upsample_horizontal_sse;
         }
     }
+    debug!("Using scalar H up-sampler");
     return scalar::upsample_horizontal;
 }
 pub fn choose_hv_samp_function() -> UpSampler
 {
     #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
+    {
+        if is_x86_feature_detected!("avx2")
         {
-            if is_x86_feature_detected!("avx2")
-            {
-                return avx2::upsample_hv_simd;
-            }
+            debug!("Using avx HV up-sampler");
+            return avx2::upsample_hv_simd;
         }
+    }
+    debug!("using scalar HV up-sampler");
     return scalar::upsample_hv;
 }
-
 
 /// Upsample nothing
 

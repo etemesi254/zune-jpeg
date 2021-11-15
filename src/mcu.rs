@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
+use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -117,7 +117,7 @@ impl Decoder
 
     /// Decode MCUs and carry out post processing.
     ///
-    /// This is the main decoder loop for the library aka the hot path.
+    /// This is the main decoder loop for the library, the hot path.
     ///
     /// Because of this, we pull in some very crazy optimization tricks hence readability is a pinch
     /// here.
@@ -229,26 +229,10 @@ impl Decoder
             for _ in 0..mcu_height
             {
                 // Bias only affects 4:2:0(chroma quartered) sub-sampled images. So let me explain
-                // For  4:2:0 sub-sampling, we decode 4 rows of MCU's, the hard part is
-                // determining where the Y channel is stored. For the Y Channel it looks like this:
-                // |Y1| |Y2| |Cb| |Cr| |Y5| | Y6|
-                // |Y3| |Y4|           |Y7|  |Y8|
-                // ------------------------------
-                // |Y9|  |Y11|        |Y13| |Y14|
-                // |Y10| |Y12|        |Y15| |Y16|
-                // The problem becomes knowing where to write the channel once decoded.
-                // For vertical / horizontal sub-sampling, we use j(iterator in MCU width).
-                // But j cannot be used to determine 4:2:0 sub-sampled because it will write in the wrong place
-                //
-                // What we want while decoding the first row, write in the first half of the vector(Y component only).
-                // The second row, write in the second half of the vector.
-                // Ideally this means that  our offset calculation must take this into account while remaining transparent
-                // to Cb and Cr channels(those are written differently), and whether we are in the first
-                // row or second row. And that becomes quite complex, forgive me...
                 for v in 0..bias
                 {
                     // Ideally this should be one loop but I'm parallelizing per MCU width boys
-                    'label: for j in 0..mcu_width
+                    'eoi: for j in 0..mcu_width
                     {
                         // iterate over components
 
@@ -280,14 +264,9 @@ impl Decoder
                                 for h_samp in 0..component.horizontal_sample
                                 {
                                     let mut tmp = [0; DCT_BLOCK];
+                                    let marker_in_stream = stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred);
                                     // decode the MCU
-                                    if !(stream.decode_mcu_block(
-                                        reader,
-                                        dc_table,
-                                        ac_table,
-                                        &mut tmp,
-                                        &mut component.dc_pred,
-                                    ))
+                                    if !(marker_in_stream)
                                     {
                                         // Found a marker
                                         // Read stream and see what marker is stored there
@@ -295,8 +274,9 @@ impl Decoder
 
                                         match marker
                                         {
-                                            Marker::RST(_) =>
+                                            Marker::RST(n) =>
                                                 {
+                                                    debug!("Encountered RST marker {}",n);
                                                     // reset stream
                                                     stream.reset();
                                                     // Initialize dc predictions to zero for all components
@@ -306,9 +286,7 @@ impl Decoder
                                                 }
                                             Marker::EOI =>
                                                 {
-                                                    info!("EOI marker found, wrapping up here ");
-                                                    // Okay encountered end of Image break to IDCT and color convert.
-                                                    break 'label;
+                                                    // silent pass
                                                 }
                                             _ =>
                                                 {
@@ -319,52 +297,51 @@ impl Decoder
                                                 }
                                         }
                                     }
-                                    // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
-                                    // improves speed when we do a clone(less items to clone)
-                                    if min(self.output_colorspace.num_components() - 1, pos) == pos
                                     {
-                                        // calculate where to start writing. This is quite complex because MCU's
-                                        // in images are weird.
-                                        // A good example is vertical sub-sampling(what sent me to this rabbit hole)
-                                        // The run-length encoding is
-                                        // |Y1| |Cb| Cr| |Y3| |Cb| |Cr| |Y5|
-                                        // |Y2|          |Y4|           |Y6|
-                                        //
-                                        // During  decoding, we have to write |Y2| in the right place and this calculation
-                                        // helps us do that.
-                                        // We basically jump halfway our vector for writing |Y2| and jump to the start and an offset for
-                                        // writing |Y3| and rinse and repeat.
+                                        // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
+                                        // improves speed when we do a clone(less items to clone)
+                                        if min(self.output_colorspace.num_components() - 1, pos) == pos
+                                        {
 
-                                        // This is the most complex offset calculation in existence
+                                            // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
-                                        // Used to determine whether some offsets like y_offset
-                                        // is included in start calculation(if zero, y_offset will be zero).
-                                        let is_y =
-                                            usize::from(component.component_id == ComponentID::Y);
+                                            let is_y =
+                                                usize::from(component.component_id == ComponentID::Y);
 
-                                        // This only affects 4:2:0 images.
-                                        let y_offset = is_y
-                                            * v
-                                            * (hv_width_stride
-                                            + (hv_width_stride * (component.vertical_sample - 1)));
+                                            // This only affects 4:2:0 images.
+                                            let y_offset = is_y
+                                                * v
+                                                * (hv_width_stride
+                                                + (hv_width_stride * (component.vertical_sample - 1)));
 
-                                        let another_stride =
-                                            (width_stride * v_samp * usize::from(!is_hv))
-                                                + hv_width_stride * v_samp * usize::from(is_hv);
+                                            let another_stride =
+                                                (width_stride * v_samp * usize::from(!is_hv))
+                                                    + hv_width_stride * v_samp * usize::from(is_hv);
 
-                                        let yet_another_stride = usize::from(is_hv)
-                                            * (width_stride >> 2)
-                                            * v
-                                            * usize::from(component.component_id != ComponentID::Y);
+                                            let yet_another_stride = usize::from(is_hv)
+                                                * (width_stride >> 2)
+                                                * v
+                                                * usize::from(component.component_id != ComponentID::Y);
 
-                                        // offset calculator.
-                                        let start = (j * 64 * component.horizontal_sample)
-                                            + (h_samp * 64)
-                                            + another_stride
-                                            + y_offset
-                                            + yet_another_stride;
+                                            // offset calculator.
+                                            let start = (j * 64 * component.horizontal_sample)
+                                                + (h_samp * 64)
+                                                + another_stride
+                                                + y_offset
+                                                + yet_another_stride;
 
-                                        self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
+                                            self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
+
+                                            if marker_in_stream {
+                                                if let Some(marker) = stream.marker
+                                                {
+                                                    if marker == Marker::EOI {
+                                                        info!("Found EOI marker Wrapping up here");
+                                                        break 'eoi;
+                                                    }
+                                                };
+                                            }
+                                        }
                                     }
                                 }
                             }
