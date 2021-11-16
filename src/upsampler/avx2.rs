@@ -5,13 +5,14 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+use crate::unsafe_utils::align_alloc;
 use crate::upsampler::scalar::upsample_hv;
 
 pub fn upsample_hv_simd(input: &[i16], output_len: usize) -> Vec<i16>
 {
     if input.len() < 500
     {
-        //small inputs use scalar.
+        //For small inputs, use scalar.
         return upsample_hv(input, output_len);
     }
     unsafe { upsample_hv_avx(input, output_len) }
@@ -48,7 +49,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
 
     // So how do we actually implement.
 
-    let mut output = vec![128;output_len];
+    let mut output = align_alloc::<i16,32>(output_len);
 
     // okay for the next step lets play with AVX
 
@@ -165,7 +166,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
             // }
 
             // Look at the ABOVE loop, notice how even numbers get i-1, look at the even indices
-            // in nn, LOOK AT THEM.
+            // in nn.
             // Look at the ODD INDICES while at it.
 
             // And that's the miracle.
@@ -220,12 +221,12 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
     let v = (output.len() / 16) - (end * 32);
     let mut x=0;
 
-    // let mut scalar_temp = vec![];
 
     // we need to iterate row wise
     // we initially have 8 rows we want to make 32, new rows,
     for j in 0..8
     {
+
         // loop row wise
         // we are feed it our stuff with 16 values, therefore we can loop the number of times we can
         // chunk data. into 16
@@ -264,25 +265,46 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
         }
         // now there are some more data left, since we actually don't write
         // to the end of the array.
-        // those whe handle using scalar code.
 
-        let remainder = &input[pos+x..pos +x+ (v / 2)];
-        let remainder_stride = &input[pos + stride-x..pos + (v / 2) + stride-x];
+        // those whe handle using scalar code
+       
+        let (a,b )=  output.split_at_mut(output_position+v);
+        
+        let c = a.len()-v;
+    
+        // areas the vector code didn't touch
+        let mut unwritten = &mut a[c..];
+        let mut unwritten_stride = &mut b[len-v..len];
+     
+        
+        for (input_window,output_window) in input[pos-v/2-2..pos].windows(3).zip(unwritten.chunks_exact_mut(2)){
+            let input_window: &[i16; 3] = input_window.try_into().unwrap();
 
-        // simple horizontal filter
-        for (window_near, window_far) in remainder.windows(2).zip(remainder_stride.windows(2))
-        {
-            output[output_position] = (3 * window_near[0] + window_near[1] + 2) >> 2;
-            output[output_position + 1] = (3 * window_near[1] + window_near[0] + 2) >> 2;
-            // do the same for stride
-            output[output_position + len] = (3 * window_far[0] + window_far[1] + 2) >> 2;
-            output[output_position + len + 1] = (3 * window_far[1] + window_far[0] + 2) >> 2;
-
-            pos += 1;
-            output_position += 2;
+            let sample = 3 * input_window[1] + 2;
+    
+            output_window[0] = (sample + input_window[0]) >> 2;
+    
+            output_window[1] = (sample + input_window[2]) >> 2;
         }
+        *unwritten.last_mut().unwrap() = input[pos];
+        
+        for (input_window,output_window) in input[pos-v/2+stride-2..pos+stride].windows(3).zip(unwritten_stride.chunks_exact_mut(2)){
+            let input_window: &[i16; 3] = input_window.try_into().unwrap();
 
-        output_position += len;
+            let sample = 3 * input_window[1] + 2;
+    
+            output_window[0] = (sample + input_window[0]) >> 2;
+    
+            output_window[1] = (sample + input_window[2]) >> 2;
+        }
+        
+        *unwritten_stride.last_mut().unwrap() = input[pos];
+        
+    
+
+        output_position += len+v;
+        pos+=v/2;
+        
         if modify_stride
         {
             stride = input.len() / 8;
