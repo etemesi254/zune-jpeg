@@ -196,8 +196,8 @@ fn color_convert_ycbcr(
     let stride = width * output_colorspace.num_components();
 
     let mut end = stride;
-
-    let mut temp_area = vec![0; width_chunk * output_colorspace.num_components()];
+    // over allocate to account for fill bytes
+    let mut temp_area = vec![0; width_chunk * output_colorspace.num_components()+128];
 
     // We need to chunk per width to ensure we can discard extra values at the end of the width.
     // Since the encoder may pad bits to ensure the width is a multiple of 8.

@@ -118,6 +118,10 @@ pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
             .zip(out_near.iter_mut())
             .zip(remainder.iter_mut())
         {
+            // Yes this can be easily accelerated, with SSE or AVX,
+            // but it's a maintenance overhead and the compiler does an amazing work
+            // here so Id rather not do it (even libjpeg doesn't :) )
+
             // near row
             *on = ((*near) * 3 + (*far) + 2) >> 2;
             // far row

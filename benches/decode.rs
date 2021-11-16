@@ -48,82 +48,82 @@ fn decode_no_samp(c: &mut Criterion)
     let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
     let data = read(a).unwrap();
-
-    c.bench_function("Baseline JPEG Decoding zune-jpeg", |b| {
+    let mut group = c.benchmark_group("No sampling");
+    group.bench_function("Baseline JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(data.as_slice())))
     });
 
-    c.bench_function("Baseline JPEG Decoding  mozjpeg", |b| {
+    group.bench_function("Baseline JPEG Decoding  mozjpeg", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 
-    c.bench_function("Baseline JPEG Decoding  imagers/jpeg-decoder", |b| {
+    group.bench_function("Baseline JPEG Decoding  imagers/jpeg-decoder", |b| {
         b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
     });
-
-
 }
-fn decode_h_samp(c:&mut Criterion){
+fn decode_h_samp(c: &mut Criterion)
+{
     let x = read(
         env!("CARGO_MANIFEST_DIR").to_string()
             + "/benches/images/speed_bench_horizontal_subsampling.jpg",
     )
-        .unwrap();
-
-    c.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
+    .unwrap();
+    let mut  group = c.benchmark_group("Horizontal Sub Sampling");
+    group.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))
     });
 
-    c.bench_function("Horizontal sampling JPEG Decoding  mozjpeg", |b| {
+    group.bench_function("Horizontal sampling JPEG Decoding  mozjpeg", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
 
-    c.bench_function(
+    group.bench_function(
         "Horizontal sampling JPEG Decoding  imagers/jpeg-decoder",
         |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
     );
 }
 
-fn decode_v_samp(c:&mut Criterion){
+fn decode_v_samp(c: &mut Criterion)
+{
     let x = read(
         env!("CARGO_MANIFEST_DIR").to_string()
             + "/benches/images/speed_bench_vertical_subsampling.jpg",
     )
-        .unwrap();
+    .unwrap();
+    let mut group = c.benchmark_group("Vertical sub sampling");
 
-    c.bench_function("Vertical sub-sampling JPEG Decoding zune-jpeg", |b| {
+    group.bench_function("Vertical sub-sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))
     });
 
-    c.bench_function("Vertical sub-sampling JPEG Decoding  mozjpeg", |b| {
+    group.bench_function("Vertical sub-sampling JPEG Decoding  mozjpeg", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
 
-    c.bench_function(
+    group.bench_function(
         "Vertical sub-sampling sampling JPEG Decoding  imagers/jpeg-decoder",
         |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
     );
 }
 
-fn decode_hv_samp(c:&mut Criterion){
+fn decode_hv_samp(c: &mut Criterion)
+{
     let x = read(
-        env!("CARGO_MANIFEST_DIR").to_string()
-            + "/benches/images/speed_bench_hv_subsampling.jpg",
+        env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_hv_subsampling.jpg",
     )
-        .unwrap();
-
-    c.bench_function("HV sampling JPEG Decoding zune-jpeg", |b| {
+    .unwrap();
+    let mut group = c.benchmark_group("HV sampling");
+    group.bench_function("HV sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))
     });
 
-    c.bench_function("HV sampling JPEG Decoding  mozjpeg", |b| {
+    group.bench_function("HV sampling JPEG Decoding  mozjpeg", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
 
-    c.bench_function(
-        "HV sampling JPEG Decoding  imagers/jpeg-decoder",
-        |b| b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice()))),
-    );
+    group.bench_function("HV sampling JPEG Decoding  imagers/jpeg-decoder", |b| {
+        b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice())))
+    });
 }
 criterion_group!(name=benches;
       config={
