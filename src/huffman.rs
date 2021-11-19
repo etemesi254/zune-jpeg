@@ -14,7 +14,6 @@ pub const HUFF_LOOKAHEAD: u8 = 9;
 pub struct HuffmanTable
 {
     // element `[0]` of each array is unused
-
     /// largest code of length k
     pub(crate) maxcode: [i32; 18],
     /// offset for codes of length k

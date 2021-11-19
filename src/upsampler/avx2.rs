@@ -219,7 +219,6 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
     let end = (input.len() >> 7) - 1;
     // some calculations to determine how much will not be written per MCU.
     let v = (output.len() / 16) - (end * 32);
-    let mut x=0;
 
 
     // we need to iterate row wise
@@ -273,8 +272,8 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
         let c = a.len()-v;
     
         // areas the vector code didn't touch
-        let mut unwritten = &mut a[c..];
-        let mut unwritten_stride = &mut b[len-v..len];
+        let unwritten = &mut a[c..];
+        let unwritten_stride = &mut b[len-v..len];
      
         
         for (input_window,output_window) in input[pos-v/2-2..pos].windows(3).zip(unwritten.chunks_exact_mut(2)){
@@ -298,7 +297,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
             output_window[1] = (sample + input_window[2]) >> 2;
         }
         
-        *unwritten_stride.last_mut().unwrap() = input[pos];
+        *unwritten_stride.last_mut().unwrap() = input[pos+stride];
         
     
 
@@ -309,7 +308,6 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
         {
             stride = input.len() / 8;
             modify_stride = false;
-            x=v;
 
         }
         if j == 6
@@ -319,7 +317,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
 
             // since there is no more row to look ahead using stride.
             stride = 0;
-            x=0;
+
         }
         // set some manually
         output[output_position - len] = output[output_position - len + 1];

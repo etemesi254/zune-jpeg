@@ -68,7 +68,7 @@ fn decode_h_samp(c: &mut Criterion)
             + "/benches/images/speed_bench_horizontal_subsampling.jpg",
     )
     .unwrap();
-    let mut  group = c.benchmark_group("Horizontal Sub Sampling");
+    let mut group = c.benchmark_group("Horizontal Sub Sampling");
     group.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))
     });
