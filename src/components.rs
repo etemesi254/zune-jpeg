@@ -37,6 +37,8 @@ pub(crate) struct Components
     pub up_sampler: UpSampler,
     /// How pixels do we need to go to get to the next line?
     pub width_stride: usize,
+    /// Component ID for progressive
+    pub(crate) id: u8,
 }
 
 impl Components
@@ -88,19 +90,25 @@ impl Components
 
         Ok(Components {
             component_id: id,
+
             vertical_sample,
             horizontal_sample,
+
             quantization_table_number,
+
             // These two will be set with sof marker
             dc_huff_table: 0,
             ac_huff_table: 0,
 
             quantization_table: Aligned32([0; 64]),
+
             dc_pred: 0,
             up_sampler: upsample_no_op,
             // calculated again at a later point, when all data needed
             // is available
             width_stride: horizontal_sample,
+
+            id: a[0],
         })
     }
 }
