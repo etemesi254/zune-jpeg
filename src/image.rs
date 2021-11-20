@@ -118,6 +118,8 @@ pub struct Decoder
     pub(crate) ah: u8,
     /// Successive approximation bit position low
     pub(crate) al: u8,
+    /// Number of components.
+    pub(crate) ns: u8,
 
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
@@ -130,6 +132,8 @@ pub struct Decoder
     pub(crate) color_convert: ColorConvertPtr,
     // Color convert function which acts on 16 YcbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
+
+    pub(crate) z_order: [usize; 4],
 }
 
 impl Default for Decoder
@@ -160,6 +164,7 @@ impl Default for Decoder
             se: 0,
             ah: 0,
             al: 0,
+            ns: 0,
 
             // Function pointers
             idct_func: choose_idct_func(),
@@ -175,6 +180,8 @@ impl Default for Decoder
             // Store MCU blocks
             // This should probably be changed..
             mcu_block: [vec![], vec![], vec![]],
+
+            z_order: [0; 4],
         }
     }
 }

@@ -64,7 +64,6 @@ where
         buf.read_exact(&mut symbols).map_err(|x| {
             DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
         })?;
-
         length_read += 17 + symbols_sum;
 
         // store
@@ -311,6 +310,7 @@ where
 
     // Number of image components in scan
     let ns = read_byte(&mut buf);
+    image.ns = ns;
 
     if ls != u16::from(6 + 2 * ns)
     {
@@ -319,7 +319,7 @@ where
         ));
     }
     // Check number of components.
-    // Currently ths library doesn't support images with more than # components
+    // Currently ths library doesn't support images with more than 4 components
     if !(1..4).contains(&ns)
     {
         return Err(DecodeErrors::SosError(format!(
@@ -338,16 +338,26 @@ where
     for i in 0..ns
     {
         // CS_i parameter, I don't need it so I might as well delete it
-        let _ = read_byte(&mut buf);
+        let id = read_byte(&mut buf);
 
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
         // lower four bits contain ac huffman destination table
         let y = read_byte(&mut buf);
-
+        let mut j = 0;
+        while j < image.info.components
+        {
+            if image.components[j as usize].id == id
+            {
+                break;
+            }
+            j += 1;
+        }
         image.components[usize::from(i)].dc_huff_table = usize::from((y >> 4) & 0xF);
 
         image.components[usize::from(i)].ac_huff_table = usize::from(y & 0xF);
+        image.z_order[i as usize] = j as usize;
+        //println!("{},{},{}",i,j,ns);
     }
 
     // Collect the component spec parameters
@@ -364,12 +374,12 @@ where
         // End of spectral selection
         image.se = read_byte(&mut buf) & 63;
 
-        if image.se > image.ss
-        {
-            return Err(DecodeErrors::SosError(
-                "End of spectral section smaller than start of spectral selection".to_string(),
-            ));
-        }
+        // if image.se > image.ss
+        // {
+        //     return Err(DecodeErrors::SosError(
+        //         "End of spectral section smaller than start of spectral selection".to_string(),
+        //     ));
+        // }
         let bit_approx = read_byte(&mut buf);
 
         // successive approximation bit position high
