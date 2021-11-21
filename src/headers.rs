@@ -72,12 +72,12 @@ where
             0 =>
             {
                 decoder.dc_huffman_tables[index] =
-                    Some(HuffmanTable::new(&num_symbols, symbols, true)?);
+                    Some(HuffmanTable::new(&num_symbols, symbols, true,decoder.is_progressive)?);
             }
             _ =>
             {
                 decoder.ac_huffman_tables[index] =
-                    Some(HuffmanTable::new(&num_symbols, symbols, false)?);
+                    Some(HuffmanTable::new(&num_symbols, symbols, false,decoder.is_progressive)?);
             }
         }
     }
@@ -353,9 +353,9 @@ where
             }
             j += 1;
         }
-        image.components[usize::from(i)].dc_huff_table = usize::from((y >> 4) & 0xF);
+        image.components[usize::from(j)].dc_huff_table = usize::from((y >> 4) & 0xF);
 
-        image.components[usize::from(i)].ac_huff_table = usize::from(y & 0xF);
+        image.components[usize::from(j)].ac_huff_table = usize::from(y & 0xF);
         image.z_order[i as usize] = j as usize;
         //println!("{},{},{}",i,j,ns);
     }
