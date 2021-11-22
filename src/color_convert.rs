@@ -47,10 +47,11 @@ pub use crate::color_convert::sse::{
 };
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace};
 
-pub mod avx;
+mod avx;
 mod scalar;
-pub mod sse;
+mod sse;
 
+pub use scalar::{ycbcr_to_grayscale,ycbcr_to_ycbcr};
 /// This function determines the best color-convert function to carry out
 /// based on the colorspace needed
 
