@@ -22,11 +22,11 @@
 
 #![cfg(feature = "x86")]
 #![allow(
-    clippy::wildcard_imports,
-    clippy::cast_possible_truncation,
-    clippy::too_many_arguments,
-    clippy::inline_always,
-    clippy::doc_markdown
+clippy::wildcard_imports,
+clippy::cast_possible_truncation,
+clippy::too_many_arguments,
+clippy::inline_always,
+clippy::doc_markdown
 )]
 
 #[cfg(target_arch = "x86")]
@@ -63,7 +63,6 @@ pub union YmmRegister
 /// - `out`: The output  array where we store our converted items
 /// - `offset`: The position from 0 where we write these RGB values
 #[inline(always)]
-
 pub fn ycbcr_to_rgb_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
@@ -78,7 +77,6 @@ pub fn ycbcr_to_rgb_avx2(
 #[inline]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
-
 unsafe fn ycbcr_to_rgb_avx2_1(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
@@ -88,21 +86,25 @@ unsafe fn ycbcr_to_rgb_avx2_1(
     // This is badly vectorised in AVX2,
     // With it extracting values from ymm to xmm registers
     // Hence it might be a tad slower than sse(9 more instructions)
-    for i in 0..16
+
+    // check if we have enough space to write.
+    // tho this does a double check , first whether offset + 48 is less than offset which is useless
+    // and whether it's in range, i wish the former could be overriden.
+    let tmp: &mut [u8; 48] = out.get_mut(*offset..*offset + 48).expect("Slice to small cannot write").try_into().unwrap();
+    let mut j = 0;
+    let mut i = 0;
+    while i < 48
     {
-        // Reason
-        //  - Bounds checking will prevent autovectorization of this
-        // Safety
-        // - Array is pre initialized and the way this is called ensures
-        // it will never go out of bounds
-        *out.get_unchecked_mut(*offset) = r.array[i] as u8;
 
-        *out.get_unchecked_mut(*offset + 1) = g.array[i] as u8;
+        tmp[i] = r.array[j] as u8;
 
-        *out.get_unchecked_mut(*offset + 2) = b.array[i] as u8;
-
-        *offset += 3;
+        tmp[i + 1] = g.array[j] as u8;
+        tmp[i + 2] = b.array[j] as u8;
+        i += 3;
+        j += 1;
     }
+
+    *offset += 48;
 }
 
 /// Baseline implementation of YCBCR to RGB for avx,
@@ -119,7 +121,6 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 #[inline]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
-
 pub unsafe fn ycbcr_to_rgb_baseline(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
 ) -> (YmmRegister, YmmRegister, YmmRegister)
@@ -198,7 +199,6 @@ pub unsafe fn ycbcr_to_rgb_baseline(
 ///
 /// This is used by the `ycbcr_to_rgba_avx` and `ycbcr_to_rgbx` conversion
 /// routines
-
 pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
 ) -> (__m256i, __m256i, __m256i)
@@ -263,7 +263,6 @@ pub unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 }
 
 #[inline(always)]
-
 pub fn ycbcr_to_rgba_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
@@ -282,8 +281,7 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     offset: &mut usize,
 )
 {
-
-    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y,cb,cr);
+    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
     // set alpha channel to 255 for opaque
 
@@ -292,10 +290,10 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
     let d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
-                                                            // transpose and interleave channels
+    // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-                                        // final transpose
+    // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
@@ -313,11 +311,14 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
 
     let n = _mm256_blend_epi32::<0b1111_0000>(k, l);
 
-    // Store
-    // Use streaming instructions to prevent polluting the cache
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), m);
 
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), n);
+    // check if we have enough space to write.
+    let tmp: &mut [u8; 64] = &mut out.get(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    // Store
+    // Use streaming instructions to prevent polluting the cache?
+    _mm256_storeu_si256(tmp.as_mut_ptr().cast(), m);
+
+    _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), n);
 
     *offset += 64;
 }
@@ -331,7 +332,6 @@ pub unsafe fn ycbcr_to_rgba_unsafe(
 /// a 4 way interleave instead of a three way interleave, the code is simple
 /// to vectorize hence this is faster than YcbCr -> RGB conversion
 #[inline(always)]
-
 pub fn ycbcr_to_rgbx_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
 )
@@ -351,17 +351,16 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
     offset: &mut usize,
 )
 {
-
-    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y,cb,cr);
+    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
-                                       // Set alpha channel to random things, Mostly I see it using the b values
+    // Set alpha channel to random things, Mostly I see it using the b values
     let d = _mm256_packus_epi16(b, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
-                                                              // transpose and interleave channels
+    // transpose and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-                                        // final transpose
+    // final transpose
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
@@ -381,11 +380,13 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
 
     let n = _mm256_blend_epi32::<0b1111_0000>(k, l);
 
+    // check if we have enough space to write.
+    let v: &mut [u8; 64] = &mut out.get(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
     // Store
     // Use streaming instructions to prevent polluting the cache
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset).cast(), m);
+    _mm256_storeu_si256(v.as_mut_ptr().cast(), m);
 
-    _mm256_storeu_si256(out.as_mut_ptr().add(*offset + 32).cast(), n);
+    _mm256_storeu_si256(v[32..].as_mut_ptr().cast(), n);
 
     *offset += 64;
 }
@@ -397,7 +398,6 @@ pub unsafe fn ycbcr_to_rgbx_unsafe(
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-
 unsafe fn clamp_avx(reg: __m256i) -> __m256i
 {
     // the lowest value
@@ -412,7 +412,6 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i
 }
 
 #[inline]
-
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
 {
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
