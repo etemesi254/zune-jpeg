@@ -3,6 +3,7 @@ use std::convert::TryInto;
 
 use crate::components::Components;
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
+use crate::color_convert::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
@@ -73,78 +74,12 @@ pub(crate) fn post_process(
         (ColorSpace::YCbCr, ColorSpace::GRAYSCALE) =>
             {
 
-                // Convert i16's to u8's
-                let temp_output = unprocessed[0].iter().map(|x| *x as u8).collect::<Vec<u8>>();
-                // chunk according to width.
-
-                let width_mcu = unprocessed[0].len() / width;
-
-                let width_chunk = unprocessed[0].len() / width_mcu;
-
-                let mut start = 0;
-
-                let mut end = width;
-
-                for chunk in temp_output.chunks_exact(width_chunk) {
-                    // copy data, row wise, we do it row wise to discard fill bits if the
-                    // image has an uneven width not divisible by 8.
-
-                    output[start..end].copy_from_slice(&chunk[0..width]);
-
-                    start += width;
-                    end += width;
-                }
+                ycbcr_to_grayscale(&unprocessed[0],width,output);
             }
 
         (ColorSpace::YCbCr, ColorSpace::YCbCr) =>
             {
-                // copy to a temporary vector.
-
-                let mcu_chunks = unprocessed[0].len() / (h_samp * v_samp);
-
-
-                // pixels we write per width. since this is YcbCr we write
-                // width times color components.
-                let stride = width * 3;
-
-                let mut start = 0;
-
-                let mut end = width * 3;
-
-                let addition = width * 3;
-
-                // width which accounts number of fill bytes
-                let width_chunk = mcu_chunks >> 3;
-                // vector for temporary storage.
-                let mut temp_output = vec![0; width_chunk * 3];
-
-
-                for ((y_chunk, cb_chunk), cr_chunk) in unprocessed[0]
-                    .chunks_exact(width_chunk)
-                    .zip(unprocessed[1].chunks_exact(width_chunk))
-                    .zip(unprocessed[2].chunks_exact(width_chunk))
-                {
-                    // OPTIMIZE-TIP: Don't do loops in Rust, use iterators in such manners to ensure super
-                    // powers on optimization.
-                    // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
-                    // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
-
-                    for (((y, cb), cr), out) in y_chunk.iter()
-                        .zip(cb_chunk.iter())
-                        .zip(cr_chunk.iter())
-                        .zip(temp_output.chunks_exact_mut(3))
-                    {
-                        out[0] = *y as u8;
-                        out[1] = *cb as u8;
-                        out[2] = *cr as u8;
-                    }
-
-                    output[start..end].copy_from_slice(&temp_output[0..stride]);
-
-                    start += addition;
-
-                    end += addition;
-                }
+                ycbcr_to_ycbcr(&unprocessed,width,h_samp,v_samp,output);
             }
 
         (
