@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{BufRead, Cursor};
 
 use crate::bitstream::BitStream;
 use crate::errors::DecodeErrors;
@@ -39,7 +39,6 @@ impl Decoder
         // if marker is EOI, we are done, otherwise continue scanning.
         'eoi: while marker != Marker::EOI
         {
-            println!("{:?}", marker);
             match marker
             {
                 Marker::DHT =>
@@ -51,27 +50,31 @@ impl Decoder
                     // after every SOS, marker, read data aSOS parameters and
                     // parse data for that scan.
                     parse_sos(reader, self)?;
+
                     stream.update_progressive_params(self.ah, self.al, self.ss, self.se);
+
                     self.parse_entropy_coded_data(reader, &mut stream)?;
                     // extract marker, might either indicate end of image or we continue
                     // scanning(hence the continue statement to determine).
 
                     let tmp_marker = self.get_marker(reader, &stream);
-
                     if tmp_marker.is_none()
                     {
-                        let end_pos = reader.get_ref().len();
-                        let mut curr_position = reader.position() as usize;
-                        while curr_position < end_pos - 1
+                        let length = reader.get_ref().len();
+                        let  mut t = reader.position() as usize;
+                        while t<length
                         {
                             let v = read_byte(reader);
                             if v == 255
                             {
                                 let r = read_byte(reader);
-                                marker = Marker::from_u8(r).unwrap();
-                                break;
+                                if r != 0
+                                {
+                                    marker = Marker::from_u8(r).unwrap();
+                                    break;
+                                }
                             }
-                            curr_position += 1;
+                            t+=1;
                         }
                     }
                     else
@@ -83,7 +86,6 @@ impl Decoder
                 }
                 _ =>
                 {
-                    println!("{:?}", marker);
                     break 'eoi;
                 }
             }
@@ -100,8 +102,7 @@ impl Decoder
     {
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-        println!("{}",self.ns);
-        if  self.ns != 1
+        if self.ns != 1
         {
             // Interleaved scan
 
@@ -114,7 +115,8 @@ impl Decoder
                     // process scan n elements in order
                     for k in 0..self.ns
                     {
-                        let component = &mut self.components[k as usize];
+                        let n = self.z_order[k as usize];
+                        let component = &mut self.components[n];
 
                         let huff_table = self.dc_huffman_tables.get(component.dc_huff_table)
                             .expect("No DC table for component").as_ref().unwrap();
@@ -127,20 +129,18 @@ impl Decoder
                                 let y2 = i * component.vertical_sample + v_samp;
                                 let position = 64 * (x2 + y2 * component.width_stride / 8);
                                 // data will contain the position for this coefficient in our array.
-                                let data = &mut self.mcu_block[k as usize][position];
-                                if !stream.decode_prog_dc(reader, huff_table, data,
-                                                          &mut component.dc_pred)?
-                                {
-                                    return Ok(false);
-                                }
+                                let data = &mut self.mcu_block[n as usize][position];
+
+                                stream.decode_prog_dc(reader, huff_table, data,
+                                                          &mut component.dc_pred)?;
+
+
                             }
                         }
                     }
                 }
             }
-        }
-        else
-        {
+        } else {
             // non interleaved data, process one block at a time in trivial scanline order
             let mcu_width = ((self.info.width + 7) / 8) as usize;
 
@@ -156,23 +156,21 @@ impl Decoder
 
                     if self.ss == 0
                     {
-                        let pos = self.components[k as usize].dc_huff_table;
+                        let pos = self.components[k].dc_huff_table;
 
                         let dc_table = self.dc_huffman_tables
                             .get(pos).unwrap().as_ref().unwrap();
 
-                        let dc_pred = &mut self.components[k as usize].dc_pred;
+                        let dc_pred = &mut self.components[k].dc_pred;
 
-                        if !stream.decode_prog_dc(reader, dc_table, &mut data[0], dc_pred)?
-                        {
-                            return Ok(false);
-                        }
-                    }
-                    else
-                    {
-                        let pos = self.components[k as usize].ac_huff_table;
+                        stream.decode_prog_dc(reader, dc_table, &mut data[0], dc_pred)?;
+
+
+                    } else {
+                        let pos = self.components[k].ac_huff_table;
                         let ac_table = self.ac_huffman_tables.get(pos)
                             .unwrap().as_ref().unwrap();
+
                         if !stream.decode_prog_ac(reader, ac_table, data)?
                         {
                             return Ok(false);
