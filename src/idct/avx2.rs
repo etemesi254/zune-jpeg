@@ -65,7 +65,7 @@ unsafe fn dequantize_and_idct_int_avx2(
     v_samp: usize,
 ) -> Vec<i16>
 {
-    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len() );
+    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len());
 
     // calculate position
     // inside This is still slow because cache misses
@@ -132,11 +132,10 @@ unsafe fn dequantize_and_idct_int_avx2(
 
                 // Do another load for the first row, we don't want to check DC value, because
                 // we only care about AC terms
-                let tmp_load = _mm_loadu_si128(vector[1..8].as_ptr().cast());
+                let mut zero_test = _mm_loadu_si128(vector[1..8].as_ptr().cast());
 
                 // To test for zeroes, we use bitwise OR,operations, a| a => 0 if a is zero, so
                 // if all items are zero, the resulting value of X should be zero
-                let mut zero_test = _mm_or_si128(tmp_load, tmp_load);
 
                 zero_test = _mm_or_si128(rw1, zero_test);
 

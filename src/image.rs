@@ -12,7 +12,7 @@ use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
-use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
+use crate::misc::{Aligned32, ColorSpace, read_byte, read_u16_be, SOFMarkers};
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical,
 };
@@ -118,6 +118,8 @@ pub struct Decoder
     pub(crate) ah: u8,
     /// Successive approximation bit position low
     pub(crate) al: u8,
+    /// Number of components.
+    pub(crate) ns: u8,
 
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
@@ -130,6 +132,12 @@ pub struct Decoder
     pub(crate) color_convert: ColorConvertPtr,
     // Color convert function which acts on 16 YcbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
+
+    pub(crate) z_order: [usize; 4],
+
+    /// restart markers
+    pub(crate) restart_interval: usize,
+    pub(crate) todo: usize,
 }
 
 impl Default for Decoder
@@ -160,6 +168,7 @@ impl Default for Decoder
             se: 0,
             ah: 0,
             al: 0,
+            ns: 0,
 
             // Function pointers
             idct_func: choose_idct_func(),
@@ -175,6 +184,11 @@ impl Default for Decoder
             // Store MCU blocks
             // This should probably be changed..
             mcu_block: [vec![], vec![], vec![]],
+
+            z_order: [0; 4],
+
+            restart_interval: 0,
+            todo: 0x7fffffff,
         }
     }
 }
@@ -203,8 +217,8 @@ impl Decoder
     /// Decode a valid jpeg file
     ///
     pub fn decode_file<P>(&mut self, file: P) -> Result<Vec<u8>, DecodeErrors>
-    where
-        P: AsRef<Path> + Clone,
+        where
+            P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file)?);
@@ -248,8 +262,8 @@ impl Decoder
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
-    where
-        R: Read + BufRead,
+        where
+            R: Read + BufRead,
     {
         let mut buf = buf;
 
@@ -281,82 +295,87 @@ impl Decoder
                     match m
                     {
                         Marker::SOF(0 | 2) =>
-                        {
-                            let marker = {
-                                // choose marker
-                                if m == Marker::SOF(0)
-                                {
-                                    SOFMarkers::BaselineDct
-                                }
-                                else
-                                {
-                                    self.is_progressive = true;
+                            {
+                                let marker = {
+                                    // choose marker
+                                    if m == Marker::SOF(0)
+                                    {
+                                        SOFMarkers::BaselineDct
+                                    } else {
+                                        self.is_progressive = true;
 
-                                    SOFMarkers::ProgressiveDctHuffman
-                                }
-                            };
-                            info!("Image encoding scheme =`{:?}`", marker);
+                                        SOFMarkers::ProgressiveDctHuffman
+                                    }
+                                };
+                                info!("Image encoding scheme =`{:?}`", marker);
 
-                            // get components
-                            parse_start_of_frame(&mut buf, marker, self)?;
-                        }
+                                // get components
+                                parse_start_of_frame(&mut buf, marker, self)?;
+                            }
                         // Start of Frame Segments not supported
                         Marker::SOF(v) =>
-                        {
-                            let feature = UnsupportedSchemes::from_int(v);
-
-                            if let Some(feature) = feature
                             {
-                                return Err(DecodeErrors::Unsupported(feature));
-                            }
+                                let feature = UnsupportedSchemes::from_int(v);
 
-                            return Err(DecodeErrors::Format(
-                                "Unsupported image format".to_string(),
-                            ));
-                        }
+                                if let Some(feature) = feature
+                                {
+                                    return Err(DecodeErrors::Unsupported(feature));
+                                }
+
+                                return Err(DecodeErrors::Format(
+                                    "Unsupported image format".to_string(),
+                                ));
+                            }
                         // APP(0) segment
                         Marker::APP(_) =>
-                        {
-                            parse_app(&mut buf, m, &mut self.info)?;
-                        }
+                            {
+                                parse_app(&mut buf, m, &mut self.info)?;
+                            }
                         // Quantization tables
                         Marker::DQT =>
-                        {
-                            parse_dqt(self, &mut buf)?;
-                        }
+                            {
+                                parse_dqt(self, &mut buf)?;
+                            }
                         // Huffman tables
                         Marker::DHT =>
-                        {
-                            parse_huffman(self, &mut buf)?;
-                        }
+                            {
+                                parse_huffman(self, &mut buf)?;
+                            }
                         // Start of Scan Data
                         Marker::SOS =>
-                        {
-                            parse_sos(&mut buf, self)?;
+                            {
+                                parse_sos(&mut buf, self)?;
 
-                            // break after reading the start of scan.
-                            // what follows is the image data
-                            break;
-                        }
+                                // break after reading the start of scan.
+                                // what follows is the image data
+                                break;
+                            }
 
                         Marker::DAC | Marker::DNL =>
-                        {
-                            return Err(DecodeErrors::Format(format!(
-                                "Parsing of the following header `{:?}` is not supported,\
+                            {
+                                return Err(DecodeErrors::Format(format!(
+                                    "Parsing of the following header `{:?}` is not supported,\
                                 cannot continue",
-                                m
-                            )));
+                                    m
+                                )));
+                            }
+                        Marker::DRI => {
+                            if read_u16_be(buf)? != 4 {
+                                return Err(DecodeErrors::Format("Bad DRI length, Corrupt JPEG".to_string()));
+                            }
+                            self.restart_interval = usize::from(read_u16_be(buf)?);
+                           self.todo = self.restart_interval;
                         }
                         _ =>
-                        {
-                            if log_enabled!(log::Level::Debug)
                             {
-                                warn!(
+                                if log_enabled!(log::Level::Debug)
+                                {
+                                    warn!(
                                     "Capabilities for processing marker \"{:?}\" not implemented",
                                     m
                                 );
-                            };
-                        }
+                                };
+                            }
                     }
                 }
             }
@@ -383,9 +402,7 @@ impl Decoder
         if self.is_progressive
         {
             self.decode_mcu_ycbcr_progressive(&mut buf)
-        }
-        else
-        {
+        } else {
             self.decode_mcu_ycbcr_baseline(&mut buf)
         }
     }
@@ -421,13 +438,13 @@ impl Decoder
         match colorspace
         {
             ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA =>
-            {
-                let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
+                {
+                    let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
 
-                self.color_convert_16 = func_ptr.0;
+                    self.color_convert_16 = func_ptr.0;
 
-                self.color_convert = func_ptr.1;
-            }
+                    self.color_convert = func_ptr.1;
+                }
             // do nothing for others
             _ => (),
         }
@@ -447,44 +464,44 @@ impl Decoder
         match (self.h_max, self.v_max)
         {
             (2, 1) =>
-            {
-                self.sub_sample_ratio = SubSampRatios::H;
-                // horizontal sub-sampling
-                info!("Horizontal sub-sampling (2,1)");
+                {
+                    self.sub_sample_ratio = SubSampRatios::H;
+                    // horizontal sub-sampling
+                    info!("Horizontal sub-sampling (2,1)");
 
-                let up_sampler = choose_horizontal_samp_function();
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = up_sampler);
-            }
+                    let up_sampler = choose_horizontal_samp_function();
+                    self.components[1..]
+                        .iter_mut()
+                        .for_each(|x| x.up_sampler = up_sampler);
+                }
             (1, 2) =>
-            {
-                self.sub_sample_ratio = SubSampRatios::V;
-                // Vertical sub-sampling
-                info!("Vertical sub-sampling (1,2)");
+                {
+                    self.sub_sample_ratio = SubSampRatios::V;
+                    // Vertical sub-sampling
+                    info!("Vertical sub-sampling (1,2)");
 
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = upsample_vertical);
-            }
+                    self.components[1..]
+                        .iter_mut()
+                        .for_each(|x| x.up_sampler = upsample_vertical);
+                }
             (2, 2) =>
-            {
-                self.sub_sample_ratio = SubSampRatios::HV;
-                // vertical and horizontal sub sampling
-                info!("Vertical and horizontal sub-sampling(2,2)");
+                {
+                    self.sub_sample_ratio = SubSampRatios::HV;
+                    // vertical and horizontal sub sampling
+                    info!("Vertical and horizontal sub-sampling(2,2)");
 
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = choose_hv_samp_function());
-            }
+                    self.components[1..]
+                        .iter_mut()
+                        .for_each(|x| x.up_sampler = choose_hv_samp_function());
+                }
             (_, _) =>
-            {
-                // no op. Do nothing
-                // Jokes , panic...
-                return Err(DecodeErrors::Format(
-                    "Unknown down-sampling method, cannot continue".to_string(),
-                ));
-            }
+                {
+                    // no op. Do nothing
+                    // Jokes , panic...
+                    return Err(DecodeErrors::Format(
+                        "Unknown down-sampling method, cannot continue".to_string(),
+                    ));
+                }
         }
 
         return Ok(());

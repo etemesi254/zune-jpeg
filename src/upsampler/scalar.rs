@@ -2,7 +2,6 @@
 ///
 /// The up-sampling algorithm used is libjpeg-turbo `fancy_upsampling` which is
 /// a linear interpolation or triangle filter, see module docs for explanation
-#[inline(always)] // for upsample-horizontal-vertical
 pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 {
     let mut out = vec![0; output_len];
@@ -62,7 +61,6 @@ pub fn upsample_horizontal(input: &[i16], output_len: usize) -> Vec<i16>
 /// Vertical upsampling (which I don't trust but it works anyway)
 ///
 /// The algorithm is still a bi-linear filter with some caveats.
-#[inline(always)] // for upsample-horizontal-vertical
 pub fn upsample_vertical(input: &[i16], output_len: usize) -> Vec<i16>
 {
     // the caveats, row_near and row_far for the first row point to the same

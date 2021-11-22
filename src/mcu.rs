@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
+use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
-use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -211,7 +211,6 @@ impl Decoder
         let h_max = self.h_max;
 
         let v_max = self.v_max;
-
         // Halfway width size, used for vertical sub-sampling to write |Y2| in the right position.
         let width_stride = (self.mcu_block[0].len()) >> 1;
 
@@ -225,21 +224,26 @@ impl Decoder
         let mut chunks =
             global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
 
+        // Argument for scoped threadpools, see file docs.
         scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
             for _ in 0..mcu_height
             {
-                // Bias only affects 4:2:0(chroma quartered) sub-sampled images.
-                //
-                // It allows us to decode two MCU widths.
+                // Bias only affects 4:2:0(chroma quartered) sub-sampled images. So let me explain
                 for v in 0..bias
                 {
-                    'eoi: for j in 0..mcu_width
+                    // Ideally this should be one loop but I'm parallelizing per MCU width boys
+                    for j in 0..mcu_width
                     {
                         // iterate over components
+
                         'rst: for pos in 0..self.input_colorspace.num_components()
                         {
                             let component = &mut self.components[pos];
                             // Safety:The tables were confirmed to exist in self.check_tables();
+                            // Reason.
+                            // - These were 4 branch checks per component, for a 1080 * 1080 *3 component image
+                            //   that becomes(1080*1080*3)/(16)-> 218700 branches in the hot path. And I'm not
+                            //   paying that penalty
                             let dc_table = unsafe {
                                 self.dc_huffman_tables
                                     .get_unchecked(component.dc_huff_table)
@@ -260,82 +264,76 @@ impl Decoder
                                 for h_samp in 0..component.horizontal_sample
                                 {
                                     let mut tmp = [0; DCT_BLOCK];
-                                    // decode the MCU
-                                    let marker_in_stream = stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred);
+                                    stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
 
-                                    if !(marker_in_stream)
+                                    // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
+                                    // improves speed when we do a clone(less items to clone)
+                                    if min(self.output_colorspace.num_components() - 1, pos) == pos
                                     {
-                                        // Found a marker
-                                        // Read stream and see what marker is stored there
-                                        let marker = stream.marker.expect("No marker found");
 
-                                        match marker
-                                        {
-                                            Marker::RST(n) =>
-                                                {
-                                                    debug!("Encountered RST marker {}",n);
-                                                    // reset stream
-                                                    stream.reset();
-                                                    // Initialize dc predictions to zero for all components
-                                                    self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                                                    // Start iterating again. from position.
-                                                    break 'rst;
-                                                }
-                                            Marker::EOI =>{}
+                                        // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
-                                            _ =>
-                                                {
-                                                    return Err(DecodeErrors::MCUError(format!(
-                                                        "Marker {:?} found in bitstream, possibly corrupt jpeg",
-                                                        marker
-                                                    )));
-                                                }
-                                        }
+                                        let is_y =
+                                            usize::from(component.component_id == ComponentID::Y);
+
+                                        // This only affects 4:2:0 images.
+                                        let y_offset = is_y
+                                            * v
+                                            * (hv_width_stride
+                                            + (hv_width_stride * (component.vertical_sample - 1)));
+
+                                        let another_stride =
+                                            (width_stride * v_samp * usize::from(!is_hv))
+                                                + hv_width_stride * v_samp * usize::from(is_hv);
+
+                                        let yet_another_stride = usize::from(is_hv)
+                                            * (width_stride >> 2)
+                                            * v
+                                            * usize::from(component.component_id != ComponentID::Y);
+
+                                        // offset calculator.
+                                        let start = (j * 64 * component.horizontal_sample)
+                                            + (h_samp * 64)
+                                            + another_stride
+                                            + y_offset
+                                            + yet_another_stride;
+
+                                        self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
+
                                     }
+                                }
+                            }
+                            self.todo -= 1;
+                            // after every interleaved MCU that's a mcu, count down restart markers.
+                            if self.todo == 0 {
+                                self.todo = self.restart_interval;
+
+                                // decode the MCU
+                                if let Some(marker) = stream.marker
+                                {   // Found a marker
+                                    // Read stream and see what marker is stored there
+                                    match marker
                                     {
-                                        // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
-                                        // improves speed when we do a clone(less items to clone)
-                                        if min(self.output_colorspace.num_components() - 1, pos) == pos
-                                        {
-
-                                            // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
-                                            let is_y =
-                                                usize::from(component.component_id == ComponentID::Y);
-
-                                            // This only affects 4:2:0 images.
-                                            let y_offset = is_y
-                                                * v
-                                                * (hv_width_stride
-                                                + (hv_width_stride * (component.vertical_sample - 1)));
-
-                                            let another_stride =
-                                                (width_stride * v_samp * usize::from(!is_hv))
-                                                    + hv_width_stride * v_samp * usize::from(is_hv);
-
-                                            let yet_another_stride = usize::from(is_hv)
-                                                * (width_stride >> 2)
-                                                * v
-                                                * usize::from(component.component_id != ComponentID::Y);
-
-                                            // offset calculator.
-                                            let start = (j * 64 * component.horizontal_sample)
-                                                + (h_samp * 64)
-                                                + another_stride
-                                                + y_offset
-                                                + yet_another_stride;
-
-                                            self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
-
-                                            if marker_in_stream {
-                                                if let Some(marker) = stream.marker
-                                                {
-                                                    if marker == Marker::EOI {
-                                                        info!("Found EOI marker Wrapping up here");
-                                                        break 'eoi;
-                                                    }
-                                                };
+                                        Marker::RST(_) =>
+                                            {
+                                                // reset stream
+                                                stream.reset();
+                                                // Initialize dc predictions to zero for all components
+                                                self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                                                // Start iterating again. from position.
+                                                break 'rst;
                                             }
-                                        }
+                                        Marker::EOI =>
+                                            {
+                                                // silent pass
+                                            }
+                                        _ =>
+                                            {
+                                                return Err(DecodeErrors::MCUError(format!(
+                                                    "Marker {:?} found in bitstream, possibly corrupt jpeg",
+                                                    marker
+                                                )));
+                                            }
                                     }
                                 }
                             }

@@ -14,7 +14,6 @@ pub const HUFF_LOOKAHEAD: u8 = 9;
 pub struct HuffmanTable
 {
     // element `[0]` of each array is unused
-
     /// largest code of length k
     pub(crate) maxcode: [i32; 18],
     /// offset for codes of length k
@@ -43,8 +42,9 @@ pub struct HuffmanTable
 
 impl HuffmanTable
 {
-    pub fn new(codes: &[u8; 17], values: Vec<u8>, is_dc: bool)
-        -> Result<HuffmanTable, DecodeErrors>
+    pub fn new(
+        codes: &[u8; 17], values: Vec<u8>, is_dc: bool, is_progressive: bool,
+    ) -> Result<HuffmanTable, DecodeErrors>
     {
         let too_long_code = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
         let mut p = HuffmanTable {
@@ -56,7 +56,7 @@ impl HuffmanTable
             ac_lookup: None,
         };
 
-        p.make_derived_table(is_dc)?;
+        p.make_derived_table(is_dc, is_progressive)?;
 
         Ok(p)
     }
@@ -69,7 +69,8 @@ impl HuffmanTable
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss
     )]
-    fn make_derived_table(&mut self, is_dc: bool) -> Result<(), DecodeErrors>
+    fn make_derived_table(&mut self, is_dc: bool, is_progressive: bool)
+        -> Result<(), DecodeErrors>
     {
         // build a list of code size
         let mut huff_size = [0; 257];
@@ -124,7 +125,6 @@ impl HuffmanTable
             {
                 return Err(DecodeErrors::HuffmanDecode("Bad Huffman Table".to_string()));
             }
-
             code <<= 1;
 
             si += 1;
@@ -147,7 +147,6 @@ impl HuffmanTable
                 self.offset[l] = (p as i32) - (huff_code[p]) as i32;
 
                 p += usize::from(self.bits[l]);
-
                 // maximum code of length l
                 self.maxcode[l] = huff_code[p - 1] as i32;
             }
@@ -203,7 +202,6 @@ impl HuffmanTable
                 if s <= HUFF_LOOKAHEAD
                 {
                     // if it's lower than what we need for our lookup table create the table
-
                     let c = (huff_code[i] << (HUFF_LOOKAHEAD - s)) as usize;
 
                     let m = (1 << (HUFF_LOOKAHEAD - s)) as usize;
@@ -233,7 +231,7 @@ impl HuffmanTable
                     let mag_bits = i16::from(rs & 15);
                     // length of the bit we've read
                     let len = i16::from(huff_size[fast_v as usize]);
-                    if mag_bits == 0
+                    if mag_bits == 0 && !is_progressive
                     {
                         // special case EOB run
 
@@ -242,9 +240,12 @@ impl HuffmanTable
 
                         // To force decoding to end, increment pos by 63, simulate writing of 63 zeroes
                         // which would terminate the loop on the other end.
+
+                        // But we don't want to do that for progressive decoding since EOB has a different
+                        // meaning there
                         fast_ac[i] = (63 << 4) + len;
                     }
-                    else if (len + mag_bits) <= i16::from(HUFF_LOOKAHEAD)
+                    else if mag_bits != 0 && (len + mag_bits) <= i16::from(HUFF_LOOKAHEAD)
                     {
                         // magnitude code followed by receive_extend code
                         let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
