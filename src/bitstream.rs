@@ -1,8 +1,8 @@
 #![allow(
-clippy::if_not_else,
-clippy::similar_names,
-clippy::inline_always,
-clippy::doc_markdown
+    clippy::if_not_else,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::doc_markdown
 )]
 
 //! This file exposes a single struct that can decode a huffman encoded
@@ -40,7 +40,7 @@ use std::cmp::min;
 use std::io::Cursor;
 
 use crate::errors::DecodeErrors;
-use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
+use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -61,13 +61,13 @@ macro_rules! decode_huff {
             while $symbol > $table.maxcode[code_length as usize]
             {
                 if code_length >= 16{
-                    // symbol could not be resolved in the first 16 symbols
-                    // possibly corrupt jpeg.
+                    // symbol could not be decoded.
+                    //
+                    // We may think, lets fake zeroes, noooo
+                    // panic, because Huffman codes are sensitive, probably everything
+                    // after this will be corrupt, so no need to continue.
+                    return Err(DecodeErrors::HuffmanDecode(format!("Bad Huffman code {:b} corrupt JPEG",tmp)))
 
-                    // Fake 0 as safest possible output
-                    $symbol = 0;
-
-                    break;
                 }
                 // don't use get_bits as is it expensive, just use
                 // tmp to resolve the next symbol
@@ -152,7 +152,7 @@ impl BitStream
     ///    File/Memory buffer containing a valid JPEG stream
     ///
     /// This function will only refill if `self.count` is less than 32
-    #[inline(never)] // to many call sites
+    #[inline(always)] // to many call sites?
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
         /// Macro version of a single byte refill.
@@ -227,7 +227,8 @@ impl BitStream
             // Construct an MSB buffer whose top bits are the bitstream we are currently
             // holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
-        } else if self.marker.is_some()
+        }
+        else if self.marker.is_some()
         {
             // fill with zeroes
             self.bits_left = 63;
@@ -243,22 +244,22 @@ impl BitStream
     /// - `false` if a marker was found in the bitstream
     /// - `true` if the coefficient was successfully decoded.
     #[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::unwrap_used
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::unwrap_used
     )]
     #[inline(always)]
     fn decode_dc(
         &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
-    ) -> bool
+    ) -> Result<bool,DecodeErrors>
     {
         let (mut symbol, r);
 
         // in the instance that refill returns false,
         // it means a marker was found in the stream, stop execution..
-        if self.bits_left < 16 && !self.refill(reader)
+        if self.bits_left < 16
         {
-            return false;
+             self.refill(reader);
         };
         // look a head HUFF_LOOKAHEAD bits into the bitstream
         symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
@@ -277,7 +278,7 @@ impl BitStream
         // Update DC prediction
         *dc_prediction += symbol;
 
-        return true;
+        return Ok(true);
     }
 
     /// Decode a Minimum Code Unit(MCU) as quickly as possible
@@ -288,10 +289,6 @@ impl BitStream
     /// - ac_table: The Huffman table used to decode AC values
     /// - block: A memory region where we will write out the decoded values
     /// - DC prediction: Last DC value for this component
-    ///
-    /// # Returns
-    /// - `false` if a marker was found in the bitstream.
-    /// - `true` if coefficients were successfully decoded.
     ///
     #[allow(
     clippy::many_single_char_names,
@@ -307,13 +304,11 @@ impl BitStream
         ac_table: &HuffmanTable,
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
-    ) -> bool
+    ) -> Result<(),DecodeErrors>
     {
         // decode DC, dc prediction will contain the value
-        if !self.decode_dc(reader, dc_table, dc_prediction)
-        {
-            return false;
-        }
+        self.decode_dc(reader, dc_table, dc_prediction)?;
+
         // set dc to be the dc prediction.
         block[0] = *dc_prediction as i16;
 
@@ -372,13 +367,13 @@ impl BitStream
                 } else {
                     if r != 15
                     {
-                        return true;
+                        return Ok(());
                     }
                     pos += 16;
                 }
             }
         }
-        return true;
+        return Ok(());
     }
 
     /// Peek `look_ahead` bits ahead without discarding them from the buffer
@@ -386,8 +381,7 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
-        // for the LSB buffer peek bits doesn't require an `AND` instruction to remove/zero out top
-        // bits
+
         (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
 
@@ -422,7 +416,7 @@ impl BitStream
     pub fn decode_prog_dc(
         &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, block: &mut i16,
         dc_prediction: &mut i32,
-    ) -> Result<bool, DecodeErrors>
+    ) -> Result<(), DecodeErrors>
     {
         if self.spec_end != 0
         {
@@ -432,23 +426,24 @@ impl BitStream
         }
         if self.successive_high == 0
         {
-            if !self.decode_dc(reader, dc_table, dc_prediction)
-            {
-                return Ok(false);
-            };
+            self.decode_dc(reader, dc_table, dc_prediction)?;
+
             *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
-        } else {
+        }
+        else
+        {
             // refinement scan
             if self.bits_left < 1
             {
                 self.refill(reader);
             }
-            self.get_bit();
-
-            *block += 1 << self.successive_low;
+            if self.get_bit() == 1
+            {
+                *block += 1 << self.successive_low;
+            }
         }
 
-        return Ok(true);
+        return Ok(());
     }
 
     /// Get a single bit from the bitstream
@@ -478,15 +473,17 @@ impl BitStream
         }
         return if self.successive_high == 0
         {
-            Ok(self.decode_mcu_ac(reader, ac_table, block))
-        } else {
+            self.decode_mcu_ac(reader, ac_table, block)
+        }
+        else
+        {
             self.decode_mcu_ac_refine(reader, ac_table, block)
         };
     }
     #[inline(never)]
     pub fn decode_mcu_ac(
         &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
-    ) -> bool
+    ) -> Result<bool,DecodeErrors>
     {
         let shift = self.successive_low;
         if self.eob_run > 0
@@ -494,19 +491,17 @@ impl BitStream
             // End of band runs indicate that all ac terms are zero
             // since the buffer was initialized with zeroes, we do nothing here.
             self.eob_run -= 1;
-            return true;
+            return Ok(true);
         }
         let mut k = self.spec_start as usize;
         // same as the AC part for decode block , with a twist
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
         while k < self.spec_end as usize
         {
-            if !self.refill(reader)
-            {
-                // found a marker in the stream
-
-                return false;
-            }
+            // don't check what refill returns,
+            // but then we have to put refills in a lot of placed
+            // because of this
+            self.refill(reader);
 
             let (mut symbol, mut r);
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
@@ -546,12 +541,19 @@ impl BitStream
                     block[UN_ZIGZAG[k as usize & 63] & 63] = symbol as i16 * (1 << shift);
 
                     k += 1;
-                } else {
+                }
+                else
+                {
                     if r != 15
                     {
                         self.eob_run = 1 << r;
                         if r > 0
                         {
+                            // check if we have enough bits.
+                            if i32::from(self.bits_left) < r
+                            {
+                                self.refill(reader);
+                            }
                             self.eob_run += self.get_bits(r as u8);
                         }
                         self.eob_run -= 1;
@@ -561,7 +563,7 @@ impl BitStream
                 }
             }
         }
-        return true;
+        return Ok(true);
     }
     pub fn decode_mcu_ac_refine(
         &mut self, reader: &mut Cursor<Vec<u8>>, table: &HuffmanTable, block: &mut [i16; 64],
@@ -602,7 +604,9 @@ impl BitStream
                         // The rest of the block is handled by EOB logic
                         break;
                     }
-                } else {
+                }
+                else
+                {
                     // Size of new coeff should always be 1.
                     if symbol != 1
                     {
@@ -621,7 +625,9 @@ impl BitStream
                     {
                         // new non-zero coefficient is positive
                         symbol = bit as i32;
-                    } else {
+                    }
+                    else
+                    {
                         // the new non zero coefficient is negative
                         symbol = -bit as i32;
                     }
@@ -645,7 +651,9 @@ impl BitStream
                                 if *coefficient >= 0
                                 {
                                     *coefficient += bit;
-                                } else {
+                                }
+                                else
+                                {
                                     *coefficient -= bit;
                                 }
                             }
@@ -655,7 +663,9 @@ impl BitStream
                         {
                             self.refill(reader);
                         }
-                    } else {
+                    }
+                    else
+                    {
                         r -= 1;
 
                         if r < 0
@@ -671,7 +681,7 @@ impl BitStream
                 {
                     let pos = UN_ZIGZAG[k as usize & 63];
                     // output new non-zero coefficient.
-                    block[pos] = symbol as i16;
+                    block[pos & 63] = symbol as i16;
                 }
 
                 k += 1;
@@ -680,11 +690,14 @@ impl BitStream
         if self.eob_run > 0
         {
             self.refill(reader);
+
             while k <= self.spec_end
             {
+
                 let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
-                if *coefficient != 0 && self.get_bit() == 1 {
+                if *coefficient != 0 && self.get_bit() == 1
+                {
                     // check if we already modified it, if so do nothing, otherwise
                     // append the correction bit.
                     if (*coefficient & bit) == 0
@@ -692,7 +705,9 @@ impl BitStream
                         if *coefficient >= 0
                         {
                             *coefficient += bit;
-                        } else {
+                        }
+                        else
+                        {
                             *coefficient -= bit;
                         }
                     }
