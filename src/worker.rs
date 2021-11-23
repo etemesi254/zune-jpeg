@@ -1,9 +1,9 @@
 use std::cmp::min;
 use std::convert::TryInto;
 
+use crate::color_convert::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 use crate::components::Components;
 use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
-use crate::color_convert::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///

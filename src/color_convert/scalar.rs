@@ -144,7 +144,6 @@ pub fn ycbcr_to_rgb_16_scalar(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize,
 )
 {
-
     let mut p = 0;
     let (_, output_position) = output.split_at_mut(*pos);
 
@@ -180,7 +179,8 @@ pub fn ycbcr_to_rgb_16_scalar(
     *pos += 48;
 }
 
-pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8]) {
+pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8])
+{
     // Convert i16's to u8's
     let temp_output = y.iter().map(|x| *x as u8).collect::<Vec<u8>>();
     // chunk according to width.
@@ -193,7 +193,8 @@ pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8]) {
 
     let mut end = width;
 
-    for chunk in temp_output.chunks_exact(width_chunk) {
+    for chunk in temp_output.chunks_exact(width_chunk)
+    {
         // copy data, row wise, we do it row wise to discard fill bits if the
         // image has an uneven width not divisible by 8.
 
@@ -206,11 +207,13 @@ pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8]) {
 /// Convert YcbCr to YCbCr
 ///
 /// Basically all we do is remove fill bytes (if there) in the edges
-pub fn ycbcr_to_ycbcr(channels: &[Vec<i16>; 3], width: usize, h_samp: usize, v_samp: usize, output: &mut [u8]) {
+pub fn ycbcr_to_ycbcr(
+    channels: &[Vec<i16>; 3], width: usize, h_samp: usize, v_samp: usize, output: &mut [u8],
+)
+{
     // copy to a temporary vector.
 
     let mcu_chunks = channels[0].len() / (h_samp * v_samp);
-
 
     // pixels we write per width. since this is YcbCr we write
     // width times color components.
@@ -227,7 +230,6 @@ pub fn ycbcr_to_ycbcr(channels: &[Vec<i16>; 3], width: usize, h_samp: usize, v_s
     // vector for temporary storage.
     let mut temp_output = vec![0; width_chunk * 3];
 
-
     for ((y_chunk, cb_chunk), cr_chunk) in channels[0]
         .chunks_exact(width_chunk)
         .zip(channels[1].chunks_exact(width_chunk))
@@ -238,7 +240,8 @@ pub fn ycbcr_to_ycbcr(channels: &[Vec<i16>; 3], width: usize, h_samp: usize, v_s
         // Using indexing will cause Rust to do bounds checking and prevent some cool optimization
         // options. See this  compiler-explorer link https://godbolt.org/z/Kh3M43hYr for what I mean.
 
-        for (((y, cb), cr), out) in y_chunk.iter()
+        for (((y, cb), cr), out) in y_chunk
+            .iter()
             .zip(cb_chunk.iter())
             .zip(cr_chunk.iter())
             .zip(temp_output.chunks_exact_mut(3))

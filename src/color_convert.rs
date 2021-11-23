@@ -51,7 +51,7 @@ mod avx;
 mod scalar;
 mod sse;
 
-pub use scalar::{ycbcr_to_grayscale,ycbcr_to_ycbcr};
+pub use scalar::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 /// This function determines the best color-convert function to carry out
 /// based on the colorspace needed
 

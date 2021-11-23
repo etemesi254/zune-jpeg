@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
+use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -234,7 +234,7 @@ impl Decoder
                     // Ideally this should be one loop but I'm parallelizing per MCU width boys
                     for j in 0..mcu_width
                     {
-                        // iterate over components
+                         // iterate over components
 
                         'rst: for pos in 0..self.input_colorspace.num_components()
                         {

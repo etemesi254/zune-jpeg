@@ -22,11 +22,11 @@
 
 #![cfg(feature = "x86")]
 #![allow(
-clippy::wildcard_imports,
-clippy::cast_possible_truncation,
-clippy::too_many_arguments,
-clippy::inline_always,
-clippy::doc_markdown
+    clippy::wildcard_imports,
+    clippy::cast_possible_truncation,
+    clippy::too_many_arguments,
+    clippy::inline_always,
+    clippy::doc_markdown
 )]
 
 #[cfg(target_arch = "x86")]
@@ -90,12 +90,15 @@ unsafe fn ycbcr_to_rgb_avx2_1(
     // check if we have enough space to write.
     // tho this does a double check , first whether offset + 48 is less than offset which is useless
     // and whether it's in range, i wish the former could be overriden.
-    let tmp: &mut [u8; 48] = out.get_mut(*offset..*offset + 48).expect("Slice to small cannot write").try_into().unwrap();
+    let tmp: &mut [u8; 48] = out
+        .get_mut(*offset..*offset + 48)
+        .expect("Slice to small cannot write")
+        .try_into()
+        .unwrap();
     let mut j = 0;
     let mut i = 0;
     while i < 48
     {
-
         tmp[i] = r.array[j] as u8;
 
         tmp[i + 1] = g.array[j] as u8;
