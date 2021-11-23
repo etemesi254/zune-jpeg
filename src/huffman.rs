@@ -118,7 +118,8 @@ impl HuffmanTable
 
                 p += 1;
             }
-
+            // maximum code of length si, pre-shifted by 16-k bits
+            self.maxcode[si as usize] = (code << (16 - si)) as i32;
             // code is now 1 more than the last code used for code-length si; but
             // it must still fit in si bits, since no code is allowed to be all ones.
             if (code as i32) >= (1 << si)
@@ -147,8 +148,6 @@ impl HuffmanTable
                 self.offset[l] = (p as i32) - (huff_code[p]) as i32;
 
                 p += usize::from(self.bits[l]);
-                // maximum code of length l
-                self.maxcode[l] = huff_code[p - 1] as i32;
             }
         }
 

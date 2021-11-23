@@ -1,8 +1,8 @@
 #![allow(
-    clippy::if_not_else,
-    clippy::similar_names,
-    clippy::inline_always,
-    clippy::doc_markdown
+clippy::if_not_else,
+clippy::similar_names,
+clippy::inline_always,
+clippy::doc_markdown
 )]
 
 //! This file exposes a single struct that can decode a huffman encoded
@@ -40,7 +40,7 @@ use std::cmp::min;
 use std::io::Cursor;
 
 use crate::errors::DecodeErrors;
-use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
+use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -57,25 +57,28 @@ macro_rules! decode_huff {
             // limit, we can therefore look 16 bits ahead and try to resolve the symbol
             // starting from 1+HUFF_LOOKAHEAD bits.
             let tmp = ($stream).peek_bits::<16>() as i32;
-            $symbol = ($stream).peek_bits::<{HUFF_LOOKAHEAD + 1 }>();
-            while $symbol > $table.maxcode[code_length as usize]
-            {
-                if code_length >= 16{
-                    // symbol could not be decoded.
-                    //
-                    // We may think, lets fake zeroes, noooo
-                    // panic, because Huffman codes are sensitive, probably everything
-                    // after this will be corrupt, so no need to continue.
-                    return Err(DecodeErrors::HuffmanDecode(format!("Bad Huffman code {:b} corrupt JPEG",tmp)))
 
+            // (Credits to Sean T. Barrett stb library for this optimization)
+            // maxcode is pre-shifted 16 bytes long so that it has (16-code_length)
+            // zeroes at the end hence we do not need to shift in the inner loop.
+            while code_length <= 17{
+                if tmp < $table.maxcode[code_length as usize]{
+                    break;
                 }
-                // don't use get_bits as is it expensive, just use
-                // tmp to resolve the next symbol
-                $symbol = (tmp >> (16 - code_length-1));
-
                 code_length += 1;
 
             }
+
+            if code_length == 17{
+                // symbol could not be decoded.
+                //
+                // We may think, lets fake zeroes, noooo
+                // panic, because Huffman codes are sensitive, probably everything
+                // after this will be corrupt, so no need to continue.
+                return Err(DecodeErrors::HuffmanDecode(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",tmp)))
+            }
+
+            $symbol = tmp >> (16-code_length);
             ($symbol) = i32::from(
                 ($table).values
                     [(($symbol + ($table).offset[code_length as usize]) & 0xFF) as usize],
@@ -191,7 +194,7 @@ impl BitStream
                         if next_byte != 0x00
                         {
                             // Undo the byte append and return
-                            $buffer &= !0xf;
+                            $buffer &= !0xFF;
 
                             $bits_left -= 8;
 
@@ -227,8 +230,7 @@ impl BitStream
             // Construct an MSB buffer whose top bits are the bitstream we are currently
             // holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
-        }
-        else if self.marker.is_some()
+        } else if self.marker.is_some()
         {
             // fill with zeroes
             self.bits_left = 63;
@@ -244,14 +246,14 @@ impl BitStream
     /// - `false` if a marker was found in the bitstream
     /// - `true` if the coefficient was successfully decoded.
     #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::unwrap_used
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::unwrap_used
     )]
     #[inline(always)]
     fn decode_dc(
         &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
-    ) -> Result<bool,DecodeErrors>
+    ) -> Result<bool, DecodeErrors>
     {
         let (mut symbol, r);
 
@@ -259,7 +261,7 @@ impl BitStream
         // it means a marker was found in the stream, stop execution..
         if self.bits_left < 16
         {
-             self.refill(reader);
+            self.refill(reader);
         };
         // look a head HUFF_LOOKAHEAD bits into the bitstream
         symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
@@ -304,7 +306,7 @@ impl BitStream
         ac_table: &HuffmanTable,
         block: &mut [i16; 64],
         dc_prediction: &mut i32,
-    ) -> Result<(),DecodeErrors>
+    ) -> Result<(), DecodeErrors>
     {
         // decode DC, dc prediction will contain the value
         self.decode_dc(reader, dc_table, dc_prediction)?;
@@ -381,7 +383,6 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
-
         (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
 
@@ -429,9 +430,7 @@ impl BitStream
             self.decode_dc(reader, dc_table, dc_prediction)?;
 
             *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
-        }
-        else
-        {
+        } else {
             // refinement scan
             if self.bits_left < 1
             {
@@ -474,16 +473,14 @@ impl BitStream
         return if self.successive_high == 0
         {
             self.decode_mcu_ac(reader, ac_table, block)
-        }
-        else
-        {
+        } else {
             self.decode_mcu_ac_refine(reader, ac_table, block)
         };
     }
     #[inline(never)]
     pub fn decode_mcu_ac(
         &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
-    ) -> Result<bool,DecodeErrors>
+    ) -> Result<bool, DecodeErrors>
     {
         let shift = self.successive_low;
         if self.eob_run > 0
@@ -521,9 +518,7 @@ impl BitStream
 
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
-            }
-            else
-            {
+            } else {
                 decode_huff!(self, symbol, ac_table);
 
                 r = symbol >> 4;
@@ -541,9 +536,7 @@ impl BitStream
                     block[UN_ZIGZAG[k as usize & 63] & 63] = symbol as i16 * (1 << shift);
 
                     k += 1;
-                }
-                else
-                {
+                } else {
                     if r != 15
                     {
                         self.eob_run = 1 << r;
@@ -604,9 +597,7 @@ impl BitStream
                         // The rest of the block is handled by EOB logic
                         break;
                     }
-                }
-                else
-                {
+                } else {
                     // Size of new coeff should always be 1.
                     if symbol != 1
                     {
@@ -625,9 +616,7 @@ impl BitStream
                     {
                         // new non-zero coefficient is positive
                         symbol = bit as i32;
-                    }
-                    else
-                    {
+                    } else {
                         // the new non zero coefficient is negative
                         symbol = -bit as i32;
                     }
@@ -651,9 +640,7 @@ impl BitStream
                                 if *coefficient >= 0
                                 {
                                     *coefficient += bit;
-                                }
-                                else
-                                {
+                                } else {
                                     *coefficient -= bit;
                                 }
                             }
@@ -663,9 +650,7 @@ impl BitStream
                         {
                             self.refill(reader);
                         }
-                    }
-                    else
-                    {
+                    } else {
                         r -= 1;
 
                         if r < 0
@@ -693,7 +678,6 @@ impl BitStream
 
             while k <= self.spec_end
             {
-
                 let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
                 if *coefficient != 0 && self.get_bit() == 1
@@ -705,9 +689,7 @@ impl BitStream
                         if *coefficient >= 0
                         {
                             *coefficient += bit;
-                        }
-                        else
-                        {
+                        } else {
                             *coefficient -= bit;
                         }
                     }
