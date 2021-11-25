@@ -104,8 +104,6 @@ pub struct Decoder
     pub(crate) input_colorspace: ColorSpace,
     /// Image output_colorspace, what input colorspace should be converted to
     pub(crate) output_colorspace: ColorSpace,
-    /// Area for unprocessed values we encountered during processing
-    pub(crate) mcu_block: [Vec<i16>; MAX_COMPONENTS],
     // Progressive image details
     /// Is the image progressive?
     pub(crate) is_progressive: bool,
@@ -183,7 +181,6 @@ impl Default for Decoder
             // https://github.com/rust-lang/rfcs/pull/2920 is accepted
             // Store MCU blocks
             // This should probably be changed..
-            mcu_block: [vec![], vec![], vec![]],
 
             z_order: [0; 4],
 
