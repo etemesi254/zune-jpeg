@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
+use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
-use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -173,22 +173,6 @@ impl Decoder
         let capacity = usize::from(self.info.width + 7) * usize::from(self.info.height + 7);
 
         let component_capacity = mcu_width * DCT_BLOCK;
-        // for those pointers storing unprocessed items, zero them out here
-        for (pos, comp) in self.components.iter().enumerate()
-        {
-            // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
-
-            //NOTE: We only allocate a block if we need it, so e.g for grayscale
-            // we don't allocate for CB and Cr channels
-            if min(self.output_colorspace.num_components() - 1, pos) == pos
-            {
-                let len = component_capacity * comp.vertical_sample * comp.horizontal_sample * bias;
-                // For 4:2:0 upsampling we need to do some tweaks, reason explained in bias
-
-                self.mcu_block[pos] = vec![0; len];
-            }
-        }
-
         // Create an Arc of components to prevent cloning on every MCU width
         let global_component = Arc::new(self.components.clone());
 
@@ -212,9 +196,9 @@ impl Decoder
 
         let v_max = self.v_max;
         // Halfway width size, used for vertical sub-sampling to write |Y2| in the right position.
-        let width_stride = (self.mcu_block[0].len()) >> 1;
+        let width_stride = (component_capacity * self.components[0].vertical_sample * self.components[0].horizontal_sample * bias) >> 1;
 
-        let hv_width_stride = (self.mcu_block[0].len()) >> 2;
+        let hv_width_stride = width_stride >> 1;
         // check dc and AC tables
         self.check_tables()?;
 
@@ -228,22 +212,38 @@ impl Decoder
         scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
             for _ in 0..mcu_height
             {
-                // Bias only affects 4:2:0(chroma quartered) sub-sampled images. So let me explain
+                // faster to memset than a later memcpy
+
+                // We allocate on every mcu_height since this is sent to a separate
+                // thread (that's how we're multi-threaded and thread safe).
+
+                // This isn't allocated since 0 length vectors are
+                // not allocated so it should not be expensive.
+                let mut temporary = [vec![], vec![], vec![]];
+
+                for (pos, comp) in self.components.iter().enumerate()
+                {
+                    // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
+
+                    // Allocate only needed components.
+                    if min(self.output_colorspace.num_components() - 1, pos) == pos
+                    {
+                        let len = component_capacity * comp.vertical_sample * comp.horizontal_sample * bias;
+                        // For 4:2:0 upsampling we need to do some tweaks, reason explained in bias
+                        temporary[pos] = vec![0; len];
+                    }
+                }
+                // Bias only affects 4:2:0(chroma quartered) sub-sampled images.
                 for v in 0..bias
                 {
-                    // Ideally this should be one loop but I'm parallelizing per MCU width boys
                     for j in 0..mcu_width
                     {
-                         // iterate over components
+                        // iterate over components
 
                         'rst: for pos in 0..self.input_colorspace.num_components()
                         {
                             let component = &mut self.components[pos];
                             // Safety:The tables were confirmed to exist in self.check_tables();
-                            // Reason.
-                            // - These were 4 branch checks per component, for a 1080 * 1080 *3 component image
-                            //   that becomes(1080*1080*3)/(16)-> 218700 branches in the hot path. And I'm not
-                            //   paying that penalty
                             let dc_table = unsafe {
                                 self.dc_huffman_tables
                                     .get_unchecked(component.dc_huff_table)
@@ -263,16 +263,11 @@ impl Decoder
                             {
                                 for h_samp in 0..component.horizontal_sample
                                 {
-                                    let mut tmp = [0; DCT_BLOCK];
-                                    stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
-
-                                    // Store only needed components (i.e for YCbCr->Grayscale don't store Cb and Cr channels)
-                                    // improves speed when we do a clone(less items to clone)
-                                    if min(self.output_colorspace.num_components() - 1, pos) == pos
-                                    {
-
+                                    // only decode needed components
+                                    if min(self.output_colorspace.num_components() - 1, pos) == pos {
                                         // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
+                                        // Get position to write
                                         let is_y =
                                             usize::from(component.component_id == ComponentID::Y);
 
@@ -298,8 +293,17 @@ impl Decoder
                                             + y_offset
                                             + yet_another_stride;
 
-                                        self.mcu_block[pos][start..start + 64].copy_from_slice(&tmp);
+                                        // since we know that decode block contains zero, we
+                                        // (it's initialized every iteration we can take a memory chunk and write directly there.
+                                        // instead of allocating a temporary block and doing a copy
+                                        let tmp = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
 
+                                        stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
+                                    } else {
+                                        // component not needed, decode and discard bits
+
+                                        let mut tmp = [0; DCT_BLOCK];
+                                        stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
                                     }
                                 }
                             }
@@ -343,12 +347,10 @@ impl Decoder
                 // Clone things, to make multithreading safe
                 let component = global_component.clone();
 
-                let mut block = self.mcu_block.clone();
-
                 let next_chunk = chunks.next().unwrap();
 
                 scope.execute(move || {
-                    post_process(&mut block, &component,
+                    post_process(&mut temporary, &component,
                                  idct_func, color_convert_16, color_convert,
                                  input, output, next_chunk,
                                  mcu_width, width);
