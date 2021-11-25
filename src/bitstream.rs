@@ -56,29 +56,28 @@ macro_rules! decode_huff {
             // we know it lies somewhere between HUFF_LOOKAHEAD and 16 bits since jpeg imposes 16 bit
             // limit, we can therefore look 16 bits ahead and try to resolve the symbol
             // starting from 1+HUFF_LOOKAHEAD bits.
-            let tmp = ($stream).peek_bits::<16>() as i32;
+            $symbol = ($stream).peek_bits::<16>() as i32;
 
             // (Credits to Sean T. Barrett stb library for this optimization)
             // maxcode is pre-shifted 16 bytes long so that it has (16-code_length)
             // zeroes at the end hence we do not need to shift in the inner loop.
-            while code_length <= 17{
-                if tmp < $table.maxcode[code_length as usize]{
+            loop{
+                if $symbol < $table.maxcode[code_length as usize]{
                     break;
                 }
                 code_length += 1;
-
             }
 
             if code_length == 17{
                 // symbol could not be decoded.
                 //
-                // We may think, lets fake zeroes, noooo
+                // We may think, lets fake zeroes, noo
                 // panic, because Huffman codes are sensitive, probably everything
                 // after this will be corrupt, so no need to continue.
-                return Err(DecodeErrors::HuffmanDecode(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",tmp)))
+                return Err(DecodeErrors::HuffmanDecode(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",$symbol)))
             }
 
-            $symbol = tmp >> (16-code_length);
+            $symbol =  $symbol >> (16-code_length);
             ($symbol) = i32::from(
                 ($table).values
                     [(($symbol + ($table).offset[code_length as usize]) & 0xFF) as usize],
@@ -148,7 +147,7 @@ impl BitStream
         }
     }
 
-    /// Refill the bit buffer by (a maximum of) 48 bits (4 bytes)
+    /// Refill the bit buffer by (a maximum of) 32 bits
     ///
     /// # Arguments
     ///  - `reader`:`&mut BufReader<R>`: A mutable reference to an underlying
@@ -193,8 +192,11 @@ impl BitStream
 
                         if next_byte != 0x00
                         {
+
                             // Undo the byte append and return
-                            $buffer &= !0xFF;
+
+                            $buffer = $buffer>>8;
+
 
                             $bits_left -= 8;
 
@@ -276,7 +278,6 @@ impl BitStream
 
             symbol = huff_extend(r, symbol);
         }
-
         // Update DC prediction
         *dc_prediction += symbol;
 
