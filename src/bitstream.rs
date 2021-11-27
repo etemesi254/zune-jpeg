@@ -109,7 +109,7 @@ pub(crate) struct BitStream
     pub successive_low: u8,
     spec_start: u8,
     spec_end: u8,
-    eob_run: i32,
+    pub eob_run: i32,
 }
 
 impl BitStream
@@ -494,8 +494,8 @@ impl BitStream
         let mut k = self.spec_start as usize;
         // same as the AC part for decode block , with a twist
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
-        while k < self.spec_end as usize
-        {
+        // emulate a do while loop
+        loop {
             // don't check what refill returns,
             // but then we have to put refills in a lot of placed
             // because of this
@@ -515,7 +515,7 @@ impl BitStream
                 // run
                 k += ((fac >> 4) & 63) as usize;
                 // value
-                block[UN_ZIGZAG[min(k, 63)]] = (fac >> 10) * (1 << shift);
+                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 10) * (1 << shift);
 
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
@@ -556,6 +556,9 @@ impl BitStream
                     k += 16;
                 }
             }
+            if k > self.spec_end as usize {
+                break;
+            }
         }
         return Ok(true);
     }
@@ -569,7 +572,7 @@ impl BitStream
 
         if self.eob_run == 0
         {
-            while k <= self.spec_end
+            'top: loop
             {
                 // Decode a coefficient from the bit stream
                 self.refill(reader);
@@ -608,12 +611,9 @@ impl BitStream
                     }
                     // get sign bit
 
-                    // we take advantage of the fact that booleans are lazily evaluated in Rust
-                    // we can check if the bits are less than one , if false, we refill
+                    if self.bits_left < 1 { self.refill(reader); }
 
-                    // we again use | to ensure get bit is run regardless of the LHS value
-                    // since | are eagerly evaluated
-                    if (self.bits_left < 1 || self.refill(reader)) | (self.get_bit() != 0)
+                    if self.get_bit() == 1
                     {
                         // new non-zero coefficient is positive
                         symbol = bit as i32;
@@ -647,7 +647,7 @@ impl BitStream
                             }
                         }
                         // worst case occurs when one array needs to be refilled
-                        if k == 32
+                        if self.bits_left < 1
                         {
                             self.refill(reader);
                         }
@@ -671,6 +671,9 @@ impl BitStream
                 }
 
                 k += 1;
+                if k > self.spec_end {
+                    break 'top;
+                }
             }
         }
         if self.eob_run > 0
