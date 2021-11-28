@@ -1,8 +1,8 @@
 #![allow(
-clippy::if_not_else,
-clippy::similar_names,
-clippy::inline_always,
-clippy::doc_markdown
+    clippy::if_not_else,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::doc_markdown
 )]
 
 //! This file exposes a single struct that can decode a huffman encoded
@@ -40,7 +40,7 @@ use std::cmp::min;
 use std::io::Cursor;
 
 use crate::errors::DecodeErrors;
-use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
+use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -77,7 +77,7 @@ macro_rules! decode_huff {
                 return Err(DecodeErrors::HuffmanDecode(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",$symbol)))
             }
 
-            $symbol =  $symbol >> (16-code_length);
+            $symbol >>= (16-code_length);
             ($symbol) = i32::from(
                 ($table).values
                     [(($symbol + ($table).offset[code_length as usize]) & 0xFF) as usize],
@@ -154,7 +154,7 @@ impl BitStream
     ///    File/Memory buffer containing a valid JPEG stream
     ///
     /// This function will only refill if `self.count` is less than 32
-    #[inline(always)] // to many call sites?
+    #[inline(never)] // to many call sites?
     fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
     {
         /// Macro version of a single byte refill.
@@ -192,17 +192,13 @@ impl BitStream
 
                         if next_byte != 0x00
                         {
-
                             // Undo the byte append and return
-
-                            $buffer = $buffer>>8;
-
+                            self.buffer >>= 8;
 
                             $bits_left -= 8;
 
                             self.aligned_buffer = $buffer << (64 - $bits_left);
                             self.marker = Some(Marker::from_u8(next_byte as u8).unwrap());
-
                             return false;
                         }
                     }
@@ -232,7 +228,8 @@ impl BitStream
             // Construct an MSB buffer whose top bits are the bitstream we are currently
             // holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
-        } else if self.marker.is_some()
+        }
+        else if self.marker.is_some()
         {
             // fill with zeroes
             self.bits_left = 63;
@@ -248,9 +245,9 @@ impl BitStream
     /// - `false` if a marker was found in the bitstream
     /// - `true` if the coefficient was successfully decoded.
     #[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::unwrap_used
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::unwrap_used
     )]
     #[inline(always)]
     fn decode_dc(
@@ -431,7 +428,9 @@ impl BitStream
             self.decode_dc(reader, dc_table, dc_prediction)?;
 
             *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
-        } else {
+        }
+        else
+        {
             // refinement scan
             if self.bits_left < 1
             {
@@ -474,12 +473,14 @@ impl BitStream
         return if self.successive_high == 0
         {
             self.decode_mcu_ac(reader, ac_table, block)
-        } else {
+        }
+        else
+        {
             self.decode_mcu_ac_refine(reader, ac_table, block)
         };
     }
     #[inline(never)]
-    pub fn decode_mcu_ac(
+    fn decode_mcu_ac(
         &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
@@ -495,7 +496,8 @@ impl BitStream
         // same as the AC part for decode block , with a twist
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
         // emulate a do while loop
-        loop {
+        'block: loop
+        {
             // don't check what refill returns,
             // but then we have to put refills in a lot of placed
             // because of this
@@ -519,7 +521,9 @@ impl BitStream
 
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
-            } else {
+            }
+            else
+            {
                 decode_huff!(self, symbol, ac_table);
 
                 r = symbol >> 4;
@@ -537,7 +541,9 @@ impl BitStream
                     block[UN_ZIGZAG[k as usize & 63] & 63] = symbol as i16 * (1 << shift);
 
                     k += 1;
-                } else {
+                }
+                else
+                {
                     if r != 15
                     {
                         self.eob_run = 1 << r;
@@ -551,22 +557,24 @@ impl BitStream
                             self.eob_run += self.get_bits(r as u8);
                         }
                         self.eob_run -= 1;
+
                         break;
                     }
                     k += 16;
                 }
             }
-            if k > self.spec_end as usize {
-                break;
+            if k > self.spec_end as usize
+            {
+                break 'block;
             }
         }
         return Ok(true);
     }
-    pub fn decode_mcu_ac_refine(
+    fn decode_mcu_ac_refine(
         &mut self, reader: &mut Cursor<Vec<u8>>, table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
-        let bit = (1 << self.successive_low) as i16;
+        let bit = i16::from(1 << self.successive_low);
 
         let mut k = self.spec_start;
 
@@ -601,7 +609,9 @@ impl BitStream
                         // The rest of the block is handled by EOB logic
                         break;
                     }
-                } else {
+                }
+                else
+                {
                     // Size of new coeff should always be 1.
                     if symbol != 1
                     {
@@ -611,15 +621,20 @@ impl BitStream
                     }
                     // get sign bit
 
-                    if self.bits_left < 1 { self.refill(reader); }
+                    if self.bits_left < 1
+                    {
+                        self.refill(reader);
+                    }
 
                     if self.get_bit() == 1
                     {
                         // new non-zero coefficient is positive
-                        symbol = bit as i32;
-                    } else {
+                        symbol = i32::from(bit);
+                    }
+                    else
+                    {
                         // the new non zero coefficient is negative
-                        symbol = -bit as i32;
+                        symbol = i32::from(-bit);
                     }
                 }
 
@@ -634,16 +649,14 @@ impl BitStream
 
                     if *coefficient != 0
                     {
-                        if self.get_bit() == 1
-                        {
-                            if (*coefficient & bit as i16) == 0
+                        if self.get_bit() == 1 && (*coefficient & bit as i16) == 0 {
+                            if *coefficient >= 0
                             {
-                                if *coefficient >= 0
-                                {
-                                    *coefficient += bit;
-                                } else {
-                                    *coefficient -= bit;
-                                }
+                                *coefficient += bit;
+                            }
+                            else
+                            {
+                                *coefficient -= bit;
                             }
                         }
                         // worst case occurs when one array needs to be refilled
@@ -651,7 +664,9 @@ impl BitStream
                         {
                             self.refill(reader);
                         }
-                    } else {
+                    }
+                    else
+                    {
                         r -= 1;
 
                         if r < 0
@@ -671,7 +686,8 @@ impl BitStream
                 }
 
                 k += 1;
-                if k > self.spec_end {
+                if k > self.spec_end
+                {
                     break 'top;
                 }
             }
@@ -693,7 +709,9 @@ impl BitStream
                         if *coefficient >= 0
                         {
                             *coefficient += bit;
-                        } else {
+                        }
+                        else
+                        {
                             *coefficient -= bit;
                         }
                     }

@@ -109,15 +109,15 @@ pub struct Decoder
     pub(crate) is_progressive: bool,
 
     /// Start of spectral scan
-    pub(crate) ss: u8,
+    pub(crate) spec_start: u8,
     /// End of spectral scan
-    pub(crate) se: u8,
+    pub(crate) spec_end: u8,
     /// Successive approximation bit position high
-    pub(crate) ah: u8,
+    pub(crate) succ_high: u8,
     /// Successive approximation bit position low
-    pub(crate) al: u8,
+    pub(crate) succ_low: u8,
     /// Number of components.
-    pub(crate) ns: u8,
+    pub(crate) num_scans: u8,
 
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
@@ -162,11 +162,11 @@ impl Default for Decoder
 
             // Progressive information
             is_progressive: false,
-            ss: 0,
-            se: 0,
-            ah: 0,
-            al: 0,
-            ns: 0,
+            spec_start: 0,
+            spec_end: 0,
+            succ_high: 0,
+            succ_low: 0,
+            num_scans: 0,
 
             // Function pointers
             idct_func: choose_idct_func(),
@@ -181,7 +181,6 @@ impl Default for Decoder
             // https://github.com/rust-lang/rfcs/pull/2920 is accepted
             // Store MCU blocks
             // This should probably be changed..
-
             z_order: [0; 4],
 
             restart_interval: 0,

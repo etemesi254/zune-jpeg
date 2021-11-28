@@ -230,6 +230,7 @@ impl HuffmanTable
                     let mag_bits = i16::from(rs & 15);
                     // length of the bit we've read
                     let len = i16::from(huff_size[fast_v as usize]);
+
                     if mag_bits == 0 && !is_progressive
                     {
                         // special case EOB run
