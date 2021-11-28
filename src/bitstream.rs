@@ -574,7 +574,7 @@ impl BitStream
         &mut self, reader: &mut Cursor<Vec<u8>>, table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
-        let bit = i16::from(1 << self.successive_low);
+        let bit = (1 << self.successive_low) as i16;
 
         let mut k = self.spec_start;
 

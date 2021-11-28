@@ -100,7 +100,7 @@ impl Decoder
                         break 'eoi;
                     }
             }
-            marker = self.get_marker(reader, &mut stream).unwrap();
+            marker = get_marker(reader, &mut stream).unwrap();
         }
 
         return Ok(Vec::new());
