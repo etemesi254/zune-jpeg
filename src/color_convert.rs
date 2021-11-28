@@ -110,7 +110,8 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     return match type_need
     {
         ColorSpace::RGB => Some((scalar::ycbcr_to_rgb_16_scalar, scalar::ycbcr_to_rgb_scalar)),
-        ColorSpace::RGBA | ColorSpace::RGBX => Some((scalar::ycbcr_to_rgba_16_scalar,
+        ColorSpace::RGBA | ColorSpace::RGBX => Some((
+            scalar::ycbcr_to_rgba_16_scalar,
             scalar::ycbcr_to_rgba_scalar,
         )),
         _ => None,
