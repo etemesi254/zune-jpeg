@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
+use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -208,6 +208,8 @@ impl Decoder
         let mut chunks =
             global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
 
+        let mut tmp = [0; DCT_BLOCK];
+
         // Argument for scoped threadpools, see file docs.
         scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
             for _ in 0..mcu_height
@@ -217,8 +219,6 @@ impl Decoder
                 // We allocate on every mcu_height since this is sent to a separate
                 // thread (that's how we're multi-threaded and thread safe).
 
-                // This isn't allocated since 0 length vectors are
-                // not allocated so it should not be expensive.
                 let mut temporary = [vec![], vec![], vec![]];
 
                 for (pos, comp) in self.components.iter().enumerate()
@@ -229,11 +229,12 @@ impl Decoder
                     if min(self.output_colorspace.num_components() - 1, pos) == pos
                     {
                         let len = component_capacity * comp.vertical_sample * comp.horizontal_sample * bias;
-                        // For 4:2:0 upsampling we need to do some tweaks, reason explained in bias
+
                         temporary[pos] = vec![0; len];
                     }
                 }
                 // Bias only affects 4:2:0(chroma quartered) sub-sampled images.
+                // since we want to fetch two MCU rows before we send it to post process
                 for v in 0..bias
                 {
                     for j in 0..mcu_width
@@ -268,6 +269,7 @@ impl Decoder
                                         // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
                                         // Get position to write
+                                        // This is complex, don't even try to understand it. ~author
                                         let is_y =
                                             usize::from(component.component_id == ComponentID::Y);
 
@@ -293,16 +295,15 @@ impl Decoder
                                             + y_offset
                                             + yet_another_stride;
 
-                                        // since we know that decode block contains zero, we
-                                        // (it's initialized every iteration we can take a memory chunk and write directly there.
-                                        // instead of allocating a temporary block and doing a copy
+                                        // Get the location we will be writing to.
+
+                                        // It will always be zero since it's initialized per MCU height.
+
                                         let tmp = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
 
                                         stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
                                     } else {
                                         // component not needed, decode and discard bits
-
-                                        let mut tmp = [0; DCT_BLOCK];
                                         stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
                                     }
                                 }
@@ -330,6 +331,7 @@ impl Decoder
                                         Marker::EOI =>
                                             {
                                                 // silent pass
+
                                             }
                                         _ =>
                                             {
