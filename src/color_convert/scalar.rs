@@ -107,8 +107,7 @@ pub fn ycbcr_to_rgba_16_scalar(
 {
     let (_, output_position) = output.split_at_mut(*pos);
 
-    // Convert into a slice with 32 elements for Rust to FINALLY SEE WE WON'T GO OUT
-    // OF BOUNDS
+    // Convert into a slice with 64 elements for Rust to see we won't go out of bounds.
     let opt: &mut [u8; 64] = output_position
         .get_mut(0..64)
         .expect("Slice to small cannot write")

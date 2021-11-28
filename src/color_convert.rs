@@ -101,18 +101,16 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                     Some((ycbcr_to_rgba_sse_16, ycbcr_to_rgba_sse))
                 }
 
-                //ColorSpace::GRAYSCALE => Some((ycbcr_to_grayscale_16_sse, ycbcr_to_grayscale_8)),
                 _ => None,
             };
         }
     }
 
-    // when there is no x86 or we haven't returned by here, resort to lookup tables
+    // when there is no x86 or we haven't returned by here, resort to scalar
     return match type_need
     {
         ColorSpace::RGB => Some((scalar::ycbcr_to_rgb_16_scalar, scalar::ycbcr_to_rgb_scalar)),
-        ColorSpace::RGBA | ColorSpace::RGBX => Some((
-            scalar::ycbcr_to_rgba_16_scalar,
+        ColorSpace::RGBA | ColorSpace::RGBX => Some((scalar::ycbcr_to_rgba_16_scalar,
             scalar::ycbcr_to_rgba_scalar,
         )),
         _ => None,
