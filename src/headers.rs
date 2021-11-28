@@ -17,7 +17,7 @@ use crate::{ColorSpace, Decoder, MAX_DIMENSIONS};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names)]
-pub fn parse_huffman<R>(decoder: &mut Decoder, mut buf: &mut R) -> Result<(), DecodeErrors>
+pub(crate) fn parse_huffman<R>(decoder: &mut Decoder, mut buf: &mut R) -> Result<(), DecodeErrors>
 where
     R: Read,
 {
@@ -71,13 +71,21 @@ where
         {
             0 =>
             {
-                decoder.dc_huffman_tables[index] =
-                    Some(HuffmanTable::new(&num_symbols, symbols, true,decoder.is_progressive)?);
+                decoder.dc_huffman_tables[index] = Some(HuffmanTable::new(
+                    &num_symbols,
+                    symbols,
+                    true,
+                    decoder.is_progressive,
+                )?);
             }
             _ =>
             {
-                decoder.ac_huffman_tables[index] =
-                    Some(HuffmanTable::new(&num_symbols, symbols, false,decoder.is_progressive)?);
+                decoder.ac_huffman_tables[index] = Some(HuffmanTable::new(
+                    &num_symbols,
+                    symbols,
+                    false,
+                    decoder.is_progressive,
+                )?);
             }
         }
     }
@@ -87,7 +95,7 @@ where
 
 ///**B.2.4.1 Quantization table-specification syntax**
 #[allow(clippy::cast_possible_truncation)]
-pub fn parse_dqt<R>(decoder: &mut Decoder, buf: &mut R) -> Result<(), DecodeErrors>
+pub(crate) fn parse_dqt<R>(decoder: &mut Decoder, buf: &mut R) -> Result<(), DecodeErrors>
 where
     R: Read,
 {
@@ -266,7 +274,6 @@ where
 
         // Number of MCU's per height
         img.mcu_y = (usize::from(img.info.height) + img.mcu_height - 1) / img.mcu_height;
-
         if img.h_max != 1 || img.v_max != 1
         {
             // interleaved images have horizontal and vertical sampling factors
@@ -299,7 +306,7 @@ where
 
 /// Parse a start of scan data
 
-pub fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
 where
     R: Read + BufRead,
 {
@@ -310,7 +317,7 @@ where
 
     // Number of image components in scan
     let ns = read_byte(&mut buf);
-    image.ns = ns;
+    image.num_scans = ns;
 
     if ls != u16::from(6 + 2 * ns)
     {
@@ -369,24 +376,18 @@ where
         // Page 42
 
         // Start of spectral / predictor selection. (between 0 and 63)
-        image.ss = read_byte(&mut buf) & 63;
+        image.spec_start = read_byte(&mut buf) & 63;
 
         // End of spectral selection
-        image.se = read_byte(&mut buf) & 63;
+        image.spec_end = read_byte(&mut buf) & 63;
 
-        // if image.se > image.ss
-        // {
-        //     return Err(DecodeErrors::SosError(
-        //         "End of spectral section smaller than start of spectral selection".to_string(),
-        //     ));
-        // }
         let bit_approx = read_byte(&mut buf);
 
         // successive approximation bit position high
-        image.ah = bit_approx >> 4;
+        image.succ_high = bit_approx >> 4;
 
         // successive approximation bit position low
-        image.al = bit_approx & 0xF;
+        image.succ_low = bit_approx & 0xF;
     }
     else
     {
@@ -397,7 +398,7 @@ where
     Ok(())
 }
 
-pub fn parse_app<R>(
+pub(crate) fn parse_app<R>(
     mut buf: &mut R, marker: Marker, info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
 where
@@ -443,7 +444,6 @@ where
                 }
             }
         }
-
         _ =>
         {}
     }
