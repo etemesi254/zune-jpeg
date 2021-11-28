@@ -13,7 +13,7 @@ use crate::huffman::HuffmanTable;
 use crate::image::ImageInfo;
 use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, SOFMarkers, UN_ZIGZAG};
-use crate::{ColorSpace, Decoder, MAX_DIMENSIONS};
+use crate::{Decoder, MAX_DIMENSIONS};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names)]
@@ -333,12 +333,6 @@ where
             "Number of components in start of scan should be less than 3 but more than 0. Found {}",
             ns
         )));
-    }
-
-    // One component-> Grayscale
-    if ns == 1
-    {
-        image.input_colorspace = ColorSpace::GRAYSCALE;
     }
 
     // consume spec parameters

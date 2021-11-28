@@ -1,98 +1,111 @@
+//! Routines for progressive decoding
+//!
+//! This module implements the routines needed to decode progressive images.
+//!
+//! Progressive images require multiple scans to reconstruct back the image.
+//!
+//! Since most of the image is contained in DC coeff,the first scan may (let's say) encode DC coefficient.
+//! of all scans
+//!
+//! A more sophisticated decode(not this) may create a rough image from the first scan and then progressively
+//! make it better.
+//!
+//! This is useful for let's say slow web connections where the user can get a rough sketch of the image.
+//!
+//! But Gad damn, doesn't the spec make it a mess.
+//!
+//! Each scan contains a DHT and SOS, but each scan can have more than one component,(Why did you just
+//!  make it one scan jpeg!!) and it can also be interleaved(okay someone was just trolling at this point).
+//! and it's all a bloody mess of codw.
+//!
+//! And furthermore, it takes way too much code to process images. All in a serial manner since we are doing
+//!  Huffman decoding still. And like the baseline case, we cannot break after finishing MCU's width
+//! since we are still not yet done.
+//!
+//!
+//! So here we use a different scheme. Just decode everything and then finally use threads when post processing.
+
 use std::io::Cursor;
+use std::sync::Arc;
 
 use crate::bitstream::BitStream;
-use crate::components::ComponentID;
+use crate::components::{ComponentID, SubSampRatios};
 use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::misc::read_byte;
+use crate::worker::post_process_prog;
 
-// Some notes on progressive decoding
-//
-// Spectral selection-> Send data as rows from  1..63
-//
-// successive approximation-> Send data as columns from 0..7
-//
-// Spec page 120.
 impl Decoder
 {
-    /// Decode a progressive image with no interleaving.
+    /// Decode a progressive image
+    ///
+    /// This routine decodes a progressive image, stopping if it finds any error.
+    #[rustfmt::skip]
     pub(crate) fn decode_mcu_ycbcr_progressive(
         &mut self, reader: &mut Cursor<Vec<u8>>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
-        let mut temporary_block = [vec![], vec![], vec![]];
-        let output_buffer_size = usize::from(self.width() + 7) * usize::from(self.height() + 7);
+        // memory location for decoded pixels for components
+        let mut block = [vec![], vec![], vec![]];
 
-        for block in temporary_block.iter_mut().take(self.input_colorspace.num_components())
+        let mut mcu_width;
+
+        let mcu_height;
+
+        if self.interleaved
         {
-            *block = vec![0; output_buffer_size];
+            mcu_width = self.mcu_x;
+
+            mcu_height = self.mcu_y;
+        } else {
+            mcu_width = (self.info.width as usize + 7) / 8;
+
+            mcu_height = (self.info.height as usize + 7) / 8;
         }
-        let mut stream = BitStream::new_progressive(
-            self.succ_high,
-            self.succ_low,
-            self.spec_start,
-            self.spec_end,
-        );
+        mcu_width *= 64;
+
+        for i in 0..self.input_colorspace.num_components()
+        {
+            let comp = &self.components[i];
+
+            let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
+
+            block[i] = vec![0; len];
+        }
+
+        let mut stream = BitStream::new_progressive(self.succ_high, self.succ_low,
+                                                    self.spec_start, self.spec_end);
 
         // there are multiple scans in the stream, this should resolve the first scan
-        // if it returns an EOI marker,it means we are already done,
-        // but if it returns any other marker, we are supposed to parse it
-        self.parse_entropy_coded_data(reader, &mut stream, &mut temporary_block)?;
+        self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
 
         // extract marker
-        let mut marker = stream.marker.unwrap();
-        stream.marker = None;
+        let mut marker = stream.marker.take().unwrap();
         // if marker is EOI, we are done, otherwise continue scanning.
         'eoi: while marker != Marker::EOI
         {
             match marker
             {
-                Marker::DHT =>
-                    {
+                Marker::DHT => {
                         parse_huffman(self, reader)?;
                     }
                 Marker::SOS =>
                     {
-                        // after every SOS, marker, read data aSOS parameters and
-                        // parse data for that scan.
                         parse_sos(reader, self)?;
 
-                        stream.update_progressive_params(
-                            self.succ_high,
-                            self.succ_low,
-                            self.spec_start,
-                            self.spec_end,
-                        );
+                        stream.update_progressive_params(self.succ_high, self.succ_low,
+                                                         self.spec_start, self.spec_end);
 
-                        self.parse_entropy_coded_data(reader, &mut stream, &mut temporary_block)?;
+                        // after every SOS, marker, parse data for that scan.
+                        self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
                         // extract marker, might either indicate end of image or we continue
                         // scanning(hence the continue statement to determine).
+                        marker = get_marker(reader, &mut stream).unwrap();
 
-                        let tmp_marker = get_marker(reader, &mut stream);
-                        if let Some(m) = tmp_marker {
-                            marker = m;
-                        } else {
-                            // read until we get a marker.
-                            let length = reader.get_ref().len();
-                            let mut t = reader.position() as usize;
-                            while t < length
-                            {
-                                let v = read_byte(reader);
-                                if v == 255
-                                {
-                                    let r = read_byte(reader);
-                                    if r != 0
-                                    {
-                                        marker = Marker::from_u8(r).unwrap();
-                                        break;
-                                    }
-                                }
-                                t += 1;
-                            }
-                        }
                         stream.reset();
+
                         continue 'eoi;
                     }
                 _ =>
@@ -103,8 +116,89 @@ impl Decoder
             marker = get_marker(reader, &mut stream).unwrap();
         }
 
-        return Ok(Vec::new());
+        return Ok(self.finish_progressive_decoding(block, mcu_width));
     }
+
+    #[rustfmt::skip]
+    fn finish_progressive_decoding(&mut self, block: [Vec<i16>; 3], mcu_width: usize) -> Vec<u8> {
+        self.set_upsampling().unwrap();
+
+        let mut mcu_width = mcu_width;
+
+        if self.sub_sample_ratio == SubSampRatios::H
+        {
+            mcu_width = mcu_width * 2;
+        }
+        // remove items from  top block
+        let y = &block[0];
+        let cb = &block[1];
+        let cr = &block[2];
+
+        let capacity = usize::from(self.info.width) * usize::from(self.info.height);
+
+        let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components()];
+
+        // Chunk sizes. Each determine how many pixels go per thread.
+        let y_chunk_size =
+            mcu_width * self.components[0].vertical_sample * self.components[0].horizontal_sample;
+
+        // Cb and Cr contains equal sub-sampling so don't calculate for them.
+        let cb_chunk_size =
+            mcu_width * self.components[1].vertical_sample * self.components[1].horizontal_sample;
+
+        // Divide into chunks
+        let y_chunk = y.chunks_exact(y_chunk_size);
+
+        let cb_chunk = cb.chunks_exact(cb_chunk_size);
+
+        let cr_chunk = cr.chunks_exact(cb_chunk_size);
+
+        // Things we need for multithreading.
+        let h_max = self.h_max;
+
+        let v_max = self.v_max;
+
+        let components = Arc::new(self.components.clone());
+
+        let mut pool = scoped_threadpool::Pool::new(num_cpus::get_physical() as u32);
+
+        let input = self.input_colorspace;
+
+        let output = self.output_colorspace;
+
+        let idct_func = self.idct_func;
+
+        let color_convert = self.color_convert;
+
+        let color_convert_16 = self.color_convert_16;
+
+        let width = usize::from(self.width());
+
+        // Divide the output into small blocks and send to threads/
+        let chunks_size = width * self.output_colorspace.num_components() * 8 * h_max * v_max;
+
+        let out_chunks = out_vector.chunks_exact_mut(chunks_size);
+
+        // open threads.
+        pool.scoped(|scope| {
+            for (((y, cb), cr), out) in
+            y_chunk.zip(cb_chunk).zip(cr_chunk).zip(out_chunks)
+            {
+                let component = components.clone();
+
+                scope.execute(move || {
+
+                    post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
+                                      color_convert, input, output, out, mcu_width, width,
+                    )
+                });
+            }
+        });
+        debug!("Finished decoding image");
+
+        return out_vector;
+    }
+
 
     #[rustfmt::skip]
     fn parse_entropy_coded_data(
@@ -155,6 +249,7 @@ impl Decoder
                         stream.decode_prog_dc(reader, dc_table, &mut data[0], dc_pred)?;
                     } else {
                         let pos = self.components[k].ac_huff_table;
+
                         let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
 
                         stream.decode_prog_ac(reader, ac_table, data)?;
@@ -201,26 +296,41 @@ impl Decoder
         return Ok(true);
     }
 }
-fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Marker>
-    {
-        if let Some(marker) = stream.marker
-        {
-            stream.marker = None;
-            return Some(marker);
-        }
-        let mut marker = read_byte(reader);
 
-        if marker != 0xFF
-        {
-            return None;
-        }
-        while marker == 0xFF
-        {
-            marker = read_byte(reader);
-        }
-        return Some(Marker::from_u8(marker).unwrap());
+fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Marker>
+{
+    if let Some(marker) = stream.marker
+    {
+        stream.marker = None;
+        return Some(marker);
     }
 
+    // read until we get a marker
+    let len = u64::try_from(reader.get_ref().len()).unwrap();
+    loop {
+        let marker = read_byte(reader);
+
+        if marker == 255
+        {
+            let mut r = read_byte(reader);
+            // 0xFF 0XFF(some images may be like that)
+            while r == 0xFF
+            {
+                r = read_byte(reader);
+            }
+
+            if r != 0
+            {
+                return Some(Marker::from_u8(r).unwrap());
+            }
+
+            if reader.position()>=len{
+                // end of buffer
+                return  None;
+            }
+        }
+    }
+}
 
 #[test]
 fn try_decoding()

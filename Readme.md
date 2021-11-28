@@ -40,9 +40,6 @@ Note, we do not try to recover corrupt JPEG's, your best bet is libjpeg-turbo fo
 up to the caller.
 
 # TODO
-
-- [ ] Add support for progressive JPEGS
-- [ ] Add support for RST markers.
 - [ ] Add support for Adobe APP14 images.
 
 

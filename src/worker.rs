@@ -59,6 +59,58 @@ pub(crate) fn post_process(
         };
         unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
     });
+
+    post_process_inner(unprocessed, component_data, color_convert_16, color_convert,
+                       input_colorspace, output_colorspace, output, mcu_len, width);
+}
+
+#[rustfmt::skip]
+pub(crate) fn post_process_prog(
+    block: &[&[i16]; MAX_COMPONENTS], component_data: &[Components], idct_func: IDCTPtr,
+    color_convert_16: ColorConvert16Ptr, color_convert: ColorConvertPtr,
+    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], mcu_len: usize,
+    width: usize,
+) // so many parameters..
+{
+    let mut unprocessed = [vec![], vec![], vec![]];
+    // maximum sampling factors are in Y-channel, no need to pass them.
+    let h_samp = component_data[0].horizontal_sample;
+    let v_samp = component_data[0].vertical_sample;
+
+    let x = min(
+        input_colorspace.num_components(),
+        output_colorspace.num_components(),
+    );
+
+    (0..x).for_each(|z| {
+
+        // carry out IDCT.
+        let v_samp_idct = { if z == 0 { 1 } else { v_samp } };
+
+        unprocessed[z] = idct_func(&block[z], &component_data[z].quantization_table,
+            component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
+    });
+
+    post_process_inner(&mut unprocessed, component_data, color_convert_16, color_convert,
+        input_colorspace,  output_colorspace, output, mcu_len, width);
+}
+#[rustfmt::skip]
+pub(crate) fn post_process_inner(
+    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components],
+    color_convert_16: ColorConvert16Ptr, color_convert: ColorConvertPtr,
+    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], mcu_len: usize,
+    width: usize,
+) // so many parameters..
+{
+    let x = min(
+        input_colorspace.num_components(),
+        output_colorspace.num_components(),
+    );
+    // maximum sampling factors are in Y-channel, no need to pass them.
+    let h_samp = component_data[0].horizontal_sample;
+
+    let v_samp = component_data[0].vertical_sample;
+
     if h_samp != 1 || v_samp != 1
     {
         // carry out upsampling , the return vector overwrites the original vector
@@ -72,29 +124,23 @@ pub(crate) fn post_process(
     match (input_colorspace, output_colorspace)
     {
         (ColorSpace::YCbCr, ColorSpace::GRAYSCALE) =>
-            {
-
-                ycbcr_to_grayscale(&unprocessed[0],width,output);
-            }
+        {
+            ycbcr_to_grayscale(&unprocessed[0], width, output);
+        }
 
         (ColorSpace::YCbCr, ColorSpace::YCbCr) =>
-            {
-                ycbcr_to_ycbcr(&unprocessed,width,h_samp,v_samp,output);
-            }
+        {
+            ycbcr_to_ycbcr(&unprocessed, width, h_samp, v_samp, output);
+        }
 
-        (
-            ColorSpace::YCbCr,
-            ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX,
-        ) =>
-            {
-                color_convert_ycbcr(
-                    unprocessed, width, h_samp, v_samp, output_colorspace, color_convert_16,
-                    color_convert, output, mcu_len,
-                );
-            }
+        (ColorSpace::YCbCr, ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX) =>
+        {
+            color_convert_ycbcr(unprocessed, width, h_samp, v_samp,
+                output_colorspace, color_convert_16, color_convert, output, mcu_len);
+        }
         // For the other components we do nothing(currently)
         _ =>
-            {}
+        {}
     }
 }
 
@@ -132,7 +178,7 @@ fn color_convert_ycbcr(
 
     let mut end = stride;
     // over allocate to account for fill bytes
-    let mut temp_area = vec![0; width_chunk * output_colorspace.num_components()+128];
+    let mut temp_area = vec![0; width_chunk * output_colorspace.num_components() + 128];
 
     // We need to chunk per width to ensure we can discard extra values at the end of the width.
     // Since the encoder may pad bits to ensure the width is a multiple of 8.

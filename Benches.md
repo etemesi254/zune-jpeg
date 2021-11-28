@@ -65,9 +65,9 @@ the most common architectures out there.
 
 |Decoder | Link | Speed|
 |--------|-------|-----|
-|**zune-jpeg**|- | 60.246 ms |
+|**zune-jpeg**|- | 62.246 ms |
 |[libjpeg-turbo]| [github-link]|98.343 ms|
-|[jpeg-decoder]| [link] |123.350 ms |
+|[jpeg-decoder]| [link] |117.350 ms |
 
 63% faster than libjpeg-turbo.
 
