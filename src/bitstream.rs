@@ -255,8 +255,6 @@ impl BitStream
     {
         let (mut symbol, r);
 
-        // in the instance that refill returns false,
-        // it means a marker was found in the stream, stop execution..
         if self.bits_left < 16
         {
             self.refill(reader);
@@ -398,7 +396,10 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
-        let bits = (self.aligned_buffer >> (64 - n_bits)) as i32;
+        // shift first by 1 to avoid shifts by register width (From Yann Collet FSE)
+        // mentioned by Fabian Geissen in his blog.
+
+        let bits = (self.aligned_buffer >> 1 >> (63 - n_bits)) as i32;
 
         // Reduce the bits left, this influences the MSB buffer
         self.bits_left -= n_bits;
@@ -416,12 +417,6 @@ impl BitStream
         dc_prediction: &mut i32,
     ) -> Result<(), DecodeErrors>
     {
-        if self.spec_end != 0
-        {
-            return Err(DecodeErrors::HuffmanDecode(
-                "Can't merge dc and AC corrupt jpeg".to_string(),
-            ));
-        }
         if self.successive_high == 0
         {
             self.decode_dc(reader, dc_table, dc_prediction)?;
@@ -445,11 +440,6 @@ impl BitStream
     /// Get a single bit from the bitstream
     fn get_bit(&mut self) -> u8
     {
-        if self.bits_left == 0
-        {
-            // fake a zero in case we don't have bits in the stream.
-            return 0;
-        }
         let k = (self.aligned_buffer >> 63) as u8;
 
         // discard a bit
@@ -461,12 +451,6 @@ impl BitStream
         &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
-        if self.spec_start == 0
-        {
-            return Err(DecodeErrors::HuffmanDecode(
-                "Cannot merge DC and AC, corrupt JPEG".to_string(),
-            ));
-        }
         return if self.successive_high == 0
         {
             self.decode_mcu_ac(reader, ac_table, block)
@@ -538,15 +522,11 @@ impl BitStream
                     if r != 15
                     {
                         self.eob_run = 1 << r;
-                        if r > 0
-                        {
-                            // check if we have enough bits.
-                            if i32::from(self.bits_left) < r
-                            {
-                                self.refill(reader);
-                            }
-                            self.eob_run += self.get_bits(r as u8);
-                        }
+
+                        // we refilled earlier, hence we can assume we have enough bits
+                        // for this.
+                        self.eob_run += self.get_bits(r as u8);
+
                         self.eob_run -= 1;
 
                         break;
@@ -554,6 +534,7 @@ impl BitStream
                     k += 16;
                 }
             }
+
             if k > self.spec_end as usize
             {
                 break 'block;
@@ -580,12 +561,15 @@ impl BitStream
 
                 symbol = table.lookup[symbol as usize];
 
+
                 decode_huff!(self, symbol, table);
 
+                let t=symbol;
                 let mut r = symbol >> 4;
 
                 symbol &= 15;
 
+                // 0x[___F]0
                 if symbol == 0
                 {
                     if r != 15
@@ -593,15 +577,12 @@ impl BitStream
                         // EOB run is 2^r + bits
                         self.eob_run = 1 << r;
 
-                        if r > 0
-                        {
-                            self.eob_run += self.get_bits(r as u8);
-                        }
-                        // The rest of the block is handled by EOB logic
+                        self.eob_run += self.get_bits(r as u8);
+
                         break;
                     }
+
                 } else {
-                    // Size of new coeff should always be 1.
                     if symbol != 1
                     {
                         return Err(DecodeErrors::HuffmanDecode(
@@ -609,12 +590,8 @@ impl BitStream
                         ));
                     }
                     // get sign bit
-
-                    if self.bits_left < 1
-                    {
-                        self.refill(reader);
-                    }
-
+                    // We assume we have enough bits, which should be correct for sane images
+                    // since we refill by 32 above
                     if self.get_bit() == 1
                     {
                         // new non-zero coefficient is positive
@@ -626,10 +603,10 @@ impl BitStream
                 }
 
                 self.refill(reader);
-
                 // Advance over already nonzero coefficients  appending
                 // correction bits to the non-zeroes.
                 // A correction bit is 1 if the absolute value of the coefficient must be increased
+
                 'advance_nonzero: while k <= self.spec_end
                 {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
@@ -645,12 +622,12 @@ impl BitStream
                                 *coefficient -= bit;
                             }
                         }
-                        // worst case occurs when one array needs to be refilled
                         if self.bits_left < 1
                         {
                             self.refill(reader);
                         }
-                    } else {
+                    } else
+                    {
                         r -= 1;
 
                         if r < 0
@@ -661,7 +638,6 @@ impl BitStream
                     };
                     k += 1;
                 }
-
                 if symbol != 0
                 {
                     let pos = UN_ZIGZAG[k as usize & 63];
@@ -670,6 +646,7 @@ impl BitStream
                 }
 
                 k += 1;
+
                 if k > self.spec_end
                 {
                     break 'top;
@@ -705,7 +682,6 @@ impl BitStream
                 }
                 k += 1;
             }
-
             // count a block completed in EOB run
             self.eob_run -= 1;
         }

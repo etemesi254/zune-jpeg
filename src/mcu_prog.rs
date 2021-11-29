@@ -30,12 +30,12 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::misc::read_byte;
 use crate::worker::post_process_prog;
+use crate::Decoder;
 
 impl Decoder
 {
@@ -89,8 +89,8 @@ impl Decoder
             match marker
             {
                 Marker::DHT => {
-                        parse_huffman(self, reader)?;
-                    }
+                    parse_huffman(self, reader)?;
+                }
                 Marker::SOS =>
                     {
                         parse_sos(reader, self)?;
@@ -187,7 +187,6 @@ impl Decoder
                 let component = components.clone();
 
                 scope.execute(move || {
-
                     post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
                                       color_convert, input, output, out, mcu_width, width,
                     )
@@ -210,6 +209,13 @@ impl Decoder
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
         if self.num_scans == 1
         {
+            // Safety checks
+            if self.spec_end != 0 && self.spec_start == 0
+            {
+                return Err(DecodeErrors::HuffmanDecode(
+                    "Can't merge dc and AC corrupt jpeg".to_string(),
+                ));
+            }
             // non interleaved data, process one block at a time in trivial scanline order
             let k = self.z_order[0];
 
@@ -257,7 +263,12 @@ impl Decoder
                 }
             }
         } else {
-
+            if self.spec_end != 0
+            {
+                return Err(DecodeErrors::HuffmanDecode(
+                    "Can't merge dc and AC corrupt jpeg".to_string(),
+                ));
+            }
             // Interleaved scan
 
             // Components shall not be interleaved in progressive mode, except for
@@ -307,7 +318,8 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
 
     // read until we get a marker
     let len = u64::try_from(reader.get_ref().len()).unwrap();
-    loop {
+    loop
+    {
         let marker = read_byte(reader);
 
         if marker == 255
@@ -324,9 +336,10 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
                 return Some(Marker::from_u8(r).unwrap());
             }
 
-            if reader.position()>=len{
+            if reader.position() >= len
+            {
                 // end of buffer
-                return  None;
+                return None;
             }
         }
     }
