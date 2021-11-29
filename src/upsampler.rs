@@ -68,6 +68,7 @@
 //!
 //! Carry out a vertical filter in the first pass, then a horizontal filter in the second pass.
 #[cfg(feature = "x86")]
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 pub use sse::upsample_horizontal_sse;
 
 use crate::components::UpSampler;
@@ -117,6 +118,8 @@ pub fn upsample_no_op(_: &[i16], _: usize) -> Vec<i16>
 //----------------------------------------------
 #[test]
 #[cfg(feature = "x86")]
+
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 fn upsample_sse_v1()
 {
     let v: Vec<i16> = (0..128).collect();
@@ -130,6 +133,7 @@ fn upsample_sse_v1()
 
 #[test]
 #[cfg(feature = "x86")]
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 fn upsample_sse_v2()
 {
     use crate::upsampler::scalar::upsample_horizontal;

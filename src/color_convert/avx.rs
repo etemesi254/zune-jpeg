@@ -20,6 +20,7 @@
 //!
 //! O and ~~subscribe to my youtube channel~~
 
+#![cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 #![cfg(feature = "x86")]
 #![allow(
     clippy::wildcard_imports,

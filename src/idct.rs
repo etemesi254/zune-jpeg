@@ -61,6 +61,7 @@ pub fn choose_idct_func() -> IDCTPtr
 // -----------------------------------------------------
 #[test]
 #[cfg(feature = "x86")]
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 fn test_zeroes()
 {
     use crate::misc::Aligned32;
@@ -77,6 +78,7 @@ fn test_zeroes()
 
 #[test]
 #[cfg(feature = "x86")]
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 // disable this because rust will bounds check wrapping additions which won't make sense as IDCT depends on wrapping arithmetic
 #[cfg(not(debug_assertions))]
 fn test_max()
@@ -100,6 +102,7 @@ fn test_max()
 
 #[test]
 #[cfg(feature = "x86")]
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 #[cfg(not(debug_assertions))] // disable this because rust will bounds check wrapping additions which won't work for debug builds
 fn test_min()
 {

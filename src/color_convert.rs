@@ -39,9 +39,11 @@
 //!
 //! Therefore if your looking to optimize some routines, probably start there.
 
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 #[cfg(feature = "x86")]
 pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2, ycbcr_to_rgbx_avx2};
 #[cfg(feature = "x86")]
+#[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 pub use crate::color_convert::sse::{
     ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse, ycbcr_to_rgba_sse_16,
 };
@@ -60,6 +62,7 @@ pub fn choose_ycbcr_to_rgb_convert_func(
 ) -> Option<(ColorConvert16Ptr, ColorConvertPtr)>
 {
     #[cfg(feature = "x86")]
+        #[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2")
         {

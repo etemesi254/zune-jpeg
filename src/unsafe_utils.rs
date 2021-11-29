@@ -1,4 +1,5 @@
 #![cfg(feature = "x86")]
+#![cfg(any(target_arch = "x86",target_arch = "x86_64"))]
 //! This module provides unsafe ways to do some things
 #![allow(clippy::wildcard_imports)]
 
@@ -12,6 +13,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
+
 #[derive(Clone, Copy)]
 pub struct YmmRegister
 {
