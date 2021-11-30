@@ -564,7 +564,6 @@ impl BitStream
 
                 decode_huff!(self, symbol, table);
 
-                let t=symbol;
                 let mut r = symbol >> 4;
 
                 symbol &= 15;
@@ -581,7 +580,6 @@ impl BitStream
 
                         break;
                     }
-
                 } else {
                     if symbol != 1
                     {
@@ -626,8 +624,7 @@ impl BitStream
                         {
                             self.refill(reader);
                         }
-                    } else
-                    {
+                    } else {
                         r -= 1;
 
                         if r < 0
@@ -656,6 +653,10 @@ impl BitStream
         if self.eob_run > 0
         {
             self.refill(reader);
+            if &block[1..] == &[0; 63] {
+                // all coefficients are zero, no need to check.
+                return Ok(true);
+            }
 
             while k <= self.spec_end
             {
