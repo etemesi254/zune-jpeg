@@ -1,4 +1,3 @@
-
 //! Benchmarks for
 
 use std::fs::read;
@@ -32,7 +31,7 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]>
 
         pixels
     })
-        .unwrap();
+    .unwrap();
 
     p
 }
@@ -50,7 +49,7 @@ fn decode_no_samp(c: &mut Criterion)
 
     let data = read(a).unwrap();
     let mut group = c.benchmark_group("No sampling Progressive decoding");
-    group.bench_function("Baseline JPEG Decoding zune-jpeg", |b| {
+    group.bench_function("1*1 Sample JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(data.as_slice())))
     });
 
@@ -65,10 +64,9 @@ fn decode_no_samp(c: &mut Criterion)
 fn decode_h_samp(c: &mut Criterion)
 {
     let x = read(
-        env!("CARGO_MANIFEST_DIR").to_string()
-            + "/benches/images/speed_bench_prog_h_sampling.jpg",
+        env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_prog_h_sampling.jpg",
     )
-        .unwrap();
+    .unwrap();
     let mut group = c.benchmark_group("Progressive Horizontal Sub Sampling");
     group.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))
@@ -87,10 +85,9 @@ fn decode_h_samp(c: &mut Criterion)
 fn decode_v_samp(c: &mut Criterion)
 {
     let x = read(
-        env!("CARGO_MANIFEST_DIR").to_string()
-            + "/benches/images/speed_bench_prog_v_sampling.jpg",
+        env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_prog_v_sampling.jpg",
     )
-        .unwrap();
+    .unwrap();
     let mut group = c.benchmark_group("Progressive Vertical sub sampling");
 
     group.bench_function("Vertical sub-sampling JPEG Decoding zune-jpeg", |b| {
@@ -112,7 +109,7 @@ fn decode_hv_samp(c: &mut Criterion)
     let x = read(
         env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_prog_hv_sampling.jpg",
     )
-        .unwrap();
+    .unwrap();
     let mut group = c.benchmark_group("Progressive HV sampling");
     group.bench_function("HV sampling JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(x.as_slice())))

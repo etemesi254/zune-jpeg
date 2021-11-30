@@ -1,5 +1,5 @@
 #![cfg(feature = "x86")]
-#![cfg(any(target_arch = "x86",target_arch = "x86_64"))]
+#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![allow(clippy::module_name_repetitions, clippy::wildcard_imports)]
 
 #[cfg(target_arch = "x86")]

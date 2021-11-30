@@ -20,7 +20,7 @@
 //!
 //! O and ~~subscribe to my youtube channel~~
 
-#![cfg(any(target_arch = "x86",target_arch = "x86_64"))]
+#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![cfg(feature = "x86")]
 #![allow(
     clippy::wildcard_imports,
@@ -90,7 +90,6 @@ unsafe fn ycbcr_to_rgb_avx2_1(
         .unwrap();
 
     let (r, g, b) = ycbcr_to_rgb_baseline(y, cb, cr);
-
 
     let mut j = 0;
     let mut i = 0;

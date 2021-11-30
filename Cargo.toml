@@ -33,5 +33,15 @@ harness = false
 name = "decode_prog"
 harness = false
 
+#[[bench]]
+#name = "decode"
+#harness = false
+#
+#[[bench]]
+#name = "decode_grayscale"
+#harness = false
+
+
+
 [profile.bench]
 debug = true

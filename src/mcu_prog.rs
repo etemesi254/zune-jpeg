@@ -349,5 +349,6 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
 fn try_decoding()
 {
     let mut v = Decoder::new();
-    v.decode_file("/Users/calebe/CLionProjects/zune-jpeg/benches/images/speed_bench_prog.jpg").unwrap();
+    v.decode_file("/Users/calebe/CLionProjects/zune-jpeg/benches/images/speed_bench_prog.jpg")
+        .unwrap();
 }
