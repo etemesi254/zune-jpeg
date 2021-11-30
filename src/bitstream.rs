@@ -576,7 +576,6 @@ impl BitStream
 
                 symbol &= 15;
 
-                // 0x[___F]0
                 if symbol == 0
                 {
                     if r != 15
@@ -668,7 +667,7 @@ impl BitStream
         }
         if self.eob_run > 0
         {
-            self.refill(reader);
+
             if &block[1..] == &[0; 63]
             {
                 // all coefficients are zero, no need to check.
@@ -678,6 +677,7 @@ impl BitStream
             }
             else
             {
+                self.refill(reader);
                 while k <= self.spec_end
                 {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
