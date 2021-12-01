@@ -668,16 +668,11 @@ impl BitStream
         if self.eob_run > 0
         {
 
-            if &block[1..] == &[0; 63]
-            {
-                // all coefficients are zero, no need to check.
-
-                // count a block as finished
-                self.eob_run -= 1;
-            }
-            else
+            // only run if block does not consists of purely zeroes
+            if &block[1..] != &[0; 63]
             {
                 self.refill(reader);
+
                 while k <= self.spec_end
                 {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
