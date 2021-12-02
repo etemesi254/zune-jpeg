@@ -15,11 +15,12 @@
 //! But Gad damn, doesn't the spec make it a mess.
 //!
 //! Each scan contains a DHT and SOS, but each scan can have more than one component,(Why did you just
-//!  make it one scan jpeg!!) and it can also be interleaved(okay someone was just trolling at this point).
-//! and it's all a bloody mess of codw.
+//!  make it one scan jpeg!!) and it can also be interleaved(okay someone was just trolling at this point)
+//! but on interleaving it only happens in DC coefficients. AC coefficients cannot be interleaved.
+//! and it's all a bloody mess of code.
 //!
 //! And furthermore, it takes way too much code to process images. All in a serial manner since we are doing
-//!  Huffman decoding still. And like the baseline case, we cannot break after finishing MCU's width
+//!  Huffman decoding still. And unlike the baseline case, we cannot break after finishing MCU's width
 //! since we are still not yet done.
 //!
 //!
@@ -252,31 +253,41 @@ impl Decoder
                         let dc_table = self.dc_huffman_tables.get(pos).unwrap().as_ref().unwrap();
 
                         let dc_pred = &mut self.components[k].dc_pred;
-
-                        stream.decode_prog_dc(reader, dc_table, &mut data[0], dc_pred)?;
+                        if self.succ_high == 0
+                        {
+                            // first scan for this mcu
+                            stream.decode_prog_dc_first(reader, dc_table, &mut data[0], dc_pred)?;
+                        }
+                        else
+                        {
+                            // refining scans for this MCU
+                            stream.decode_prog_dc_refine(reader,&mut data[0]);
+                        }
                     } else {
                         let pos = self.components[k].ac_huff_table;
 
                         let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
+
                         if self.succ_high == 0
                         {
-                            if stream.eob_run > 0  {
-                                // EOB runs can be handled differently,
-                                // since what we do on the other side is decrement and return
+                            if stream.eob_run > 0 {
+                                // EOB runs indicate the whole block is empty, but unlike for baseline
+                                // EOB in progressive tell us the number of proceeding blocks currently zero.
 
+                                // other decoders use a check in decode_mcu_first decrement and return if it's an
+                                // eob run(since the array is expected to contain zeroes). but that's a function call overhead(if not inlined) and a branch check
+                                // we do it a bit differently
                                 // we can use divisors  to determine how many MCU's to skip
-                                // which is more faster than a decrement and run since EOB runs can be
+                                // which is more faster than a decrement and return since EOB runs can be
                                 // as big as 10,000
 
-                                i = i + ((j + stream.eob_run as usize - 1) / mcu_width);
-                                j = (j + stream.eob_run as usize - 1) % mcu_width;
+                                i = i + ((j + stream.eob_run as usize-1) / mcu_width);
+                                j = (j + stream.eob_run as usize-1) % mcu_width;
                                 stream.eob_run = 0;
-                            }else
-                            {
+                            } else {
                                 stream.decode_mcu_ac_first(reader, ac_table, data)?;
                             }
-                        } else
-                        {
+                        } else {
                             stream.decode_mcu_ac_refine(reader, ac_table, data)?;
                         }
                     }
@@ -320,7 +331,14 @@ impl Decoder
                                 // data will contain the position for this coefficient in our array.
                                 let data = &mut buffer[n as usize][position];
 
-                                stream.decode_prog_dc(reader, huff_table, data, &mut component.dc_pred)?;
+                                if self.succ_high == 0
+                                {
+                                    stream.decode_prog_dc_first(reader, huff_table, data, &mut component.dc_pred)?;
+                                }
+                                else
+                                {
+                                    stream.decode_prog_dc_refine(reader,data);
+                                }
                             }
                         }
                     }

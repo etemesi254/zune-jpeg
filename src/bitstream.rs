@@ -1,8 +1,8 @@
 #![allow(
-    clippy::if_not_else,
-    clippy::similar_names,
-    clippy::inline_always,
-    clippy::doc_markdown
+clippy::if_not_else,
+clippy::similar_names,
+clippy::inline_always,
+clippy::doc_markdown
 )]
 
 //! This file exposes a single struct that can decode a huffman encoded
@@ -228,8 +228,7 @@ impl BitStream
             // Construct an MSB buffer whose top bits are the bitstream we are currently
             // holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
-        }
-        else if self.marker.is_some()
+        } else if self.marker.is_some()
         {
             // fill with zeroes
             self.bits_left = 63;
@@ -241,13 +240,10 @@ impl BitStream
     ///
     /// The decoded coefficient is written to `dc_prediction`
     ///
-    /// # Returns
-    /// - `false` if a marker was found in the bitstream
-    /// - `true` if the coefficient was successfully decoded.
     #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::unwrap_used
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::unwrap_used
     )]
     #[inline(always)]
     fn decode_dc(
@@ -413,31 +409,28 @@ impl BitStream
 
     /// Decode a DC block
     #[allow(clippy::cast_possible_truncation)]
-    pub fn decode_prog_dc(
+    pub(crate) fn decode_prog_dc_first(
         &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, block: &mut i16,
         dc_prediction: &mut i32,
     ) -> Result<(), DecodeErrors>
     {
-        if self.successive_high == 0
-        {
-            self.decode_dc(reader, dc_table, dc_prediction)?;
+        self.decode_dc(reader, dc_table, dc_prediction)?;
 
-            *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
-        }
-        else
-        {
-            // refinement scan
-            if self.bits_left < 1
-            {
-                self.refill(reader);
-            }
-            if self.get_bit() == 1
-            {
-                *block += 1 << self.successive_low;
-            }
-        }
+        *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
+
 
         return Ok(());
+    }
+    pub(crate) fn decode_prog_dc_refine(&mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16) {
+        // refinement scan
+        if self.bits_left < 1
+        {
+            self.refill(reader);
+        }
+        if self.get_bit() == 1
+        {
+            *block += 1 << self.successive_low;
+        }
     }
 
     /// Get a single bit from the bitstream
@@ -487,9 +480,7 @@ impl BitStream
 
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
-            }
-            else
-            {
+            } else {
                 decode_huff!(self, symbol, ac_table);
 
                 r = symbol >> 4;
@@ -507,9 +498,7 @@ impl BitStream
                     block[UN_ZIGZAG[k as usize & 63] & 63] = symbol as i16 * (1 << shift);
 
                     k += 1;
-                }
-                else
-                {
+                } else {
                     if r != 15
                     {
                         self.eob_run = 1 << r;
@@ -569,9 +558,7 @@ impl BitStream
 
                         break;
                     }
-                }
-                else
-                {
+                } else {
                     if symbol != 1
                     {
                         return Err(DecodeErrors::HuffmanDecode(
@@ -585,9 +572,7 @@ impl BitStream
                     {
                         // new non-zero coefficient is positive
                         symbol = i32::from(bit);
-                    }
-                    else
-                    {
+                    } else {
                         // the new non zero coefficient is negative
                         symbol = i32::from(-bit);
                     }
@@ -608,8 +593,7 @@ impl BitStream
                             if *coefficient >= 0
                             {
                                 *coefficient += bit;
-                            }
-                            else
+                            } else
                             {
                                 *coefficient -= bit;
                             }
@@ -666,9 +650,7 @@ impl BitStream
                             if *coefficient >= 0
                             {
                                 *coefficient += bit;
-                            }
-                            else
-                            {
+                            } else {
                                 *coefficient -= bit;
                             }
                         }
