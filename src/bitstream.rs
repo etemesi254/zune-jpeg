@@ -450,32 +450,14 @@ impl BitStream
 
         return k;
     }
-    pub fn decode_prog_ac(
-        &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
-    ) -> Result<bool, DecodeErrors>
-    {
-        return if self.successive_high == 0
-        {
-            self.decode_mcu_ac(reader, ac_table, block)
-        }
-        else
-        {
-            self.decode_mcu_ac_refine(reader, ac_table, block)
-        };
-    }
-    #[inline(never)]
-    fn decode_mcu_ac(
+    pub(crate) fn decode_mcu_ac_first(
         &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
         let shift = self.successive_low;
-        if self.eob_run > 0
-        {
-            // End of band runs indicate that all ac terms are zero
-            // since the buffer was initialized with zeroes, we do nothing here.
-            self.eob_run -= 1;
-            return Ok(true);
-        }
+        // EOB runs are handled in mcu_prog.rs
+        // see the comment there
+
         let mut k = self.spec_start as usize;
         // same as the AC part for decode block , with a twist
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
@@ -551,7 +533,7 @@ impl BitStream
         }
         return Ok(true);
     }
-    fn decode_mcu_ac_refine(
+    pub(crate) fn decode_mcu_ac_refine(
         &mut self, reader: &mut Cursor<Vec<u8>>, table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
@@ -611,7 +593,6 @@ impl BitStream
                     }
                 }
 
-                self.refill(reader);
                 // Advance over already nonzero coefficients  appending
                 // correction bits to the non-zeroes.
                 // A correction bit is 1 if the absolute value of the coefficient must be increased
@@ -667,7 +648,6 @@ impl BitStream
         }
         if self.eob_run > 0
         {
-
             // only run if block does not consists of purely zeroes
             if &block[1..] != &[0; 63]
             {

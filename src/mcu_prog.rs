@@ -234,10 +234,11 @@ impl Decoder
 
                 mcu_height = self.mcu_y;
             }
-
-            for i in 0..mcu_height
+            let mut i = 0;
+            let mut j = 0;
+            while i < mcu_height
             {
-                for j in 0..mcu_width
+                while j < mcu_width
                 {
                     let start = 64 * (j + i * (self.components[k].width_stride / 8));
 
@@ -257,10 +258,32 @@ impl Decoder
                         let pos = self.components[k].ac_huff_table;
 
                         let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
+                        if self.succ_high == 0
+                        {
+                            if stream.eob_run > 0  {
+                                // EOB runs can be handled differently,
+                                // since what we do on the other side is decrement and return
 
-                        stream.decode_prog_ac(reader, ac_table, data)?;
+                                // we can use divisors  to determine how many MCU's to skip
+                                // which is more faster than a decrement and run since EOB runs can be
+                                // as big as 10,000
+
+                                i = i + ((j + stream.eob_run as usize - 1) / mcu_width);
+                                j = (j + stream.eob_run as usize - 1) % mcu_width;
+                                stream.eob_run = 0;
+                            }else
+                            {
+                                stream.decode_mcu_ac_first(reader, ac_table, data)?;
+                            }
+                        } else
+                        {
+                            stream.decode_mcu_ac_refine(reader, ac_table, data)?;
+                        }
                     }
+                    j += 1;
                 }
+                j = 0;
+                i += 1;
             }
         } else {
             if self.spec_end != 0
