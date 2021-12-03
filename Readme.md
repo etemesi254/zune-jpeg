@@ -4,11 +4,12 @@ A jpeg decoder with wings.
 
 # Features
 
-- [x] A Pretty fast 8*8 integer IDCT
+- [x] A Pretty fast 8*8 integer IDCT.
 - [x] Fast Huffman Decoding
-- [x] Fast color convert functions for AVX2 and SSE have been implemented
-- [x] Support for extended colorspaces like GrayScale RGBA
-- [X] Multi-threaded decoding 
+- [x] Fast color convert functions.
+- [x] Support for extended colorspaces like GrayScale, RGBA
+- [X] Multi-threaded decoding.
+
 
 # Features  
 
@@ -24,7 +25,12 @@ we can do about that.
 
 # The Decoder.
 
+### x86_64 benchmarks
 ![](bar-graph.png)
+
+### Apple M1 benchmarks
+![](bar-graph_m1.png)
+
 
 The decoder is blazingly fast, especially on x86_64 with AVX2 enabled CPU's(most cpu's from 2013).
 
