@@ -19,11 +19,11 @@
 //!
 //! # Horizontal Bi-linear filter
 //! ```text
-//! |---+------------+--+
+//! |---+-----------+---+
 //! |   |           |   |
 //! | A | |p1 | p2| | B |
 //! |   |           |   |
-//! |---+-----------+----_
+//! |---+-----------+---+
 //!
 //! ```
 //! For a horizontal bi-linear it's trivial to implement,

@@ -31,8 +31,6 @@ pub enum DecodeErrors
     SofError(String),
     /// UnsupportedImages
     Unsupported(UnsupportedSchemes),
-    /// Unset tables
-    UnsetValues(String),
     /// MCU errors
     MCUError(String),
     /// Exhausted data
@@ -50,7 +48,7 @@ impl Debug for DecodeErrors
             Self::Format(ref a) => write!(f, "{:?}", a),
             Self::HuffmanDecode(ref reason) =>
             {
-                write!(f, "Error decoding huffman tables.Reason:{}", reason)
+                write!(f, "Error decoding huffman values: {}", reason)
             }
             Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
             Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{}", reason),
@@ -66,7 +64,6 @@ impl Debug for DecodeErrors
                 write!(f, "{:?}", image_type)
             }
             Self::ExhaustedData => write!(f, "Exhausted data in the image"),
-            Self::UnsetValues(ref values) => write!(f, "{}", values),
             Self::LargeDimensions(ref dimensions) => write!(
                 f,
                 "Too large dimensions {},library supports up to {}",
@@ -101,7 +98,6 @@ impl Display for DecodeErrors
             }
             Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {}", reason),
             Self::ExhaustedData => write!(f, "Exhausted data in the image"),
-            Self::UnsetValues(ref values) => write!(f, "{}", values),
 
             Self::LargeDimensions(ref dimensions) => write!(
                 f,
@@ -118,7 +114,7 @@ impl From<Box<dyn Error>> for DecodeErrors
 {
     fn from(err: Box<dyn Error>) -> Self
     {
-        DecodeErrors::Format(format!("Error decoding an image:\n {}", err.to_string()))
+        DecodeErrors::Format(format!("Error decoding an image:\n {}", err))
     }
 }
 
@@ -126,7 +122,7 @@ impl From<std::io::Error> for DecodeErrors
 {
     fn from(err: std::io::Error) -> Self
     {
-        DecodeErrors::Format(format!("Error decoding an image:\n {}", err.to_string()))
+        DecodeErrors::Format(format!("Error decoding an image:\n {}", err))
     }
 }
 

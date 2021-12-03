@@ -2,7 +2,9 @@
 clippy::if_not_else,
 clippy::similar_names,
 clippy::inline_always,
-clippy::doc_markdown
+clippy::doc_markdown,
+clippy::cast_sign_loss,
+clippy::cast_possible_truncation
 )]
 
 //! This file exposes a single struct that can decode a huffman encoded
@@ -355,7 +357,7 @@ impl BitStream
 
                     symbol = huff_extend(r, symbol);
 
-                    block[UN_ZIGZAG[pos as usize] & 63] = symbol as i16;
+                    block[UN_ZIGZAG[pos as usize & 63] & 63] = symbol as i16;
 
                     pos += 1;
                 } else {
@@ -409,6 +411,7 @@ impl BitStream
 
     /// Decode a DC block
     #[allow(clippy::cast_possible_truncation)]
+    #[inline]
     pub(crate) fn decode_prog_dc_first(
         &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, block: &mut i16,
         dc_prediction: &mut i32,
@@ -418,9 +421,9 @@ impl BitStream
 
         *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
 
-
         return Ok(());
     }
+    #[inline]
     pub(crate) fn decode_prog_dc_refine(&mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16) {
         // refinement scan
         if self.bits_left < 1
@@ -532,7 +535,7 @@ impl BitStream
 
         if self.eob_run == 0
         {
-            'top: loop
+            'no_eob: loop
             {
                 // Decode a coefficient from the bit stream
                 self.refill(reader);
@@ -555,8 +558,8 @@ impl BitStream
                         self.eob_run = 1 << r;
 
                         self.eob_run += self.get_bits(r as u8);
-
-                        break;
+                        // EOB runs are handled by the eob logic
+                        break 'no_eob;
                     }
                 } else {
                     if symbol != 1
@@ -593,8 +596,7 @@ impl BitStream
                             if *coefficient >= 0
                             {
                                 *coefficient += bit;
-                            } else
-                            {
+                            } else {
                                 *coefficient -= bit;
                             }
                         }
@@ -626,7 +628,7 @@ impl BitStream
 
                 if k > self.spec_end
                 {
-                    break 'top;
+                    break 'no_eob;
                 }
             }
         }

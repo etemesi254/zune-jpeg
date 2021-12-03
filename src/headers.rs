@@ -10,7 +10,7 @@ use std::io::{BufRead, Read};
 use crate::components::Components;
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
-use crate::image::ImageInfo;
+use crate::decoder::ImageInfo;
 use crate::marker::Marker;
 use crate::misc::{read_byte, read_u16_be, Aligned32, SOFMarkers, UN_ZIGZAG};
 use crate::{Decoder, MAX_DIMENSIONS};
@@ -358,7 +358,6 @@ where
 
         image.components[usize::from(j)].ac_huff_table = usize::from(y & 0xF);
         image.z_order[i as usize] = j as usize;
-        //println!("{},{},{}",i,j,ns);
     }
 
     // Collect the component spec parameters

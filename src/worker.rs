@@ -81,13 +81,13 @@ pub(crate) fn post_process_prog(
         input_colorspace.num_components(),
         output_colorspace.num_components(),
     );
-
+    //
     (0..x).for_each(|z| {
 
         // carry out IDCT.
         let v_samp_idct = { if z == 0 { 1 } else { v_samp } };
 
-        unprocessed[z] = idct_func(&block[z], &component_data[z].quantization_table,
+        unprocessed[z] = idct_func(block[z], &component_data[z].quantization_table,
             component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
     });
 
@@ -130,7 +130,7 @@ pub(crate) fn post_process_inner(
 
         (ColorSpace::YCbCr, ColorSpace::YCbCr) =>
         {
-            ycbcr_to_ycbcr(&unprocessed, width, h_samp, v_samp, output);
+            ycbcr_to_ycbcr(unprocessed, width, h_samp, v_samp, output);
         }
 
         (ColorSpace::YCbCr, ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX) =>

@@ -184,7 +184,7 @@ impl Default for Decoder
             z_order: [0; 4],
 
             restart_interval: 0,
-            todo: 0x7fffffff,
+            todo: 0x7fff_ffff,
         }
     }
 }

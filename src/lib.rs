@@ -55,7 +55,7 @@
 #[macro_use]
 extern crate log;
 
-pub use crate::image::Decoder;
+pub use crate::decoder::Decoder;
 pub use crate::misc::ColorSpace;
 
 mod bitstream;
@@ -64,7 +64,7 @@ pub mod errors;
 mod headers;
 mod huffman;
 mod idct;
-mod image;
+mod decoder;
 mod marker;
 mod mcu;
 mod mcu_prog;
@@ -75,4 +75,4 @@ mod unsafe_utils;
 mod upsampler;
 mod worker;
 
-pub use image::*;
+pub use decoder::*;
