@@ -241,7 +241,7 @@ impl Decoder
                     {
                         // iterate over components
 
-                        'rst: for pos in 0..self.input_colorspace.num_components()
+                        for pos in 0..self.input_colorspace.num_components()
                         {
                             let component = &mut self.components[pos];
                             // Safety:The tables were confirmed to exist in self.check_tables();
@@ -265,7 +265,8 @@ impl Decoder
                                 for h_samp in 0..component.horizontal_sample
                                 {
                                     // only decode needed components
-                                    if min(self.output_colorspace.num_components() - 1, pos) == pos {
+                                    if min(self.output_colorspace.num_components() - 1, pos) == pos
+                                    {
                                         // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
                                         // Get position to write
@@ -302,7 +303,9 @@ impl Decoder
                                         let tmp = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
 
                                         stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
-                                    } else {
+                                    }
+                                    else
+                                    {
                                         // component not needed, decode and discard bits
                                         stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
                                     }
@@ -310,38 +313,9 @@ impl Decoder
                             }
                             self.todo -= 1;
                             // after every interleaved MCU that's a mcu, count down restart markers.
-                            if self.todo == 0 {
-                                self.todo = self.restart_interval;
-
-                                // decode the MCU
-                                if let Some(marker) = stream.marker
-                                {   // Found a marker
-                                    // Read stream and see what marker is stored there
-                                    match marker
-                                    {
-                                        Marker::RST(_) =>
-                                            {
-                                                // reset stream
-                                                stream.reset();
-                                                // Initialize dc predictions to zero for all components
-                                                self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                                                // Start iterating again. from position.
-                                                break 'rst;
-                                            }
-                                        Marker::EOI =>
-                                            {
-                                                // silent pass
-
-                                            }
-                                        _ =>
-                                            {
-                                                return Err(DecodeErrors::MCUError(format!(
-                                                    "Marker {:?} found in bitstream, possibly corrupt jpeg",
-                                                    marker
-                                                )));
-                                            }
-                                    }
-                                }
+                            if self.todo == 0
+                            {
+                                self.handle_rst(&mut stream)?;
                             }
                         }
                     }
@@ -369,5 +343,42 @@ impl Decoder
                 * self.output_colorspace.num_components(),
         );
         return Ok(global_channel);
+    }
+    // handle RST markers.
+    // No-op if not using restarts
+    // this routine is shared with mcu_prog
+    #[cold]
+    pub (crate) fn handle_rst(&mut self,stream:&mut BitStream)->Result<(),DecodeErrors>{
+            self.todo = self.restart_interval;
+
+            if let Some(marker) = stream.marker
+            {   // Found a marker
+                // Read stream and see what marker is stored there
+                match marker
+                {
+                    Marker::RST(_) =>
+                        {
+                            // reset stream
+                            stream.reset();
+                            // Initialize dc predictions to zero for all components
+                            self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                            // Start iterating again. from position.
+                        }
+                    Marker::EOI =>
+                        {
+                            // silent pass
+
+                        }
+                    _ =>
+                        {
+                            return Err(DecodeErrors::MCUError(format!(
+                                "Marker {:?} found in bitstream, possibly corrupt jpeg",
+                                marker
+                            )));
+                        }
+                }
+            }
+
+        Ok(())
     }
 }

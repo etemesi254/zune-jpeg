@@ -117,18 +117,18 @@ impl Decoder
             marker = get_marker(reader, &mut stream).unwrap();
         }
 
-        return Ok(self.finish_progressive_decoding(block, mcu_width));
+        return Ok(self.finish_progressive_decoding(&block, mcu_width));
     }
 
     #[rustfmt::skip]
-    fn finish_progressive_decoding(&mut self, block: [Vec<i16>; 3], mcu_width: usize) -> Vec<u8> {
+    fn finish_progressive_decoding(&mut self, block: &[Vec<i16>; 3], mcu_width: usize) -> Vec<u8> {
         self.set_upsampling().unwrap();
 
         let mut mcu_width = mcu_width;
 
         if self.sub_sample_ratio == SubSampRatios::H
         {
-            mcu_width = mcu_width * 2;
+            mcu_width *= 2;
         }
         // remove items from  top block
         let y = &block[0];
@@ -190,7 +190,7 @@ impl Decoder
                 scope.execute(move || {
                     post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
                                       color_convert, input, output, out, mcu_width, width,
-                    )
+                    );
                 });
             }
         });
@@ -206,18 +206,19 @@ impl Decoder
     ) -> Result<bool, DecodeErrors>
     {
         stream.reset();
-
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+
         if self.num_scans == 1
         {
             // Safety checks
             if self.spec_end != 0 && self.spec_start == 0
             {
                 return Err(DecodeErrors::HuffmanDecode(
-                    "Can't merge dc and AC corrupt jpeg".to_string(),
+                    "Can't merge DC and AC corrupt jpeg".to_string(),
                 ));
             }
             // non interleaved data, process one block at a time in trivial scanline order
+
             let k = self.z_order[0];
 
             let (mcu_width, mcu_height);
@@ -236,7 +237,9 @@ impl Decoder
                 mcu_height = self.mcu_y;
             }
             let mut i = 0;
+
             let mut j = 0;
+
             while i < mcu_height
             {
                 while j < mcu_width
@@ -263,35 +266,48 @@ impl Decoder
                             // refining scans for this MCU
                             stream.decode_prog_dc_refine(reader,&mut data[0]);
                         }
-                    } else {
+                    }
+                    else
+                    {
                         let pos = self.components[k].ac_huff_table;
 
                         let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
 
                         if self.succ_high == 0
                         {
-                            if stream.eob_run > 0 {
+                            // first scan for this MCU
+                            if stream.eob_run > 0
+                            {
                                 // EOB runs indicate the whole block is empty, but unlike for baseline
                                 // EOB in progressive tell us the number of proceeding blocks currently zero.
 
                                 // other decoders use a check in decode_mcu_first decrement and return if it's an
                                 // eob run(since the array is expected to contain zeroes). but that's a function call overhead(if not inlined) and a branch check
                                 // we do it a bit differently
-                                // we can use divisors  to determine how many MCU's to skip
+                                // we can use divisors to determine how many MCU's to skip
                                 // which is more faster than a decrement and return since EOB runs can be
                                 // as big as 10,000
 
-                                i = i + ((j + stream.eob_run as usize-1) / mcu_width);
+                                i += (j + stream.eob_run as usize-1) / mcu_width;
+
                                 j = (j + stream.eob_run as usize-1) % mcu_width;
+
                                 stream.eob_run = 0;
-                            } else {
+                            }
+                            else
+                            {
                                 stream.decode_mcu_ac_first(reader, ac_table, data)?;
                             }
                         } else {
+                            // refinement scan
                             stream.decode_mcu_ac_refine(reader, ac_table, data)?;
                         }
                     }
                     j += 1;
+                    self.todo-=1;
+                    if self.todo==0{
+                        self.handle_rst(stream)?;
+                    }
                 }
                 j = 0;
                 i += 1;
@@ -326,8 +342,11 @@ impl Decoder
                             for h_samp in 0..component.horizontal_sample
                             {
                                 let x2 = j * component.horizontal_sample + h_samp;
+
                                 let y2 = i * component.vertical_sample + v_samp;
+
                                 let position = 64 * (x2 + y2 * component.width_stride / 8);
+
                                 // data will contain the position for this coefficient in our array.
                                 let data = &mut buffer[n as usize][position];
 
@@ -341,6 +360,11 @@ impl Decoder
                                 }
                             }
                         }
+                        self.todo -= 1;
+                        // after every scan that's a mcu, count down restart markers.
+                        if self.todo == 0 {
+                            self.handle_rst(stream)?;
+                        }
                     }
                 }
             }
@@ -348,7 +372,9 @@ impl Decoder
         return Ok(true);
     }
 }
-
+///Get a marker from the bit-stream.
+///
+/// This reads until it gets a marker or end of file is encountered
 fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Marker>
 {
     if let Some(marker) = stream.marker
