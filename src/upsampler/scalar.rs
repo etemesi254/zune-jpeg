@@ -153,7 +153,9 @@ pub fn upsample_hv(input: &[i16], output_len: usize) -> Vec<i16>
     // Furthermore, we know it will be fast, upsample vertical and horizontal are super optimized
     // to eliminate bounds check.
 
-    // But there is an AVX version obviously.
+    // But there is an AVX version obviously
+
+    // But this is a good place for optimization if one wants to tackle that.
 
     // first pass, do vertical sampling
     let first_pass = upsample_vertical(input, input.len() * 2);

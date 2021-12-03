@@ -304,8 +304,11 @@ impl Decoder
                         }
                     }
                     j += 1;
+
                     self.todo-=1;
-                    if self.todo==0{
+
+                    if self.todo==0
+                    {
                         self.handle_rst(stream)?;
                     }
                 }

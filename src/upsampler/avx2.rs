@@ -35,7 +35,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
     //    |====|====|
     //    | B1 | B2 |
     //
-    // -> Okau for two squeezed lines, A and B we generate 2 lines.
+    // -> Okay for two squeezed lines, A and B we generate 2 lines.
     // We do the same for B & C and so on.
     //
     // After our vertical pass, we have p2 and p3 stretching halfway the image

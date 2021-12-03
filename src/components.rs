@@ -32,7 +32,7 @@ pub(crate) struct Components
     pub quantization_table: Aligned32<[i32; 64]>,
     /// dc prediction for the component
     pub dc_pred: i32,
-    /// An upsampling function, can be basic or SSE, depending
+    /// An up-sampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
     /// How pixels do we need to go to get to the next line?

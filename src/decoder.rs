@@ -455,7 +455,7 @@ impl Decoder
         }
     }
 
-    /// Set upsampling routines in case an image is down sampled
+    /// Set up-sampling routines in case an image is down sampled
     pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors>
     {
         // no sampling, return early

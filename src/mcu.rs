@@ -153,6 +153,7 @@ impl Decoder
                 mcu_width = self.mcu_x;
 
                 mcu_height = self.mcu_y / 2;
+
                 bias = 2;
                 // V;
             } else {
