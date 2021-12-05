@@ -7,19 +7,19 @@
 use std::cmp::max;
 use std::io::{BufRead, Read};
 
+use crate::{ColorSpace, Decoder, MAX_DIMENSIONS};
 use crate::components::Components;
+use crate::decoder::ImageInfo;
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
-use crate::decoder::ImageInfo;
 use crate::marker::Marker;
-use crate::misc::{read_byte, read_u16_be, Aligned32, SOFMarkers, UN_ZIGZAG};
-use crate::{Decoder, MAX_DIMENSIONS};
+use crate::misc::{Aligned32, read_byte, read_u16_be, SOFMarkers, UN_ZIGZAG};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names)]
 pub(crate) fn parse_huffman<R>(decoder: &mut Decoder, mut buf: &mut R) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     // Read the length of the Huffman table
     let dht_length = read_u16_be(&mut buf).map_err(|_| {
@@ -70,23 +70,23 @@ where
         match dc_or_ac
         {
             0 =>
-            {
-                decoder.dc_huffman_tables[index] = Some(HuffmanTable::new(
-                    &num_symbols,
-                    symbols,
-                    true,
-                    decoder.is_progressive,
-                )?);
-            }
+                {
+                    decoder.dc_huffman_tables[index] = Some(HuffmanTable::new(
+                        &num_symbols,
+                        symbols,
+                        true,
+                        decoder.is_progressive,
+                    )?);
+                }
             _ =>
-            {
-                decoder.ac_huffman_tables[index] = Some(HuffmanTable::new(
-                    &num_symbols,
-                    symbols,
-                    false,
-                    decoder.is_progressive,
-                )?);
-            }
+                {
+                    decoder.ac_huffman_tables[index] = Some(HuffmanTable::new(
+                        &num_symbols,
+                        symbols,
+                        false,
+                        decoder.is_progressive,
+                    )?);
+                }
         }
     }
 
@@ -96,8 +96,8 @@ where
 ///**B.2.4.1 Quantization table-specification syntax**
 #[allow(clippy::cast_possible_truncation)]
 pub(crate) fn parse_dqt<R>(decoder: &mut Decoder, buf: &mut R) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut buf = buf;
 
@@ -136,32 +136,32 @@ where
         let dct_table = match precision
         {
             0 =>
-            {
-                let mut qt_values = [0; 64];
+                {
+                    let mut qt_values = [0; 64];
 
-                buf.read_exact(&mut qt_values).map_err(|x| {
-                    DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
-                })?;
+                    buf.read_exact(&mut qt_values).map_err(|x| {
+                        DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+                    })?;
 
-                length_read += 7 + precision_value as u16;
+                    length_read += 7 + precision_value as u16;
 
-                // carry out un zig-zag here
-                un_zig_zag(&qt_values)
-            }
+                    // carry out un zig-zag here
+                    un_zig_zag(&qt_values)
+                }
             1 =>
-            {
-                // 16 bit quantization tables
-                return Err(DecodeErrors::DqtError(
-                    "Support for 16 bit quantization table is not complete".to_string(),
-                ));
-            }
+                {
+                    // 16 bit quantization tables
+                    return Err(DecodeErrors::DqtError(
+                        "Support for 16 bit quantization table is not complete".to_string(),
+                    ));
+                }
             _ =>
-            {
-                return Err(DecodeErrors::DqtError(format!(
-                    "Expected QT precision value of either 0 or 1, found {:?}",
-                    precision
-                )));
-            }
+                {
+                    return Err(DecodeErrors::DqtError(format!(
+                        "Expected QT precision value of either 0 or 1, found {:?}",
+                        precision
+                    )));
+                }
         };
 
         decoder.qt_tables[table_position] = Some(dct_table);
@@ -175,8 +175,8 @@ where
 pub(crate) fn parse_start_of_frame<R>(
     buf: &mut R, sof: SOFMarkers, img: &mut Decoder,
 ) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut buf = buf;
 
@@ -233,6 +233,15 @@ where
             u16::from(8 + 3 * num_components),
             length
         )));
+    }
+    info!("Image components : {}",num_components);
+
+    if num_components == 1 {
+        // SOF sets the number of image components
+        // and that to us translates to setting input and output
+        // colorspaces to zero
+        img.input_colorspace = ColorSpace::GRAYSCALE;
+        img.output_colorspace = ColorSpace::GRAYSCALE;
     }
 
     // set number of components
@@ -307,8 +316,8 @@ where
 /// Parse a start of scan data
 
 pub(crate) fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
-where
-    R: Read + BufRead,
+    where
+        R: Read + BufRead,
 {
     let mut buf = buf;
 
@@ -381,9 +390,7 @@ where
 
         // successive approximation bit position low
         image.succ_low = bit_approx & 0xF;
-    }
-    else
-    {
+    } else {
         // ignore three bytes that contain progressive information
         buf.consume(3);
     }
@@ -394,8 +401,8 @@ where
 pub(crate) fn parse_app<R>(
     mut buf: &mut R, marker: Marker, info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
-where
-    R: BufRead + Read,
+    where
+        R: BufRead + Read,
 {
     let length = read_u16_be(buf)? as usize;
 
@@ -404,41 +411,41 @@ where
     match marker
     {
         Marker::APP(0) =>
-        {
-            // The only thing we need is the x and y pixel densities here
-            // which are found 10 bytes away
-            buf.consume(8);
-
-            let x_density = read_u16_be(&mut buf)?;
-
-            info.set_x(x_density);
-
-            let y_density = read_u16_be(&mut buf)?;
-
-            info.set_y(y_density);
-        }
-        Marker::APP(1) =>
-        {
-            if length >= 6
             {
-                let mut buffer = [0_u8; 6];
+                // The only thing we need is the x and y pixel densities here
+                // which are found 10 bytes away
+                buf.consume(8);
 
-                buf.read_exact(&mut buffer).map_err(|x| {
-                    DecodeErrors::Format(format!("Could not read Exif data\n{}", x))
-                })?;
+                let x_density = read_u16_be(&mut buf)?;
 
-                bytes_read += 6;
+                info.set_x(x_density);
 
-                // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
-                // 4.5.4 Basic Structure of Decoder Compressed Data
-                if &buffer == b"Exif\x00\x00"
+                let y_density = read_u16_be(&mut buf)?;
+
+                info.set_y(y_density);
+            }
+        Marker::APP(1) =>
+            {
+                if length >= 6
                 {
-                    buf.consume(length - bytes_read);
+                    let mut buffer = [0_u8; 6];
+
+                    buf.read_exact(&mut buffer).map_err(|x| {
+                        DecodeErrors::Format(format!("Could not read Exif data\n{}", x))
+                    })?;
+
+                    bytes_read += 6;
+
+                    // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
+                    // 4.5.4 Basic Structure of Decoder Compressed Data
+                    if &buffer == b"Exif\x00\x00"
+                    {
+                        buf.consume(length - bytes_read);
+                    }
                 }
             }
-        }
         _ =>
-        {}
+            {}
     }
 
     Ok(())

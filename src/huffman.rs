@@ -65,12 +65,12 @@ impl HuffmanTable
     ///
     /// This routine performs some validation checks on the table
     #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_possible_wrap,
-        clippy::cast_sign_loss
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
     )]
     fn make_derived_table(&mut self, is_dc: bool, is_progressive: bool)
-        -> Result<(), DecodeErrors>
+                          -> Result<(), DecodeErrors>
     {
         // build a list of code size
         let mut huff_size = [0; 257];
@@ -140,9 +140,7 @@ impl HuffmanTable
             {
                 // -1 if no codes of this length
                 self.maxcode[l] = -1;
-            }
-            else
-            {
+            } else {
                 // offset[l]=codes[index of 1st symbol of code length l
                 // minus minimum code of length l]
                 self.offset[l] = (p as i32) - (huff_code[p]) as i32;
@@ -233,6 +231,7 @@ impl HuffmanTable
 
                     if mag_bits == 0 && !is_progressive
                     {
+
                         // special case EOB run
 
                         // On encountering an EOB run the decoder should terminate decoding
@@ -243,9 +242,10 @@ impl HuffmanTable
 
                         // But we don't want to do that for progressive decoding since EOB has a different
                         // meaning there
-                        fast_ac[i] = (63 << 4) + len;
-                    }
-                    else if mag_bits != 0 && (len + mag_bits) <= i16::from(HUFF_LOOKAHEAD)
+                        let new_run = if run == 0 { 63 } else { run };
+                        fast_ac[i] = (new_run << 4) + len;
+
+                    } else if mag_bits != 0 && (len + mag_bits) <= i16::from(HUFF_LOOKAHEAD)
                     {
                         // magnitude code followed by receive_extend code
                         let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
