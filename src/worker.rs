@@ -90,7 +90,6 @@ pub(crate) fn post_process_prog(
         unprocessed[z] = idct_func(block[z], &component_data[z].quantization_table,
             component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
     });
-
     post_process_inner(&mut unprocessed, component_data, color_convert_16, color_convert,
         input_colorspace,  output_colorspace, output, mcu_len, width);
 }
@@ -123,7 +122,7 @@ pub(crate) fn post_process_inner(
     // color convert
     match (input_colorspace, output_colorspace)
     {
-        (ColorSpace::YCbCr, ColorSpace::GRAYSCALE) =>
+        (ColorSpace::YCbCr | ColorSpace::GRAYSCALE, ColorSpace::GRAYSCALE) =>
         {
             ycbcr_to_grayscale(&unprocessed[0], width, output);
         }

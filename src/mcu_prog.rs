@@ -31,12 +31,12 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
+use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::misc::read_byte;
 use crate::worker::post_process_prog;
-use crate::Decoder;
 
 impl Decoder
 {
@@ -139,20 +139,6 @@ impl Decoder
 
         let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components()];
 
-        // Chunk sizes. Each determine how many pixels go per thread.
-        let y_chunk_size =
-            mcu_width * self.components[0].vertical_sample * self.components[0].horizontal_sample;
-
-        // Cb and Cr contains equal sub-sampling so don't calculate for them.
-        let cb_chunk_size =
-            mcu_width * self.components[1].vertical_sample * self.components[1].horizontal_sample;
-
-        // Divide into chunks
-        let y_chunk = y.chunks_exact(y_chunk_size);
-
-        let cb_chunk = cb.chunks_exact(cb_chunk_size);
-
-        let cr_chunk = cr.chunks_exact(cb_chunk_size);
 
         // Things we need for multithreading.
         let h_max = self.h_max;
@@ -180,20 +166,52 @@ impl Decoder
 
         let out_chunks = out_vector.chunks_exact_mut(chunks_size);
 
-        // open threads.
-        pool.scoped(|scope| {
-            for (((y, cb), cr), out) in
-            y_chunk.zip(cb_chunk).zip(cr_chunk).zip(out_chunks)
-            {
-                let component = components.clone();
+        // Chunk sizes. Each determine how many pixels go per thread.
+        let y_chunk_size =
+            mcu_width * self.components[0].vertical_sample * self.components[0].horizontal_sample;
 
-                scope.execute(move || {
-                    post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
-                                      color_convert, input, output, out, mcu_width, width,
-                    );
-                });
-            }
-        });
+        // Cb and Cr contains equal sub-sampling so don't calculate for them.
+
+        // Divide into chunks
+        let y_chunk = y.chunks_exact(y_chunk_size);
+        if self.input_colorspace.num_components() == 3 {
+            let cb_chunk_size =
+                mcu_width * self.components[1].vertical_sample * self.components[1].horizontal_sample;
+
+
+            let cb_chunk = cb.chunks_exact(cb_chunk_size);
+
+            let cr_chunk = cr.chunks_exact(cb_chunk_size);
+
+            // open threads.
+            pool.scoped(|scope| {
+                for (((y, cb), cr), out) in
+                y_chunk.zip(cb_chunk).zip(cr_chunk).zip(out_chunks)
+                {
+                    let component = components.clone();
+
+                    scope.execute(move || {
+                        post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
+                                          color_convert, input, output, out, mcu_width, width,
+                        );
+                    });
+                }
+            });
+        } else {
+            // one component
+            pool.scoped(|scope| {
+                for (y,  out) in y_chunk.zip(out_chunks)
+                {
+                    let component = components.clone();
+                   scope.execute(move || {
+                        post_process_prog(&[y, &[], &[]], &component, idct_func, color_convert_16,
+                                          color_convert, input, output, out, mcu_width, width,
+                        );
+                    });
+                }
+            });
+
+        }
         debug!("Finished decoding image");
 
         return out_vector;
@@ -260,15 +278,11 @@ impl Decoder
                         {
                             // first scan for this mcu
                             stream.decode_prog_dc_first(reader, dc_table, &mut data[0], dc_pred)?;
-                        }
-                        else
-                        {
+                        } else {
                             // refining scans for this MCU
-                            stream.decode_prog_dc_refine(reader,&mut data[0]);
+                            stream.decode_prog_dc_refine(reader, &mut data[0]);
                         }
-                    }
-                    else
-                    {
+                    } else {
                         let pos = self.components[k].ac_huff_table;
 
                         let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
@@ -288,14 +302,12 @@ impl Decoder
                                 // which is more faster than a decrement and return since EOB runs can be
                                 // as big as 10,000
 
-                                i += (j + stream.eob_run as usize-1) / mcu_width;
+                                i += (j + stream.eob_run as usize - 1) / mcu_width;
 
-                                j = (j + stream.eob_run as usize-1) % mcu_width;
+                                j = (j + stream.eob_run as usize - 1) % mcu_width;
 
                                 stream.eob_run = 0;
-                            }
-                            else
-                            {
+                            } else {
                                 stream.decode_mcu_ac_first(reader, ac_table, data)?;
                             }
                         } else {
@@ -305,9 +317,9 @@ impl Decoder
                     }
                     j += 1;
 
-                    self.todo-=1;
+                    self.todo -= 1;
 
-                    if self.todo==0
+                    if self.todo == 0
                     {
                         self.handle_rst(stream)?;
                     }
@@ -356,10 +368,8 @@ impl Decoder
                                 if self.succ_high == 0
                                 {
                                     stream.decode_prog_dc_first(reader, huff_table, data, &mut component.dc_pred)?;
-                                }
-                                else
-                                {
-                                    stream.decode_prog_dc_refine(reader,data);
+                                } else {
+                                    stream.decode_prog_dc_refine(reader, data);
                                 }
                             }
                         }
@@ -375,6 +385,7 @@ impl Decoder
         return Ok(true);
     }
 }
+
 ///Get a marker from the bit-stream.
 ///
 /// This reads until it gets a marker or end of file is encountered
@@ -419,6 +430,6 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
 fn try_decoding()
 {
     let mut v = Decoder::new();
-    v.decode_file("/Users/calebe/CLionProjects/zune-jpeg/benches/images/speed_bench_prog.jpg")
+    v.decode_file("/home/caleb/2.jpg")
         .unwrap();
 }

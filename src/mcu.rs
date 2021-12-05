@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
+use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
-use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -221,7 +221,6 @@ impl Decoder
                 // thread (that's how we're multi-threaded and thread safe).
 
                 let mut temporary = [vec![], vec![], vec![]];
-
                 for (pos, comp) in self.components.iter().enumerate()
                 {
                     // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
@@ -301,7 +300,7 @@ impl Decoder
 
                                         // It will always be zero since it's initialized per MCU height.
 
-                                        let tmp = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
+                                        let tmp: &mut [i16; 64] = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
 
                                         stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
                                     }
@@ -349,36 +348,35 @@ impl Decoder
     // No-op if not using restarts
     // this routine is shared with mcu_prog
     #[cold]
-    pub (crate) fn handle_rst(&mut self,stream:&mut BitStream)->Result<(),DecodeErrors>{
-            self.todo = self.restart_interval;
+    pub(crate) fn handle_rst(&mut self, stream: &mut BitStream) -> Result<(), DecodeErrors> {
+        self.todo = self.restart_interval;
 
-            if let Some(marker) = stream.marker
-            {   // Found a marker
-                // Read stream and see what marker is stored there
-                match marker
-                {
-                    Marker::RST(_) =>
-                        {
-                            // reset stream
-                            stream.reset();
-                            // Initialize dc predictions to zero for all components
-                            self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                            // Start iterating again. from position.
-                        }
-                    Marker::EOI =>
-                        {
-                            // silent pass
-
-                        }
-                    _ =>
-                        {
-                            return Err(DecodeErrors::MCUError(format!(
-                                "Marker {:?} found in bitstream, possibly corrupt jpeg",
-                                marker
-                            )));
-                        }
-                }
+        if let Some(marker) = stream.marker
+        {   // Found a marker
+            // Read stream and see what marker is stored there
+            match marker
+            {
+                Marker::RST(_) =>
+                    {
+                        // reset stream
+                        stream.reset();
+                        // Initialize dc predictions to zero for all components
+                        self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                        // Start iterating again. from position.
+                    }
+                Marker::EOI =>
+                    {
+                        // silent pass
+                    }
+                _ =>
+                    {
+                        return Err(DecodeErrors::MCUError(format!(
+                            "Marker {:?} found in bitstream, possibly corrupt jpeg",
+                            marker
+                        )));
+                    }
             }
+        }
 
         Ok(())
     }

@@ -42,7 +42,7 @@ use std::cmp::min;
 use std::io::Cursor;
 
 use crate::errors::DecodeErrors;
-use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
+use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -272,7 +272,7 @@ impl BitStream
             symbol = huff_extend(r, symbol);
         }
         // Update DC prediction
-        *dc_prediction += symbol;
+      *dc_prediction= dc_prediction.wrapping_add( symbol);
 
         return Ok(true);
     }
