@@ -6,22 +6,23 @@ use std::io::{BufRead, Cursor, Read};
 use std::path::Path;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
+
 use crate::components::{Components, SubSampRatios};
+
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
-use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
-use crate::upsampler::{
-    choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical,
-};
+use crate::misc::{read_byte, read_u16_be, Aligned32, SOFMarkers, ColorSpace};
+use crate::upsampler::{choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical};
+
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 3;
 
 /// Maximum image dimensions supported.
-pub(crate) const MAX_DIMENSIONS: usize = 2 << 24;
+pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
 
 /// Color conversion function that can convert YcbCr colorspace to RGB(A/X) for
 /// 16 values
@@ -218,6 +219,7 @@ impl Decoder
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file)?);
+        info!("File size: {} bytes",buffer.get_ref().len());
 
         self.decode_internal(buffer)
     }
@@ -371,15 +373,23 @@ impl Decoder
                         }
                         _ =>
                         {
-                            if log_enabled!(log::Level::Debug)
-                            {
+                            
                                 warn!(
                                     "Capabilities for processing marker \"{:?}\" not implemented",
                                     m
                                 );
-                            };
+                            
                         }
                     }
+                } else{
+                    let size = read_u16_be(&mut buf)?;
+                    warn!("Extraneous marker 0xFF{:X} found. Size: {}",m,size-2);
+                    warn!("Skipping {} bytes",size);
+                    buf.consume(size as usize);
+
+
+
+
                 }
             }
 
