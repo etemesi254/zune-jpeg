@@ -7,13 +7,13 @@
 use std::cmp::max;
 use std::io::{BufRead, Read};
 
-use crate::{ColorSpace, Decoder, MAX_DIMENSIONS};
+use crate::decoder::{Decoder, MAX_DIMENSIONS};
 use crate::components::Components;
 use crate::decoder::ImageInfo;
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::marker::Marker;
-use crate::misc::{Aligned32, read_byte, read_u16_be, SOFMarkers, UN_ZIGZAG};
+use crate::misc::{Aligned32, ColorSpace, read_byte, read_u16_be, SOFMarkers, UN_ZIGZAG};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names)]
@@ -210,6 +210,10 @@ pub(crate) fn parse_start_of_frame<R>(
         .map_err(|_| DecodeErrors::Format("Cannot read image width, exhausted data".to_string()))?;
 
     img.info.set_width(img_width);
+
+    info!("Image width  :{}",img_width);
+    info!("Image height :{}",img_height);
+
     let dimensions = usize::from(img_width) * usize::from(img_height);
     if dimensions > MAX_DIMENSIONS
     {
