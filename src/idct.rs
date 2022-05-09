@@ -28,7 +28,7 @@
 #[cfg(feature = "X86")]
 use crate::idct::avx2::dequantize_and_idct_avx2;
 use crate::idct::scalar::dequantize_and_idct_int;
-use crate::IDCTPtr;
+use crate::decoder::IDCTPtr;
 
 #[cfg(feature = "x86")]
 mod avx2;

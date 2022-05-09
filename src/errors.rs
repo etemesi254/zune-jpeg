@@ -8,7 +8,7 @@ use crate::misc::{
     START_OF_FRAME_EXT_AR, START_OF_FRAME_EXT_SEQ, START_OF_FRAME_LOS_SEQ,
     START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT_AR,
 };
-use crate::MAX_DIMENSIONS;
+use crate::decoder::MAX_DIMENSIONS;
 
 /// Common Decode errors
 #[allow(clippy::module_name_repetitions)]

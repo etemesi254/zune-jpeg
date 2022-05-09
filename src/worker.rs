@@ -3,8 +3,8 @@ use std::convert::TryInto;
 
 use crate::color_convert::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 use crate::components::Components;
-use crate::{ColorConvert16Ptr, ColorConvertPtr, ColorSpace, IDCTPtr, MAX_COMPONENTS};
-
+use crate::decoder::{ColorConvert16Ptr, ColorConvertPtr, IDCTPtr, MAX_COMPONENTS};
+use crate::misc::ColorSpace;
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
 /// This handles routines for images which are interleaved for non-interleaved use post_process_non_interleaved

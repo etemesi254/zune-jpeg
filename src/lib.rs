@@ -50,29 +50,27 @@
     clippy::missing_errors_doc,
     clippy::panic
 )]
-#![deny(missing_docs)]
+//#![deny(missing_docs)]
 
 #[macro_use]
 extern crate log;
 
+
 pub use crate::decoder::Decoder;
 pub use crate::misc::ColorSpace;
 
-mod bitstream;
-mod components;
+pub mod bitstream;
+pub mod color_convert;
+pub mod components;
 pub mod errors;
 mod headers;
 mod huffman;
 mod idct;
-mod decoder;
 mod marker;
 mod mcu;
 mod mcu_prog;
-mod misc;
-
-mod color_convert;
+pub mod misc;
 mod unsafe_utils;
 mod upsampler;
 mod worker;
-
-pub use decoder::*;
+mod decoder;
