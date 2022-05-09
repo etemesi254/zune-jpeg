@@ -384,8 +384,8 @@ impl Decoder
                 } else{
                     let size = read_u16_be(&mut buf)?;
                     warn!("Extraneous marker 0xFF{:X} found. Size: {}",m,size-2);
-                    warn!("Skipping {} bytes",size);
-                    buf.consume(size as usize);
+                    warn!("Skipping {} bytes",(size-2));
+                    buf.consume((size-2) as usize);
 
 
 
