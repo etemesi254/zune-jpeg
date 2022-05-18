@@ -30,10 +30,16 @@ clippy::single_match
 )]
 #[rustfmt::skip]
 pub(crate) fn post_process(
-    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components],
-    idct_func: IDCTPtr, color_convert_16: ColorConvert16Ptr,
-    color_convert: ColorConvertPtr, input_colorspace: ColorSpace, output_colorspace: ColorSpace,
-    output: &mut [u8], mcu_len: usize, width: usize,
+    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS],
+    component_data: &[Components],
+    idct_func: IDCTPtr,
+    color_convert_16: ColorConvert16Ptr,
+    color_convert: ColorConvertPtr,
+    input_colorspace: ColorSpace,
+    output_colorspace: ColorSpace,
+    output: &mut [u8],
+    mcu_len: usize,
+    width: usize,
 ) // so many parameters..
 {
     // maximum sampling factors are in Y-channel, no need to pass them.
@@ -41,7 +47,18 @@ pub(crate) fn post_process(
     let v_samp = component_data[0].vertical_sample;
     // carry out dequantization and inverse DCT
 
-    // for the reason for the below line, see post_process_no_interleaved
+    // So we want to carry out IDCT and upsampling
+    // But assuming we have an RGB image but the user asked for a grey-scale image,
+    // we don't need to carry out idct and upsampling or even color conversion.
+    // So to do the bare minimum work we take the min
+    // I.e
+    // RGB -> Grayscale
+    // (3) - (1) => Decode 1 channel
+    // GrayScale->Grayscale
+    // (1)      -> (1) => Decode 1 component
+    // RGB -> RGBA
+    // (3) -> (4) => Decode 3 channels
+
     let x = min(
         input_colorspace.num_components(),
         output_colorspace.num_components(),
@@ -57,7 +74,11 @@ pub(crate) fn post_process(
         let v_samp_idct = {
             if z == 0 { 1 } else { v_samp }
         };
-        unprocessed[z] = idct_func(&unprocessed[z], &component_data[z].quantization_table, component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
+        unprocessed[z] = idct_func(&unprocessed[z],
+                                   &component_data[z].quantization_table,
+                                   component_data[z].width_stride,
+                                   h_samp * v_samp,
+                                   v_samp_idct);
     });
 
     post_process_inner(unprocessed, component_data, color_convert_16, color_convert,
@@ -66,9 +87,15 @@ pub(crate) fn post_process(
 
 #[rustfmt::skip]
 pub(crate) fn post_process_prog(
-    block: &[&[i16]; MAX_COMPONENTS], component_data: &[Components], idct_func: IDCTPtr,
-    color_convert_16: ColorConvert16Ptr, color_convert: ColorConvertPtr,
-    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], mcu_len: usize,
+    block: &[&[i16]; MAX_COMPONENTS], /*The difference with post process*/
+    component_data: &[Components],
+    idct_func: IDCTPtr,
+    color_convert_16: ColorConvert16Ptr,
+    color_convert: ColorConvertPtr,
+    input_colorspace: ColorSpace,
+    output_colorspace: ColorSpace,
+    output: &mut [u8],
+    mcu_len: usize,
     width: usize,
 ) // so many parameters..
 {
