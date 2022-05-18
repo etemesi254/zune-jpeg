@@ -212,6 +212,34 @@ impl BitStream
         // If we have less than 32 bits we refill
         if self.bits_left <= 32 && self.marker.is_none()
         {
+            // So before we do anythong, check if we have a 0xFF byte
+
+            let diff = reader.get_ref().len().saturating_sub(reader.position() as usize);
+
+            if diff > 4{
+                let pos = reader.position() as usize;
+                // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
+                let mut  buf = [0;4];
+                buf.copy_from_slice(reader.get_ref().get(pos..pos+4).unwrap());
+                // create buffer
+                let msb_buf = u32::from_be_bytes(buf);
+                // check if we have 0xff
+                if !has_byte(msb_buf,255){
+                    // Move cursor 4 bytes ahead.
+                    reader.set_position((pos+4) as u64);
+                    // indicate we have 32 bits incoming
+                    self.bits_left+=32;
+                    // make room
+                    self.buffer<<=32;
+                    // add
+                    self.buffer |= u64::from(msb_buf);
+                    // set them correctly
+                    self.aligned_buffer = self.buffer << (64 - self.bits_left);
+                    // done.
+                    return true;
+                }
+            }
+
             // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse
@@ -720,4 +748,16 @@ fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64
     reader.set_position(pos + 1);
     // if we have nothing left fill buffer with zeroes
     u64::from(*reader.get_ref().get(pos as usize).unwrap_or(&0))
+}
+
+
+fn has_zero(v:u32) -> bool {
+    // Retrieved from Stanford bithacks
+    // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
+    return !((((v & 0x7F7F7F7F) + 0x7F7F7F7F) | v) | 0x7F7F7F7F) != 0;
+}
+fn has_byte(b:u32, val:u8) -> bool {
+    // Retrieved from Stanford bithacks
+    // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
+    has_zero(b^((!0_u32/255)*u32::from(val)))
 }
