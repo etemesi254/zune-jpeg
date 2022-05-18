@@ -5,7 +5,6 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::unsafe_utils::align_alloc;
 use crate::upsampler::scalar::upsample_hv;
 
 pub fn upsample_hv_simd(input: &[i16], output_len: usize) -> Vec<i16>
@@ -49,7 +48,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
 
     // So how do we actually implement.
 
-    let mut output = align_alloc::<i16,32>(output_len);
+    let mut output = vec![0;output_len];
 
     // okay for the next step lets play with AVX
 

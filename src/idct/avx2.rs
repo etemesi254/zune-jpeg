@@ -28,7 +28,7 @@ use std::arch::x86::*;
 use std::arch::x86_64::*;
 
 use crate::misc::Aligned32;
-use crate::unsafe_utils::{align_alloc, YmmRegister};
+use crate::unsafe_utils::YmmRegister;
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
@@ -66,7 +66,7 @@ unsafe fn dequantize_and_idct_int_avx2(
     v_samp: usize,
 ) -> Vec<i16>
 {
-    let mut tmp_vector = align_alloc::<i16, 16>(coeff.len());
+    let mut tmp_vector = vec![0;coeff.len()];
 
     // calculate position
     // inside This is still slow because cache misses
