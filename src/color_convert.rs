@@ -49,12 +49,12 @@ pub use crate::color_convert::sse::{
 };
 use crate::decoder::{ColorConvert16Ptr, ColorConvertPtr};
 
-
 mod avx;
 mod scalar;
 mod sse;
 
 pub use scalar::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
+
 use crate::misc::ColorSpace;
 
 /// This function determines the best color-convert function to carry out

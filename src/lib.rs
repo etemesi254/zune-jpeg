@@ -55,13 +55,13 @@
 #[macro_use]
 extern crate log;
 
-
 pub use crate::decoder::Decoder;
 pub use crate::misc::ColorSpace;
 
 pub mod bitstream;
 pub mod color_convert;
 pub mod components;
+mod decoder;
 pub mod errors;
 mod headers;
 mod huffman;
@@ -73,4 +73,3 @@ pub mod misc;
 mod unsafe_utils;
 mod upsampler;
 mod worker;
-mod decoder;

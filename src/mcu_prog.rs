@@ -31,12 +31,12 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::misc::read_byte;
 use crate::worker::post_process_prog;
+use crate::Decoder;
 
 impl Decoder
 {
@@ -430,6 +430,5 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
 fn try_decoding()
 {
     let mut v = Decoder::new();
-    v.decode_file("/home/caleb/2.jpg")
-        .unwrap();
+    v.decode_file("/home/caleb/2.jpg").unwrap();
 }

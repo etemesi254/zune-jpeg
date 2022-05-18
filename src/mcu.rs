@@ -59,10 +59,10 @@ use std::sync::Arc;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
-use crate::Decoder;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
+use crate::Decoder;
 
 /// The size of a DC block for a MCU.
 
@@ -348,33 +348,35 @@ impl Decoder
     // No-op if not using restarts
     // this routine is shared with mcu_prog
     #[cold]
-    pub(crate) fn handle_rst(&mut self, stream: &mut BitStream) -> Result<(), DecodeErrors> {
+    pub(crate) fn handle_rst(&mut self, stream: &mut BitStream) -> Result<(), DecodeErrors>
+    {
         self.todo = self.restart_interval;
 
         if let Some(marker) = stream.marker
-        {   // Found a marker
+        {
+            // Found a marker
             // Read stream and see what marker is stored there
             match marker
             {
                 Marker::RST(_) =>
-                    {
-                        // reset stream
-                        stream.reset();
-                        // Initialize dc predictions to zero for all components
-                        self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                        // Start iterating again. from position.
-                    }
+                {
+                    // reset stream
+                    stream.reset();
+                    // Initialize dc predictions to zero for all components
+                    self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                    // Start iterating again. from position.
+                }
                 Marker::EOI =>
-                    {
-                        // silent pass
-                    }
+                {
+                    // silent pass
+                }
                 _ =>
-                    {
-                        return Err(DecodeErrors::MCUError(format!(
-                            "Marker {:?} found in bitstream, possibly corrupt jpeg",
-                            marker
-                        )));
-                    }
+                {
+                    return Err(DecodeErrors::MCUError(format!(
+                        "Marker {:?} found in bitstream, possibly corrupt jpeg",
+                        marker
+                    )));
+                }
             }
         }
 

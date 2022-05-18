@@ -1,10 +1,10 @@
 #![allow(
-clippy::if_not_else,
-clippy::similar_names,
-clippy::inline_always,
-clippy::doc_markdown,
-clippy::cast_sign_loss,
-clippy::cast_possible_truncation
+    clippy::if_not_else,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::doc_markdown,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
 )]
 
 //! This file exposes a single struct that can decode a huffman encoded
@@ -42,7 +42,7 @@ use std::cmp::min;
 use std::io::Cursor;
 
 use crate::errors::DecodeErrors;
-use crate::huffman::{HUFF_LOOKAHEAD, HuffmanTable};
+use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::misc::UN_ZIGZAG;
 
@@ -214,23 +214,28 @@ impl BitStream
         {
             // So before we do anythong, check if we have a 0xFF byte
 
-            let diff = reader.get_ref().len().saturating_sub(reader.position() as usize);
+            let diff = reader
+                .get_ref()
+                .len()
+                .saturating_sub(reader.position() as usize);
 
-            if diff > 4{
+            if diff > 4
+            {
                 let pos = reader.position() as usize;
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
-                let mut  buf = [0;4];
-                buf.copy_from_slice(reader.get_ref().get(pos..pos+4).unwrap());
+                let mut buf = [0; 4];
+                buf.copy_from_slice(reader.get_ref().get(pos..pos + 4).unwrap());
                 // create buffer
                 let msb_buf = u32::from_be_bytes(buf);
                 // check if we have 0xff
-                if !has_byte(msb_buf,255){
+                if !has_byte(msb_buf, 255)
+                {
                     // Move cursor 4 bytes ahead.
-                    reader.set_position((pos+4) as u64);
+                    reader.set_position((pos + 4) as u64);
                     // indicate we have 32 bits incoming
-                    self.bits_left+=32;
+                    self.bits_left += 32;
                     // make room
-                    self.buffer<<=32;
+                    self.buffer <<= 32;
                     // add
                     self.buffer |= u64::from(msb_buf);
                     // set them correctly
@@ -258,7 +263,8 @@ impl BitStream
             // Construct an MSB buffer whose top bits are the bitstream we are currently
             // holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
-        } else if self.marker.is_some()
+        }
+        else if self.marker.is_some()
         {
             // fill with zeroes
             self.bits_left = 63;
@@ -271,9 +277,9 @@ impl BitStream
     /// The decoded coefficient is written to `dc_prediction`
     ///
     #[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::unwrap_used
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::unwrap_used
     )]
     #[inline(always)]
     fn decode_dc(
@@ -300,7 +306,7 @@ impl BitStream
             symbol = huff_extend(r, symbol);
         }
         // Update DC prediction
-      *dc_prediction= dc_prediction.wrapping_add( symbol);
+        *dc_prediction = dc_prediction.wrapping_add(symbol);
 
         return Ok(true);
     }
@@ -452,7 +458,8 @@ impl BitStream
         return Ok(());
     }
     #[inline]
-    pub(crate) fn decode_prog_dc_refine(&mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16) {
+    pub(crate) fn decode_prog_dc_refine(&mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16)
+    {
         // refinement scan
         if self.bits_left < 1
         {
@@ -511,7 +518,9 @@ impl BitStream
 
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
-            } else {
+            }
+            else
+            {
                 decode_huff!(self, symbol, ac_table);
 
                 r = symbol >> 4;
@@ -529,7 +538,9 @@ impl BitStream
                     block[UN_ZIGZAG[k as usize & 63] & 63] = symbol as i16 * (1 << shift);
 
                     k += 1;
-                } else {
+                }
+                else
+                {
                     if r != 15
                     {
                         self.eob_run = 1 << r;
@@ -589,7 +600,9 @@ impl BitStream
                         // EOB runs are handled by the eob logic
                         break 'no_eob;
                     }
-                } else {
+                }
+                else
+                {
                     if symbol != 1
                     {
                         return Err(DecodeErrors::HuffmanDecode(
@@ -603,7 +616,9 @@ impl BitStream
                     {
                         // new non-zero coefficient is positive
                         symbol = i32::from(bit);
-                    } else {
+                    }
+                    else
+                    {
                         // the new non zero coefficient is negative
                         symbol = i32::from(-bit);
                     }
@@ -624,7 +639,9 @@ impl BitStream
                             if *coefficient >= 0
                             {
                                 *coefficient += bit;
-                            } else {
+                            }
+                            else
+                            {
                                 *coefficient -= bit;
                             }
                         }
@@ -680,7 +697,9 @@ impl BitStream
                             if *coefficient >= 0
                             {
                                 *coefficient += bit;
-                            } else {
+                            }
+                            else
+                            {
                                 *coefficient -= bit;
                             }
                         }
@@ -750,14 +769,15 @@ fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64
     u64::from(*reader.get_ref().get(pos as usize).unwrap_or(&0))
 }
 
-
-fn has_zero(v:u32) -> bool {
+fn has_zero(v: u32) -> bool
+{
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     return !((((v & 0x7F7F7F7F) + 0x7F7F7F7F) | v) | 0x7F7F7F7F) != 0;
 }
-fn has_byte(b:u32, val:u8) -> bool {
+fn has_byte(b: u32, val: u8) -> bool
+{
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
-    has_zero(b^((!0_u32/255)*u32::from(val)))
+    has_zero(b ^ ((!0_u32 / 255) * u32::from(val)))
 }
