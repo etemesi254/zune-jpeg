@@ -401,15 +401,15 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
     let len = u64::try_from(reader.get_ref().len()).unwrap();
     loop
     {
-        let marker = read_byte(reader);
+        let marker = read_byte(reader).ok()?;
 
         if marker == 255
         {
-            let mut r = read_byte(reader);
+            let mut r = read_byte(reader).ok()?;
             // 0xFF 0XFF(some images may be like that)
             while r == 0xFF
             {
-                r = read_byte(reader);
+                r = read_byte(reader).ok()?;
             }
 
             if r != 0

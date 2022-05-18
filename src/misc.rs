@@ -248,18 +248,16 @@ impl fmt::Debug for SOFMarkers
 /// If the reader cannot read the next byte
 #[inline]
 #[allow(clippy::unused_io_amount)]
-pub fn read_byte<R>(reader: &mut R) -> u8
+pub fn read_byte<R>(reader: &mut R) -> Result<u8, DecodeErrors>
 where
     R: Read,
 {
     let mut tmp = [0; 1];
 
     // if there is no more data fill with zero
-    reader
-        .read_exact(&mut tmp)
-        .expect("Could not read from underlying buffer");
+    reader.read_exact(&mut tmp).map_err(|_| DecodeErrors::ExhaustedData)?;
 
-    tmp[0]
+    Ok(tmp[0])
 }
 
 /// Read two `u8`'s from a buffer and create a `u16` from the bytes in Big
@@ -267,9 +265,11 @@ where
 ///
 /// The first 8 bytes of the u16 are made by the first u8 read, and the second
 /// one make the last 8
+///
 /// ```text
 /// u16 => [first_u8][second_u8]
-///```
+/// ```
+///
 /// # Argument
 ///  - reader: A mutable reference to anything that implements `Read` trait
 ///
@@ -279,7 +279,6 @@ where
 /// # Panics
 /// When the bytes cannot be read
 #[inline]
-
 pub fn read_u16_be<R>(reader: &mut R) -> Result<u16, DecodeErrors>
 where
     R: Read,
