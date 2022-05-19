@@ -277,7 +277,7 @@ impl Decoder
         loop
         {
             // read a byte
-            let m = read_byte(&mut buf);
+            let m = read_byte(&mut buf)?;
 
             // Last byte should be 0xFF to confirm existence of a marker since markers look
             // like OxFF(some marker data)
