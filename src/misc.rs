@@ -255,7 +255,7 @@ where
     let mut tmp = [0; 1];
 
     // if there is no more data fill with zero
-    reader.read_exact(&mut tmp).map_err(|_| DecodeErrors::ExhaustedData)?;
+    reader.read_exact(&mut tmp)?;
 
     Ok(tmp[0])
 }
