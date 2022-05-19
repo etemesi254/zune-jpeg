@@ -212,14 +212,9 @@ impl BitStream
         // If we have less than 32 bits we refill
         if self.bits_left <= 32 && self.marker.is_none()
         {
-            // So before we do anythong, check if we have a 0xFF byte
+            // So before we do anything, check if we have a 0xFF byte
 
-            let diff = reader
-                .get_ref()
-                .len()
-                .saturating_sub(reader.position() as usize);
-
-            if diff > 4
+            if ((reader.position() + 4) as usize) < (reader.get_ref().len())
             {
                 let pos = reader.position() as usize;
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
