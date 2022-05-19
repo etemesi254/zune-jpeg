@@ -37,13 +37,13 @@ pub struct HuffmanTable
     // bits[0] is unused
     pub(crate) bits: [u8; 17],
     /// Symbols in order of increasing code length
-    pub(crate) values: Vec<u8>,
+    pub(crate) values: [u8;256],
 }
 
 impl HuffmanTable
 {
     pub fn new(
-        codes: &[u8; 17], values: Vec<u8>, is_dc: bool, is_progressive: bool,
+        codes: &[u8; 17], values: [u8;256], is_dc: bool, is_progressive: bool,
     ) -> Result<HuffmanTable, DecodeErrors>
     {
         let too_long_code = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
