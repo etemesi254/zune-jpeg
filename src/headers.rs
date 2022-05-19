@@ -32,7 +32,7 @@ where
     while length_read < dht_length
     {
         // HT information
-        let ht_info = read_byte(&mut buf);
+        let ht_info = read_byte(&mut buf)?;
 
         // third bit indicates whether the huffman encoding is DC or AC type
         let dc_or_ac = (ht_info >> 4) & 0x01;
@@ -108,7 +108,7 @@ where
     // A single DQT header may have multiple QT's
     while qt_length > length_read
     {
-        let qt_info = read_byte(&mut buf);
+        let qt_info = read_byte(&mut buf)?;
 
         // If the first bit is set,panic
         if ((qt_info >> 1) & 0x01) != 0
@@ -185,7 +185,7 @@ where
 
     // usually 8, but can be 12 and 16, we currently support only 8
     // so sorry about that 12 bit images
-    let dt_precision = read_byte(&mut buf);
+    let dt_precision = read_byte(&mut buf)?;
 
     if dt_precision != 8
     {
@@ -226,7 +226,7 @@ where
     }
 
     // Number of components for the image.
-    let num_components = read_byte(&mut buf);
+    let num_components = read_byte(&mut buf)?;
 
     // length should be equal to num components
     if length != u16::from(8 + 3 * num_components)
@@ -329,7 +329,7 @@ where
     let ls = read_u16_be(&mut buf)?;
 
     // Number of image components in scan
-    let ns = read_byte(&mut buf);
+    let ns = read_byte(&mut buf)?;
     image.num_scans = ns;
 
     if ls != u16::from(6 + 2 * ns)
@@ -352,12 +352,12 @@ where
     for i in 0..ns
     {
         // CS_i parameter, I don't need it so I might as well delete it
-        let id = read_byte(&mut buf);
+        let id = read_byte(&mut buf)?;
 
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
         // lower four bits contain ac huffman destination table
-        let y = read_byte(&mut buf);
+        let y = read_byte(&mut buf)?;
         let mut j = 0;
         while j < image.info.components
         {
@@ -382,12 +382,12 @@ where
         // Page 42
 
         // Start of spectral / predictor selection. (between 0 and 63)
-        image.spec_start = read_byte(&mut buf) & 63;
+        image.spec_start = read_byte(&mut buf)? & 63;
 
         // End of spectral selection
-        image.spec_end = read_byte(&mut buf) & 63;
+        image.spec_end = read_byte(&mut buf)? & 63;
 
-        let bit_approx = read_byte(&mut buf);
+        let bit_approx = read_byte(&mut buf)?;
 
         // successive approximation bit position high
         image.succ_high = bit_approx >> 4;
