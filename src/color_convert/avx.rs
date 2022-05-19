@@ -281,7 +281,7 @@ unsafe fn ycbcr_to_rgba_unsafe(
 )
 {
     // check if we have enough space to write.
-    let tmp: &mut [u8; 64] = &mut out.get(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    let tmp:& mut [u8; 64] = out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
 
     let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
@@ -351,7 +351,7 @@ unsafe fn ycbcr_to_rgbx_unsafe(
     offset: &mut usize,
 )
 {
-    let v: &mut [u8; 64] = &mut out.get(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    let tmp:& mut [u8; 64] = out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
 
     let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
@@ -385,9 +385,9 @@ unsafe fn ycbcr_to_rgbx_unsafe(
     // check if we have enough space to write.
     // Store
     // Use streaming instructions to prevent polluting the cache
-    _mm256_storeu_si256(v.as_mut_ptr().cast(), m);
+    _mm256_storeu_si256(tmp.as_mut_ptr().cast(), m);
 
-    _mm256_storeu_si256(v[32..].as_mut_ptr().cast(), n);
+    _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), n);
 
     *offset += 64;
 }
