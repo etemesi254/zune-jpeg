@@ -427,14 +427,14 @@ impl BitStream
         // shift first by 1 to avoid shifts by register width (From Yann Collet FSE)
         // mentioned by Fabian Geissen in his blog.
 
-        let bits = (self.aligned_buffer >> 1 >> (63 - n_bits)) as i32;
+        self.aligned_buffer = self.aligned_buffer.rotate_left(n_bits as u32);
+        // Mask lower bits
+        let bits = (self.aligned_buffer & ((1_u64 << n_bits) - 1)) as i32;
 
         // Reduce the bits left, this influences the MSB buffer
         self.bits_left -= n_bits;
 
         // shift out bits read in the LSB buffer
-        self.aligned_buffer <<= n_bits;
-
         bits
     }
 
