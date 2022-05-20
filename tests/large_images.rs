@@ -7,6 +7,7 @@ use zune_jpeg::{ColorSpace, Decoder};
 fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspace: OutColorSpace)
 {
     let output: String = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/outputs/large/";
+    std::fs::create_dir_all(&output).unwrap();
 
     std::panic::catch_unwind(|| {
         //let x= d.decode_file("/home/caleb/CLionProjects/zune-jpeg/test-images/speed_bench_vertical_subsampling.jpg").unwrap();
