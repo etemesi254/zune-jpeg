@@ -234,13 +234,13 @@ where
     // Number of components for the image.
     let num_components = read_byte(&mut buf)?;
 
+    let expected = 8 + 3 * u16::from(num_components);
     // length should be equal to num components
-    if length != u16::from(8 + 3 * num_components)
+    if length != expected
     {
         return Err(DecodeErrors::SofError(format!(
             "Length of start of frame differs from expected {},value is {}",
-            u16::from(8 + 3 * num_components),
-            length
+            expected, length
         )));
     }
     info!("Image components : {}", num_components);
