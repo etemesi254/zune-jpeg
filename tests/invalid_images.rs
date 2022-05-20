@@ -23,3 +23,17 @@ fn bad_ff_marker_size()
         matches!(err, zune_jpeg::errors::DecodeErrors::Format(x) if x == "Got marker with invalid raw size 0")
     );
 }
+
+#[test]
+fn bad_number_of_scans()
+{
+    let mut decoder = Decoder::new();
+
+    let err = decoder
+        .decode_buffer(&[255, 216, 255, 218, 232, 197, 255])
+        .unwrap_err();
+
+    assert!(
+        matches!(err, zune_jpeg::errors::DecodeErrors::SosError(x) if x == "Bad SOS length,corrupt jpeg")
+    );
+}

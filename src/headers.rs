@@ -333,12 +333,13 @@ where
     let ns = read_byte(&mut buf)?;
     image.num_scans = ns;
 
-    if ls != u16::from(6 + 2 * ns)
+    if ls != 6 + 2 * u16::from(ns)
     {
         return Err(DecodeErrors::SosError(
             "Bad SOS length,corrupt jpeg".to_string(),
         ));
     }
+
     // Check number of components.
     // Currently ths library doesn't support images with more than 4 components
     if !(1..4).contains(&ns)
