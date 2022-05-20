@@ -60,9 +60,10 @@ where
         // A table containing symbols in increasing code length
         let mut symbols = [0; 256];
 
-        buf.read_exact(&mut symbols[0..symbols_sum.into()]).map_err(|x| {
-            DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
-        })?;
+        buf.read_exact(&mut symbols[0..symbols_sum.into()])
+            .map_err(|x| {
+                DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+            })?;
         length_read += 17 + symbols_sum;
 
         // store
