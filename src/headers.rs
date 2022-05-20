@@ -21,9 +21,14 @@ where
     R: Read,
 {
     // Read the length of the Huffman table
-    let dht_length = read_u16_be(&mut buf).map_err(|_| {
-        DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
-    })? - 2;
+    let dht_length = read_u16_be(&mut buf)
+        .map_err(|_| {
+            DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
+        })?
+        .checked_sub(2)
+        .ok_or(DecodeErrors::HuffmanDecode(
+            "Invalid Huffman length in image".to_string(),
+        ))?;
 
     // how much have we read
     let mut length_read: u16 = 0;

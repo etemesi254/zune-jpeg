@@ -37,3 +37,17 @@ fn bad_number_of_scans()
         matches!(err, zune_jpeg::errors::DecodeErrors::SosError(x) if x == "Bad SOS length,corrupt jpeg")
     );
 }
+
+#[test]
+fn huffman_length_subtraction_overflow()
+{
+    let mut decoder = Decoder::new();
+
+    let err = decoder
+        .decode_buffer(&[255, 216, 255, 196, 0, 0])
+        .unwrap_err();
+
+    assert!(
+        matches!(err, zune_jpeg::errors::DecodeErrors::HuffmanDecode(x) if x == "Invalid Huffman length in image")
+    );
+}
