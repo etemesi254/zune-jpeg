@@ -376,6 +376,17 @@ impl Decoder
                                 "Capabilities for processing marker \"{:?}\" not implemented",
                                 m
                             );
+                            let length = read_u16_be(&mut buf)?;
+
+                            if length < 2
+                            {
+                                return Err(DecodeErrors::Format(format!(
+                                    "Found a marker with invalid length:{}\n",
+                                    length
+                                )));
+                            }
+                            warn!("Skipping {} bytes", length - 2);
+                            buf.consume((length - 2) as usize);
                         }
                     }
                 }
@@ -435,7 +446,7 @@ impl Decoder
     /// - `ColorSpace::GRAYSCALE`:Convert normal image to a black and white
     ///   image(grayscale)
     ///
-    /// - `ColorSpace::YCbCr`:Decode image
+    /// - `ColorSpace::YCbCr`: Do not do colorspace conversion.
     #[allow(clippy::expect_used)]
     pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
     {
