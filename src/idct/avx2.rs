@@ -66,7 +66,7 @@ unsafe fn dequantize_and_idct_int_avx2(
     v_samp: usize,
 ) -> Vec<i16>
 {
-    let mut tmp_vector = vec![0;coeff.len()];
+    let mut tmp_vector = vec![0; coeff.len()];
 
     // calculate position
     // inside This is still slow because cache misses
