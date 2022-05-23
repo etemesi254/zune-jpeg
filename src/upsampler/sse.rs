@@ -8,7 +8,6 @@ use std::arch::x86::*;
 use std::arch::x86_64::*;
 use std::convert::TryInto;
 
-
 #[inline]
 
 pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
@@ -27,7 +26,7 @@ pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec<i16>
 {
     //let mut out = align_zero_alloc::<i16, 16>(output_len);
-    let mut out = vec![0;output_len];
+    let mut out = vec![0; output_len];
 
     // set first 8 pixels linearly
     // Assert that out has more than 8 elements and input has more than 4

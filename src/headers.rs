@@ -21,9 +21,14 @@ where
     R: Read,
 {
     // Read the length of the Huffman table
-    let dht_length = read_u16_be(&mut buf).map_err(|_| {
-        DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
-    })? - 2;
+    let dht_length = read_u16_be(&mut buf)
+        .map_err(|_| {
+            DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
+        })?
+        .checked_sub(2)
+        .ok_or(DecodeErrors::HuffmanDecode(
+            "Invalid Huffman length in image".to_string(),
+        ))?;
 
     // how much have we read
     let mut length_read: u16 = 0;
@@ -60,9 +65,10 @@ where
         // A table containing symbols in increasing code length
         let mut symbols = [0; 256];
 
-        buf.read_exact(&mut symbols[0..symbols_sum.into()]).map_err(|x| {
-            DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
-        })?;
+        buf.read_exact(&mut symbols[0..symbols_sum.into()])
+            .map_err(|x| {
+                DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+            })?;
         length_read += 17 + symbols_sum;
 
         // store
@@ -228,13 +234,13 @@ where
     // Number of components for the image.
     let num_components = read_byte(&mut buf)?;
 
+    let expected = 8 + 3 * u16::from(num_components);
     // length should be equal to num components
-    if length != u16::from(8 + 3 * num_components)
+    if length != expected
     {
         return Err(DecodeErrors::SofError(format!(
             "Length of start of frame differs from expected {},value is {}",
-            u16::from(8 + 3 * num_components),
-            length
+            expected, length
         )));
     }
     info!("Image components : {}", num_components);
@@ -332,12 +338,13 @@ where
     let ns = read_byte(&mut buf)?;
     image.num_scans = ns;
 
-    if ls != u16::from(6 + 2 * ns)
+    if ls != 6 + 2 * u16::from(ns)
     {
         return Err(DecodeErrors::SosError(
             "Bad SOS length,corrupt jpeg".to_string(),
         ));
     }
+
     // Check number of components.
     // Currently ths library doesn't support images with more than 4 components
     if !(1..4).contains(&ns)

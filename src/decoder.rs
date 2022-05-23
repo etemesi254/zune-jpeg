@@ -382,6 +382,15 @@ impl Decoder
                 else
                 {
                     let size = read_u16_be(&mut buf)?;
+
+                    // We got very lost, and trying to recover here probably won't be helpful.
+                    if size < 2
+                    {
+                        return Err(DecodeErrors::Format(format!(
+                            "Got marker with invalid raw size {:?}",
+                            size
+                        )));
+                    }
                     warn!("Extraneous marker 0xFF{:X} found. Size: {}", m, size - 2);
                     warn!("Skipping {} bytes", (size - 2));
                     buf.consume((size - 2) as usize);
