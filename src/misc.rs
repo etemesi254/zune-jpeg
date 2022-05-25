@@ -109,7 +109,7 @@ impl ColorSpace
 {
     /// Number of channels (including unused alpha) in this color space
     #[must_use]
-
+    #[inline]
     pub const fn num_components(self) -> usize
     {
         match self

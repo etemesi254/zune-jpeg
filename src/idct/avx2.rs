@@ -17,7 +17,7 @@
 //! pass is carried out.
 //!
 //! The code is not super optimized, it produces bit identical results with scalar code hence it's
-//! transparent, furthermore, I've used operator overloading to hide common things like + for _mm256_add_epi16
+//! `mm256_add_epi16`
 //! and it also has the advantage of making this implementation easy to maintain.
 
 #![cfg(feature = "x86")]
@@ -381,7 +381,6 @@ unsafe fn dequantize_and_idct_int_avx2(
                     $index += stride;
                 };
             }
-
             // Pack and write the values back to the array
             permute_store!((row0.mm256), (row1.mm256), pos, out_vector);
             permute_store!((row2.mm256), (row3.mm256), pos, out_vector);

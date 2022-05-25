@@ -424,12 +424,12 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
-        // shift first by 1 to avoid shifts by register width (From Yann Collet FSE)
-        // mentioned by Fabian Geissen in his blog.
-
-        self.aligned_buffer = self.aligned_buffer.rotate_left(n_bits as u32);
+        let mask = (1_u64 << n_bits) - 1;
+        // Place the needed bits in the lower part of our bit-buffer
+        // using rotate instructions
+        self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
         // Mask lower bits
-        let bits = (self.aligned_buffer & ((1_u64 << n_bits) - 1)) as i32;
+        let bits = (self.aligned_buffer & mask) as i32;
 
         // Reduce the bits left, this influences the MSB buffer
         self.bits_left -= n_bits;
@@ -768,7 +768,7 @@ fn has_zero(v: u32) -> bool
 {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
-    return !((((v & 0x7F7F7F7F) + 0x7F7F7F7F) | v) | 0x7F7F7F7F) != 0;
+    return !((((v & 0x7F7F_7F7F) + 0x7F7F_7F7F) | v) | 0x7F7F_7F7F) != 0;
 }
 fn has_byte(b: u32, val: u8) -> bool
 {
