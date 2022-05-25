@@ -44,18 +44,6 @@ pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
 
 pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &mut usize);
 
-/// Color convert function  that can convert YCbCr colorspace to RGB(A/X) for 8
-/// values
-///
-/// The following are guarantees to the values passed by the following functions
-///
-/// 1. The `&[i16]` slices passed contain 8 items
-/// 2. Slices are passed in the following order
-///     'y,cb,cr'
-///
-/// The other guarantees are the same as `ColorConvert16Ptr`
-pub type ColorConvertPtr = fn(&[i16; 8], &[i16; 8], &[i16; 8], &mut [u8], &mut usize);
-
 /// IDCT  function prototype
 ///
 /// This encapsulates a dequantize and IDCT function which will carry out the
@@ -126,8 +114,6 @@ pub struct Decoder
     // of this struct, we check if we can switch to a faster one which
     // depend on certain CPU extensions.
     pub(crate) idct_func: IDCTPtr,
-    // Color convert function will act on 8 values of YCbCr blocks
-    pub(crate) color_convert: ColorConvertPtr,
     // Color convert function which acts on 16 YcbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
 
@@ -170,8 +156,7 @@ impl Default for Decoder
 
             // Function pointers
             idct_func: choose_idct_func(),
-            color_convert: color_convert.1,
-            color_convert_16: color_convert.0,
+            color_convert_16: color_convert,
 
             // Colorspace
             input_colorspace: ColorSpace::YCbCr,
@@ -471,9 +456,8 @@ impl Decoder
             {
                 let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
 
-                self.color_convert_16 = func_ptr.0;
+                self.color_convert_16 = func_ptr;
 
-                self.color_convert = func_ptr.1;
             }
             // do nothing for others
             _ => (),

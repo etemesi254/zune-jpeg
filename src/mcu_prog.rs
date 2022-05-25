@@ -155,7 +155,7 @@ impl Decoder
 
         let idct_func = self.idct_func;
 
-        let color_convert = self.color_convert;
+
 
         let color_convert_16 = self.color_convert_16;
 
@@ -192,7 +192,7 @@ impl Decoder
 
                     scope.execute(move || {
                         post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
-                                          color_convert, input, output, out, mcu_width, width,
+                                           input, output, out, width,
                         );
                     });
                 }
@@ -205,7 +205,7 @@ impl Decoder
                     let component = components.clone();
                    scope.execute(move || {
                         post_process_prog(&[y, &[], &[]], &component, idct_func, color_convert_16,
-                                          color_convert, input, output, out, mcu_width, width,
+                                           input, output, out, width,
                         );
                     });
                 }
@@ -424,4 +424,11 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
             }
         }
     }
+}
+
+#[test]
+fn try_decoding()
+{
+    let mut v = Decoder::new();
+    v.decode_file("/home/caleb/2.jpg").unwrap();
 }

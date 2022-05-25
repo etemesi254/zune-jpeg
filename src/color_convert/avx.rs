@@ -351,7 +351,8 @@ unsafe fn ycbcr_to_rgbx_unsafe(
     offset: &mut usize,
 )
 {
-    let tmp:& mut [u8; 64] = out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    let length = out.len();
+    let tmp:& mut [u8; 64] = out.get_mut(*offset..*offset + 64).unwrap_or_else(|| panic!("Slice to small cannot write,size:{} position:{}",length,offset)).try_into().unwrap();
 
     let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 

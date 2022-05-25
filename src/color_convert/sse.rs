@@ -303,12 +303,3 @@ pub fn ycbcr_to_rgba_sse_16(
         );
     }
 }
-
-pub fn ycbcr_to_rgba_sse(
-    y1: &[i16; 8], cb1: &[i16; 8], cr1: &[i16; 8], out: &mut [u8], offset: &mut usize,
-)
-{
-    unsafe {
-        ycbcr_to_rgb_ax_sse41::<255>(y1, cb1, cr1, out, offset);
-    }
-}

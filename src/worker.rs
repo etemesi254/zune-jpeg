@@ -3,7 +3,7 @@ use std::convert::TryInto;
 
 use crate::color_convert::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 use crate::components::Components;
-use crate::decoder::{ColorConvert16Ptr, ColorConvertPtr, IDCTPtr, MAX_COMPONENTS};
+use crate::decoder::{ColorConvert16Ptr, IDCTPtr, MAX_COMPONENTS};
 use crate::misc::ColorSpace;
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
@@ -34,11 +34,9 @@ pub(crate) fn post_process(
     component_data: &[Components],
     idct_func: IDCTPtr,
     color_convert_16: ColorConvert16Ptr,
-    color_convert: ColorConvertPtr,
     input_colorspace: ColorSpace,
     output_colorspace: ColorSpace,
     output: &mut [u8],
-    mcu_len: usize,
     width: usize,
 ) // so many parameters..
 {
@@ -81,8 +79,8 @@ pub(crate) fn post_process(
                                    v_samp_idct);
     });
 
-    post_process_inner(unprocessed, component_data, color_convert_16, color_convert,
-                       input_colorspace, output_colorspace, output, mcu_len, width);
+    post_process_inner(unprocessed, component_data, color_convert_16,
+                       input_colorspace, output_colorspace, output,  width);
 }
 
 #[rustfmt::skip]
@@ -91,11 +89,9 @@ pub(crate) fn post_process_prog(
     component_data: &[Components],
     idct_func: IDCTPtr,
     color_convert_16: ColorConvert16Ptr,
-    color_convert: ColorConvertPtr,
     input_colorspace: ColorSpace,
     output_colorspace: ColorSpace,
     output: &mut [u8],
-    mcu_len: usize,
     width: usize,
 ) // so many parameters..
 {
@@ -117,14 +113,14 @@ pub(crate) fn post_process_prog(
         unprocessed[z] = idct_func(block[z], &component_data[z].quantization_table,
             component_data[z].width_stride, h_samp * v_samp, v_samp_idct);
     });
-    post_process_inner(&mut unprocessed, component_data, color_convert_16, color_convert,
-        input_colorspace,  output_colorspace, output, mcu_len, width);
+    post_process_inner(&mut unprocessed, component_data, color_convert_16,
+        input_colorspace,  output_colorspace, output,  width);
 }
 #[rustfmt::skip]
 pub(crate) fn post_process_inner(
     unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components],
-    color_convert_16: ColorConvert16Ptr, color_convert: ColorConvertPtr,
-    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], mcu_len: usize,
+    color_convert_16: ColorConvert16Ptr,
+    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8],
     width: usize,
 ) // so many parameters..
 {
@@ -162,7 +158,7 @@ pub(crate) fn post_process_inner(
         (ColorSpace::YCbCr, ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX) =>
         {
             color_convert_ycbcr(unprocessed, width, h_samp, v_samp,
-                output_colorspace, color_convert_16, color_convert, output, mcu_len);
+                output_colorspace, color_convert_16,  output);
         }
         // For the other components we do nothing(currently)
         _ =>
@@ -185,12 +181,9 @@ fn color_convert_ycbcr(
     v_samp: usize,
     output_colorspace: ColorSpace,
     color_convert_16: ColorConvert16Ptr,
-    color_convert: ColorConvertPtr,
     output: &mut [u8],
-    mcu_len: usize,
 )
 {
-    let remainder = ((mcu_len) % 2) != 0;
 
 
     let mcu_chunks = mcu_block[0].len() / (h_samp * v_samp);

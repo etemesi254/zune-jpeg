@@ -187,7 +187,6 @@ impl Decoder
 
         let idct_func = self.idct_func;
 
-        let color_convert = self.color_convert;
 
         let color_convert_16 = self.color_convert_16;
 
@@ -327,9 +326,9 @@ impl Decoder
 
                 scope.execute(move || {
                     post_process(&mut temporary, &component,
-                                 idct_func, color_convert_16, color_convert,
+                                 idct_func, color_convert_16,
                                  input, output, next_chunk,
-                                 mcu_width, width);
+                                  width);
                 });
             }
             //everything is okay

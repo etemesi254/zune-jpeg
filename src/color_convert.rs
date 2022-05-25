@@ -45,9 +45,9 @@ pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2, ycbcr
 #[cfg(feature = "x86")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use crate::color_convert::sse::{
-    ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse, ycbcr_to_rgba_sse_16,
+    ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16,ycbcr_to_rgba_sse_16,
 };
-use crate::decoder::{ColorConvert16Ptr, ColorConvertPtr};
+use crate::decoder::{ColorConvert16Ptr};
 
 mod avx;
 mod scalar;
@@ -62,7 +62,7 @@ use crate::misc::ColorSpace;
 
 pub fn choose_ycbcr_to_rgb_convert_func(
     type_need: ColorSpace,
-) -> Option<(ColorConvert16Ptr, ColorConvertPtr)>
+) -> Option<ColorConvert16Ptr>
 {
     #[cfg(feature = "x86")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -75,18 +75,9 @@ pub fn choose_ycbcr_to_rgb_convert_func(
             // match colorspace
             return match type_need
             {
-                ColorSpace::RGB =>
-                {
-                    // Avx for 16, sse for 8
-                    Some((ycbcr_to_rgb_avx2, ycbcr_to_rgb_sse))
-                }
-                ColorSpace::RGBA =>
-                {
-                    // Avx for 16, sse for 8
-                    Some((ycbcr_to_rgba_avx2, ycbcr_to_rgba_sse))
-                }
-                ColorSpace::RGBX => Some((ycbcr_to_rgbx_avx2, ycbcr_to_rgba_sse)),
-
+                ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
+                ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
+                ColorSpace::RGBX => Some(ycbcr_to_rgbx_avx2),
                 _ => None,
             };
         }
@@ -96,30 +87,20 @@ pub fn choose_ycbcr_to_rgb_convert_func(
             // I believe avx2 means sse4 is also available
             // match colorspace
             debug!("No support for avx2 switching to sse");
-
             debug!("Using sse color convert functions");
-
             return match type_need
             {
-                ColorSpace::RGB => Some((ycbcr_to_rgb_sse_16, ycbcr_to_rgb_sse)),
-                ColorSpace::RGBA | ColorSpace::RGBX =>
-                {
-                    Some((ycbcr_to_rgba_sse_16, ycbcr_to_rgba_sse))
-                }
-
+                ColorSpace::RGB => Some(ycbcr_to_rgb_sse_16),
+                ColorSpace::RGBA | ColorSpace::RGBX => Some(ycbcr_to_rgba_sse_16),
                 _ => None,
             };
         }
     }
-
     // when there is no x86 or we haven't returned by here, resort to scalar
     return match type_need
     {
-        ColorSpace::RGB => Some((scalar::ycbcr_to_rgb_16_scalar, scalar::ycbcr_to_rgb_scalar)),
-        ColorSpace::RGBA | ColorSpace::RGBX => Some((
-            scalar::ycbcr_to_rgba_16_scalar,
-            scalar::ycbcr_to_rgba_scalar,
-        )),
+        ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_16_scalar),
+        ColorSpace::RGBA | ColorSpace::RGBX => Some(scalar::ycbcr_to_rgba_16_scalar),
         _ => None,
     };
 }
