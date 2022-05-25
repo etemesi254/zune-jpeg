@@ -33,7 +33,7 @@ unsafe fn ycbcr_to_rgb_sse41(
     y: &[i16; 8], cb: &[i16; 8], cr: &[i16; 8], out: &mut [u8], offset: &mut usize,
 )
 {
-    out.get_mut(*offset..*offset + 24).expect("Slice to small cannot write").try_into().unwrap();
+    out.get_mut(*offset..*offset + 24).expect("Slice to small cannot write");
 
     // SSE can only store 4 i32's in a register
     // this means we either use two registers and carry calculations
@@ -270,7 +270,7 @@ pub fn ycbcr_to_rgb_sse_16(
 )
 {
     // check if out has enough space
-    out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write");
     unsafe {
         ycbcr_to_rgb_16(y, cb, cr, out, offset);
     }
@@ -281,7 +281,7 @@ pub fn ycbcr_to_rgba_sse_16(
 )
 {
     // check if out has enough space
-    out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write");
     unsafe {
         // not so random he he
         // first mcu
