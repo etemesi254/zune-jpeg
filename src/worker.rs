@@ -204,7 +204,7 @@ fn color_convert_ycbcr(
 
     let mut end = stride;
     // over allocate to account for fill bytes
-    let mut temp_area = vec![0; width_chunk * output_colorspace.num_components() + 128];
+    // TODO remove this over-allocation ans use better systems CALEB..
 
     // We need to chunk per width to ensure we can discard extra values at the end of the width.
     // Since the encoder may pad bits to ensure the width is a multiple of 8.
@@ -214,28 +214,35 @@ fn color_convert_ycbcr(
     {
         let mut position = 0;
 
-        // Chunk in outputs of 16 to pass to color_convert as an array of 16 i16's.
-        for ((y, cb), cr) in y_width.chunks_exact(16)
-            .zip(cb_width.chunks_exact(16))
-            .zip(cr_width.chunks_exact(16))
+        let mut out = &mut output[start..end];
+
+
+let  e= (y_width.len()/16).saturating_sub(1);
+
+    // Chunk in outputs of 16 to pass to color_convert as an array of 16 i16's.
+        for ((y, cb), cr) in y_width.chunks_exact(16).take(e)
+            .zip(cb_width.chunks_exact(16)).take(e)
+            .zip(cr_width.chunks_exact(16)).take(e)
         {
             // @ OPTIMIZE-TIP, use slices with known sizes, can turn on some optimization,
             // e.g autovectorization.
-            (color_convert_16)(y.try_into().unwrap(), cb.try_into().unwrap(), cr.try_into().unwrap(), &mut temp_area, &mut position);
+            (color_convert_16)(y.try_into().unwrap(), cb.try_into().unwrap(), cr.try_into().unwrap(), &mut out, &mut position);
         }
-        if remainder
-        {
-            // last odd MCU in the column
-            let y_c = y_width.rchunks_exact(8).next().unwrap().try_into().unwrap();
-
-            let cb_c = cb_width.rchunks_exact(8).next().unwrap().try_into().unwrap();
-
-            let cr_c = cr_width.rchunks_exact(8).next().unwrap().try_into().unwrap();
-
-            (color_convert)(y_c, cb_c, cr_c, &mut temp_area, &mut position);
-        }
-        // Write to our output buffer row wise.
-        output[start..end].copy_from_slice(&temp_area[0..stride]);
+        
+        // we have more pixels in the end that can't be handled by the main loop.
+        // move pointer back a little bit to get last 16 bytes,
+        // color convert, and overwrite
+        // This means some values will be color converted twice.
+    
+        let diff = 64-(stride-position);
+    
+        position -= diff;
+    
+        (color_convert_16)(
+            y_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
+            cb_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
+            cr_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
+        &mut out,&mut position);
 
         start += stride;
 
