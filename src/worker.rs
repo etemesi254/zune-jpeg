@@ -3,7 +3,7 @@ use std::convert::TryInto;
 
 use crate::color_convert::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
 use crate::components::Components;
-use crate::decoder::{ColorConvert16Ptr, IDCTPtr, MAX_COMPONENTS};
+use crate::decoder::{ColorConvert16Ptr, IDCTPtr};
 use crate::misc::ColorSpace;
 /// Handle everything else in jpeg processing that doesn't involve bitstream decoding
 ///
@@ -30,7 +30,7 @@ clippy::single_match
 )]
 #[rustfmt::skip]
 pub(crate) fn post_process(
-    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS],
+    unprocessed: &mut [Vec<i16>; 3],
     component_data: &[Components],
     idct_func: IDCTPtr,
     color_convert_16: ColorConvert16Ptr,
@@ -85,7 +85,7 @@ pub(crate) fn post_process(
 
 #[rustfmt::skip]
 pub(crate) fn post_process_prog(
-    block: &[&[i16]; MAX_COMPONENTS], /*The difference with post process*/
+    block: &[&[i16]; 3], /*The difference with post process*/
     component_data: &[Components],
     idct_func: IDCTPtr,
     color_convert_16: ColorConvert16Ptr,
@@ -118,7 +118,7 @@ pub(crate) fn post_process_prog(
 }
 #[rustfmt::skip]
 pub(crate) fn post_process_inner(
-    unprocessed: &mut [Vec<i16>; MAX_COMPONENTS], component_data: &[Components],
+    unprocessed: &mut [Vec<i16>; 3], component_data: &[Components],
     color_convert_16: ColorConvert16Ptr,
     input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8],
     width: usize,
@@ -175,7 +175,7 @@ clippy::unwrap_used
 )]
 #[rustfmt::skip]
 fn color_convert_ycbcr(
-    mcu_block: &[Vec<i16>; MAX_COMPONENTS],
+    mcu_block: &[Vec<i16>; 3],
     width: usize,
     h_samp: usize,
     v_samp: usize,

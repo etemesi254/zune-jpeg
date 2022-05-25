@@ -316,7 +316,7 @@ where
 
     // delete quantization tables, we'll extract them from the components when
     // needed
-    img.qt_tables = [None, None, None];
+    img.qt_tables = [None, None, None,None];
 
     img.components = components;
 

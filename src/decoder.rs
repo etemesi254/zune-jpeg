@@ -18,7 +18,7 @@ use crate::upsampler::{
 };
 
 /// Maximum components
-pub(crate) const MAX_COMPONENTS: usize = 3;
+pub(crate) const MAX_COMPONENTS: usize = 4;
 
 /// Maximum image dimensions supported.
 pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
@@ -131,9 +131,9 @@ impl Default for Decoder
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
         Decoder {
             info: ImageInfo::default(),
-            qt_tables: [None, None, None],
-            dc_huffman_tables: [None, None, None],
-            ac_huffman_tables: [None, None, None],
+            qt_tables: [None, None, None,None],
+            dc_huffman_tables: [None, None, None,None],
+            ac_huffman_tables: [None, None, None,None],
             components: vec![],
 
             // Interleaved information
