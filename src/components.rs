@@ -71,17 +71,19 @@ impl Components
 
         // check that upsampling ratios are powers of two
         // if these fail, it's probably a corrupt image.
-        assert!(
-            horizontal_sample.is_power_of_two(),
-            "Horizontal sample is not a power of two({}) cannot decode",
-            horizontal_sample
-        );
+        if !horizontal_sample.is_power_of_two() {
+            return Err(DecodeErrors::Format(format!(
+                "Horizontal sample is not a power of two({}) cannot decode",
+                horizontal_sample
+            )));
+        }
 
-        assert!(
-            vertical_sample.is_power_of_two(),
-            "Vertical sub-sample is not power of two({}) cannot decode",
-            vertical_sample
-        );
+        if !vertical_sample.is_power_of_two() {
+            return Err(DecodeErrors::Format(format!(
+                "Vertical sub-sample is not power of two({}) cannot decode",
+                vertical_sample
+            )));
+        }
 
         info!(
             "Component ID:{:?}\tHS:{} VS:{} QT:{}",
