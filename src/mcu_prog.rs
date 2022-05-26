@@ -426,9 +426,3 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
     }
 }
 
-#[test]
-fn try_decoding()
-{
-    let mut v = Decoder::new();
-    v.decode_file("/home/caleb/2.jpg").unwrap();
-}
