@@ -83,7 +83,7 @@ impl Decoder
         self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
 
         // extract marker
-        let mut marker = stream.marker.take().unwrap();
+        let mut marker = stream.marker.take().ok_or_else(|| DecodeErrors::Format(format!("Marker missing where expected")))?;
         // if marker is EOI, we are done, otherwise continue scanning.
         'eoi: while marker != Marker::EOI
         {
@@ -425,4 +425,3 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
         }
     }
 }
-
