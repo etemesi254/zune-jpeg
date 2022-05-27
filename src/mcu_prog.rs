@@ -283,8 +283,6 @@ impl Decoder
                     } else {
                         let pos = self.components[k].ac_huff_table;
 
-                        let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
-
                         let ac_table = self.dc_huffman_tables.get(pos)
                             .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", pos)))?
                             .as_ref()

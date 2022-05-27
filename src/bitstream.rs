@@ -448,7 +448,7 @@ impl BitStream
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
 
-        *block = (*dc_prediction as i16) * (1_i16 << self.successive_low);
+        *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
 
         return Ok(());
     }
