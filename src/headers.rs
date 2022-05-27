@@ -234,6 +234,10 @@ where
     // Number of components for the image.
     let num_components = read_byte(&mut buf)?;
 
+    if num_components == 0{
+        return Err(DecodeErrors::SofError(format!("Number of components cannot be zero.")))
+    }
+
     let expected = 8 + 3 * u16::from(num_components);
     // length should be equal to num components
     if length != expected
@@ -256,6 +260,7 @@ where
 
     // set number of components
     img.info.components = num_components;
+
 
     let mut components = Vec::with_capacity(num_components as usize);
 
@@ -355,6 +360,10 @@ where
         )));
     }
 
+
+    if image.info.components == 0{
+        return Err(DecodeErrors::SofError(format!("Number of components cannot be zero.")))
+    }
     // consume spec parameters
     for i in 0..ns
     {
