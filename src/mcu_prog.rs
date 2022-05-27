@@ -156,7 +156,6 @@ impl Decoder
         let idct_func = self.idct_func;
 
 
-
         let color_convert_16 = self.color_convert_16;
 
         let width = usize::from(self.width());
@@ -192,7 +191,7 @@ impl Decoder
 
                     scope.execute(move || {
                         post_process_prog(&[y, cb, cr], &component, idct_func, color_convert_16,
-                                           input, output, out, width,
+                                          input, output, out, width,
                         );
                     });
                 }
@@ -200,17 +199,16 @@ impl Decoder
         } else {
             // one component
             pool.scoped(|scope| {
-                for (y,  out) in y_chunk.zip(out_chunks)
+                for (y, out) in y_chunk.zip(out_chunks)
                 {
                     let component = components.clone();
-                   scope.execute(move || {
+                    scope.execute(move || {
                         post_process_prog(&[y, &[], &[]], &component, idct_func, color_convert_16,
-                                           input, output, out, width,
+                                          input, output, out, width,
                         );
                     });
                 }
             });
-
         }
         debug!("Finished decoding image");
 
@@ -287,6 +285,12 @@ impl Decoder
 
                         let ac_table = self.ac_huffman_tables.get(pos).unwrap().as_ref().unwrap();
 
+                        let ac_table = self.dc_huffman_tables.get(pos)
+                            .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", pos)))?
+                            .as_ref()
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized",pos)))?
+                            ;
+
                         if self.succ_high == 0
                         {
                             // first scan for this MCU
@@ -350,7 +354,10 @@ impl Decoder
                         let component = &mut self.components[n];
 
                         let huff_table = self.dc_huffman_tables.get(component.dc_huff_table)
-                            .expect("No DC table for component").as_ref().unwrap();
+                            .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", component.dc_huff_table)))?
+                            .as_ref()
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized",component.dc_huff_table)))?
+                            ;
 
                         for v_samp in 0..component.vertical_sample
                         {
