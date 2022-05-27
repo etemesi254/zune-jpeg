@@ -8,7 +8,7 @@ use std::cmp::max;
 use std::io::{BufRead, Read};
 
 use crate::components::Components;
-use crate::decoder::{Decoder, ImageInfo, MAX_DIMENSIONS};
+use crate::decoder::{Decoder, ImageInfo, MAX_COMPONENTS, MAX_DIMENSIONS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::marker::Marker;
@@ -168,7 +168,12 @@ where
                 )));
             }
         };
-
+        if table_position >= MAX_COMPONENTS{
+            return Err(DecodeErrors::DqtError(format!(
+                "Too large table position for QT :{}, expected between 0 and 3",
+                table_position
+            )));
+        }
         decoder.qt_tables[table_position] = Some(dct_table);
     }
 
