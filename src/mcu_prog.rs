@@ -115,7 +115,7 @@ impl Decoder
                         break 'eoi;
                     }
             }
-            marker = get_marker(reader, &mut stream).unwrap();
+            marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::Format(format!("Marker missing where expected")))?;
         }
 
         self.finish_progressive_decoding(&block, mcu_width)
