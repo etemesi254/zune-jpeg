@@ -44,10 +44,8 @@
 pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2, ycbcr_to_rgbx_avx2};
 #[cfg(feature = "x86")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use crate::color_convert::sse::{
-    ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16,ycbcr_to_rgba_sse_16,
-};
-use crate::decoder::{ColorConvert16Ptr};
+pub use crate::color_convert::sse::{ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
+use crate::decoder::ColorConvert16Ptr;
 
 mod avx;
 mod scalar;
@@ -60,9 +58,7 @@ use crate::misc::ColorSpace;
 /// This function determines the best color-convert function to carry out
 /// based on the colorspace needed
 
-pub fn choose_ycbcr_to_rgb_convert_func(
-    type_need: ColorSpace,
-) -> Option<ColorConvert16Ptr>
+pub fn choose_ycbcr_to_rgb_convert_func(type_need: ColorSpace) -> Option<ColorConvert16Ptr>
 {
     #[cfg(feature = "x86")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

@@ -32,15 +32,14 @@ fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspa
 
         // write to file, etc.
     })
-        .unwrap();
+    .unwrap();
 }
 
 #[test]
 fn huffman_third_index()
 {
     //
-    let path =
-        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huffman_third_index.jpg";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huffman_third_index.jpg";
     let mut decoder = Decoder::new();
     // Grayscale
 

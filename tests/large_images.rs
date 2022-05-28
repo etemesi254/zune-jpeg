@@ -10,7 +10,6 @@ fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspa
     std::fs::create_dir_all(&output).unwrap();
 
     std::panic::catch_unwind(|| {
-        //let x= d.decode_file("/home/caleb/CLionProjects/zune-jpeg/test-images/speed_bench_vertical_subsampling.jpg").unwrap();
         let mut comp = mozjpeg::Compress::new(colorspace);
 
         comp.set_size(width, height);
