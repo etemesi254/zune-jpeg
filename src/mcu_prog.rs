@@ -419,7 +419,11 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
 
             if r != 0
             {
-                return Some(Marker::from_u8(r).unwrap());
+                return Some(
+                    Marker::from_u8(r)
+                        .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{:X}", r)))
+                        .ok()?,
+                );
             }
 
             if reader.position() >= len
