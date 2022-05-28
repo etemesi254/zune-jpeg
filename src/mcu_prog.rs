@@ -48,6 +48,7 @@ impl Decoder
         &mut self, reader: &mut Cursor<Vec<u8>>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
+        self.check_component_dimensions()?;
         // memory location for decoded pixels for components
         let mut block = [vec![], vec![], vec![]];
 

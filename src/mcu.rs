@@ -128,6 +128,7 @@ impl Decoder
         &mut self, reader: &mut Cursor<Vec<u8>>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
+        self.check_component_dimensions()?;
         let mut scoped_pools = scoped_threadpool::Pool::new(num_cpus::get() as u32);
         info!("Created {} worker threads", scoped_pools.thread_count());
 
