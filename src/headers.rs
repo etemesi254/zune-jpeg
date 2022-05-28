@@ -168,7 +168,8 @@ where
                 )));
             }
         };
-        if table_position >= MAX_COMPONENTS{
+        if table_position >= MAX_COMPONENTS
+        {
             return Err(DecodeErrors::DqtError(format!(
                 "Too large table position for QT :{}, expected between 0 and 3",
                 table_position
@@ -239,8 +240,11 @@ where
     // Number of components for the image.
     let num_components = read_byte(&mut buf)?;
 
-    if num_components == 0{
-        return Err(DecodeErrors::SofError(format!("Number of components cannot be zero.")))
+    if num_components == 0
+    {
+        return Err(DecodeErrors::SofError(format!(
+            "Number of components cannot be zero."
+        )));
     }
 
     let expected = 8 + 3 * u16::from(num_components);
@@ -265,7 +269,6 @@ where
 
     // set number of components
     img.info.components = num_components;
-
 
     let mut components = Vec::with_capacity(num_components as usize);
 
@@ -326,7 +329,7 @@ where
 
     // delete quantization tables, we'll extract them from the components when
     // needed
-    img.qt_tables = [None, None, None,None];
+    img.qt_tables = [None, None, None, None];
 
     img.components = components;
 
@@ -334,7 +337,6 @@ where
 }
 
 /// Parse a start of scan data
-
 pub(crate) fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
 where
     R: Read + BufRead,
@@ -365,15 +367,24 @@ where
         )));
     }
 
-
-    if image.info.components == 0{
-        return Err(DecodeErrors::SofError(format!("Number of components cannot be zero.")))
+    if image.info.components == 0
+    {
+        return Err(DecodeErrors::SofError(format!(
+            "Number of components cannot be zero."
+        )));
     }
     // consume spec parameters
     for i in 0..ns
     {
         // CS_i parameter, I don't need it so I might as well delete it
         let id = read_byte(&mut buf)?;
+        if usize::from(id) >= image.components.len()
+        {
+            return Err(DecodeErrors::SofError(format!(
+                "Too large component ID {}, expected value between 0 and {}",
+                id, image.components.len()
+            )));
+        }
 
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
@@ -388,6 +399,7 @@ where
             }
             j += 1;
         }
+
         image.components[usize::from(j)].dc_huff_table = usize::from((y >> 4) & 0xF);
 
         image.components[usize::from(j)].ac_huff_table = usize::from(y & 0xF);
