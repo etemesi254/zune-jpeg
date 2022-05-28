@@ -284,11 +284,10 @@ impl Decoder
                     } else {
                         let pos = self.components[k].ac_huff_table;
 
-                        let ac_table = self.dc_huffman_tables.get(pos)
+                        let ac_table = self.ac_huffman_tables.get(pos)
                             .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", pos)))?
                             .as_ref()
-                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized",pos)))?
-                            ;
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized",pos)))?;
 
                         if self.succ_high == 0
                         {
