@@ -378,7 +378,7 @@ where
     {
         // CS_i parameter, I don't need it so I might as well delete it
         let id = read_byte(&mut buf)?;
-        if usize::from(id) >= image.components.len()
+        if usize::from(id) > image.components.len()
         {
             return Err(DecodeErrors::SofError(format!(
                 "Too large component ID {}, expected value between 0 and {}",
