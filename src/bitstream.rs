@@ -157,7 +157,7 @@ impl BitStream
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(never)] // to many call sites?
-    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> Result<bool,DecodeErrors>
+    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> Result<bool, DecodeErrors>
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -200,7 +200,13 @@ impl BitStream
                             $bits_left -= 8;
 
                             self.aligned_buffer = $buffer << (64 - $bits_left);
-                            self.marker = Some(Marker::from_u8(next_byte as u8).ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{:X}",next_byte)))?);
+                            self.marker =
+                                Some(Marker::from_u8(next_byte as u8).ok_or_else(|| {
+                                    DecodeErrors::Format(format!(
+                                        "Unknown marker 0xFF{:X}",
+                                        next_byte
+                                    ))
+                                })?);
                             return Ok(false);
                         }
                     }
@@ -413,7 +419,10 @@ impl BitStream
     #[inline]
     fn drop_bits(&mut self, n: u8)
     {
-        self.bits_left -= n;
+        // prevent under flowing subtraction.
+        // The best situation should be panicking out but that has
+        // a performance impact
+        self.bits_left = self.bits_left.saturating_sub(n);
 
         // remove top n bits  in lsb buffer
         self.aligned_buffer <<= n;
@@ -432,7 +441,7 @@ impl BitStream
         let bits = (self.aligned_buffer & mask) as i32;
 
         // Reduce the bits left, this influences the MSB buffer
-        self.bits_left -= n_bits;
+        self.bits_left = self.bits_left.saturating_sub(n_bits);
 
         // shift out bits read in the LSB buffer
         bits
@@ -453,8 +462,10 @@ impl BitStream
         return Ok(());
     }
     #[inline]
-    pub(crate) fn decode_prog_dc_refine(&mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16)
-    ->Result<(),DecodeErrors>{
+    pub(crate) fn decode_prog_dc_refine(
+        &mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16,
+    ) -> Result<(), DecodeErrors>
+    {
         // refinement scan
         if self.bits_left < 1
         {
