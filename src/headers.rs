@@ -382,7 +382,8 @@ where
         {
             return Err(DecodeErrors::SofError(format!(
                 "Too large component ID {}, expected value between 0 and {}",
-                id, image.components.len()
+                id,
+                image.components.len()
             )));
         }
 
@@ -398,6 +399,14 @@ where
                 break;
             }
             j += 1;
+        }
+        if j == image.info.components
+        {
+            return Err(DecodeErrors::SofError(format!(
+                "Invalid component id {}, expected a value between 0 and {}",
+                id,
+                image.components.len()
+            )));
         }
 
         image.components[usize::from(j)].dc_huff_table = usize::from((y >> 4) & 0xF);
