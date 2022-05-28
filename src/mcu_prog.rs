@@ -117,12 +117,12 @@ impl Decoder
             marker = get_marker(reader, &mut stream).unwrap();
         }
 
-        return Ok(self.finish_progressive_decoding(&block, mcu_width));
+        self.finish_progressive_decoding(&block, mcu_width)
     }
 
     #[rustfmt::skip]
-    fn finish_progressive_decoding(&mut self, block: &[Vec<i16>; 3], mcu_width: usize) -> Vec<u8> {
-        self.set_upsampling().unwrap();
+    fn finish_progressive_decoding(&mut self, block: &[Vec<i16>; 3], mcu_width: usize) -> Result<Vec<u8> ,DecodeErrors>{
+        self.set_upsampling()?;
 
         let mut mcu_width = mcu_width;
 
@@ -212,7 +212,7 @@ impl Decoder
         }
         debug!("Finished decoding image");
 
-        return out_vector;
+        return Ok(out_vector);
     }
 
 
