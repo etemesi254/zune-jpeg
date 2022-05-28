@@ -198,8 +198,10 @@ impl BitStream
                             self.buffer >>= 8;
 
                             $bits_left -= 8;
-
-                            self.aligned_buffer = $buffer << (64 - $bits_left);
+                            if $bits_left != 0
+                            {
+                                self.aligned_buffer = $buffer << (64 - $bits_left);
+                            }
                             self.marker =
                                 Some(Marker::from_u8(next_byte as u8).ok_or_else(|| {
                                     DecodeErrors::Format(format!(
