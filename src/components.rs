@@ -3,6 +3,7 @@
 //!
 //! The data is extracted from a SOF header.
 
+use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::misc::Aligned32;
 use crate::upsampler::upsample_no_op;
@@ -68,17 +69,27 @@ impl Components
         let vertical_sample = (a[1] & 0x0f) as usize;
 
         let quantization_table_number = a[2];
+        // confirm quantization number is between 0 and MAX_COMPONENTS
+        if usize::from(quantization_table_number) >= MAX_COMPONENTS
+        {
+            return Err(DecodeErrors::Format(format!(
+                "Too large quantization number :{}, expected value between 0 and {}",
+                quantization_table_number, MAX_COMPONENTS
+            )));
+        }
 
         // check that upsampling ratios are powers of two
         // if these fail, it's probably a corrupt image.
-        if !horizontal_sample.is_power_of_two() {
+        if !horizontal_sample.is_power_of_two()
+        {
             return Err(DecodeErrors::Format(format!(
                 "Horizontal sample is not a power of two({}) cannot decode",
                 horizontal_sample
             )));
         }
 
-        if !vertical_sample.is_power_of_two() {
+        if !vertical_sample.is_power_of_two()
+        {
             return Err(DecodeErrors::Format(format!(
                 "Vertical sub-sample is not power of two({}) cannot decode",
                 vertical_sample
