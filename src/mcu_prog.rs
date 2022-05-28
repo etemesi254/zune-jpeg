@@ -104,7 +104,7 @@ impl Decoder
                         self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
                         // extract marker, might either indicate end of image or we continue
                         // scanning(hence the continue statement to determine).
-                        marker = get_marker(reader, &mut stream).unwrap();
+                        marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::Format(format!("Marker missing where expected")))?;
 
                         stream.reset();
 
