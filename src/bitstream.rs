@@ -157,7 +157,7 @@ impl BitStream
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(never)] // to many call sites?
-    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> bool
+    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> Result<bool,DecodeErrors>
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -200,8 +200,8 @@ impl BitStream
                             $bits_left -= 8;
 
                             self.aligned_buffer = $buffer << (64 - $bits_left);
-                            self.marker = Some(Marker::from_u8(next_byte as u8).unwrap());
-                            return false;
+                            self.marker = Some(Marker::from_u8(next_byte as u8).ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{:X}",next_byte)))?);
+                            return Ok(false);
                         }
                     }
                 }
@@ -236,7 +236,7 @@ impl BitStream
                     // set them correctly
                     self.aligned_buffer = self.buffer << (64 - self.bits_left);
                     // done.
-                    return true;
+                    return Ok(true);
                 }
             }
 
@@ -265,7 +265,7 @@ impl BitStream
             self.bits_left = 63;
         }
 
-        return true;
+        return Ok(true);
     }
     /// Decode the DC coefficient in a MCU block.
     ///
@@ -285,7 +285,7 @@ impl BitStream
 
         if self.bits_left < 16
         {
-            self.refill(reader);
+            self.refill(reader)?;
         };
         // look a head HUFF_LOOKAHEAD bits into the bitstream
         symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
@@ -345,7 +345,7 @@ impl BitStream
 
         while pos < 64
         {
-            self.refill(reader);
+            self.refill(reader)?;
 
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
 
@@ -454,16 +454,17 @@ impl BitStream
     }
     #[inline]
     pub(crate) fn decode_prog_dc_refine(&mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16)
-    {
+    ->Result<(),DecodeErrors>{
         // refinement scan
         if self.bits_left < 1
         {
-            self.refill(reader);
+            self.refill(reader)?;
         }
         if self.get_bit() == 1
         {
             *block += 1 << self.successive_low;
         }
+        Ok(())
     }
 
     /// Get a single bit from the bitstream
@@ -493,7 +494,7 @@ impl BitStream
             // don't check what refill returns,
             // but then we have to put refills in a lot of placed
             // because of this
-            self.refill(reader);
+            self.refill(reader)?;
 
             let (mut symbol, mut r);
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
@@ -572,7 +573,7 @@ impl BitStream
             'no_eob: loop
             {
                 // Decode a coefficient from the bit stream
-                self.refill(reader);
+                self.refill(reader)?;
 
                 let mut symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
 
@@ -642,7 +643,7 @@ impl BitStream
                         }
                         if self.bits_left < 1
                         {
-                            self.refill(reader);
+                            self.refill(reader)?;
                         }
                     }
                     else
@@ -677,7 +678,7 @@ impl BitStream
             // only run if block does not consists of purely zeroes
             if &block[1..] != &[0; 63]
             {
-                self.refill(reader);
+                self.refill(reader)?;
 
                 while k <= self.spec_end
                 {
@@ -702,7 +703,7 @@ impl BitStream
                     if self.bits_left < 1
                     {
                         // refill at the last possible moment
-                        self.refill(reader);
+                        self.refill(reader)?;
                     }
                     k += 1;
                 }

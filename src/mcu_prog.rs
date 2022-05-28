@@ -279,7 +279,7 @@ impl Decoder
                             stream.decode_prog_dc_first(reader, dc_table, &mut data[0], dc_pred)?;
                         } else {
                             // refining scans for this MCU
-                            stream.decode_prog_dc_refine(reader, &mut data[0]);
+                            stream.decode_prog_dc_refine(reader, &mut data[0])?;
                         }
                     } else {
                         let pos = self.components[k].ac_huff_table;
@@ -374,7 +374,7 @@ impl Decoder
                                 {
                                     stream.decode_prog_dc_first(reader, huff_table, data, &mut component.dc_pred)?;
                                 } else {
-                                    stream.decode_prog_dc_refine(reader, data);
+                                    stream.decode_prog_dc_refine(reader, data)?;
                                 }
                             }
                         }
