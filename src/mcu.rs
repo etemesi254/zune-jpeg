@@ -129,7 +129,7 @@ impl Decoder
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         self.check_component_dimensions()?;
-        let mut scoped_pools = scoped_threadpool::Pool::new(num_cpus::get() as u32);
+        let mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or( num_cpus::get()) as u32);
         info!("Created {} worker threads", scoped_pools.thread_count());
 
         let (mcu_width, mcu_height);
@@ -311,7 +311,7 @@ impl Decoder
                                     }
                                 }
                             }
-                            self.todo -= 1;
+                            self.todo = self.todo.wrapping_sub(1);
                             // after every interleaved MCU that's a mcu, count down restart markers.
                             if self.todo == 0
                             {

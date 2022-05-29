@@ -148,7 +148,7 @@ impl Decoder
 
         let components = Arc::new(self.components.clone());
 
-        let mut pool = scoped_threadpool::Pool::new(num_cpus::get_physical() as u32);
+        let mut pool = scoped_threadpool::Pool::new(self.num_threads.unwrap_or( num_cpus::get()) as u32);
 
         let input = self.input_colorspace;
 

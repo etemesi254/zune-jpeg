@@ -122,6 +122,9 @@ pub struct Decoder
     /// restart markers
     pub(crate) restart_interval: usize,
     pub(crate) todo: usize,
+
+    // threads
+    pub(crate) num_threads: Option<usize>,
 }
 
 impl Default for Decoder
@@ -170,6 +173,7 @@ impl Default for Decoder
 
             restart_interval: 0,
             todo: 0x7fff_ffff,
+            num_threads: None,
         }
     }
 }
@@ -424,7 +428,7 @@ impl Decoder
 
     /// Set the output colorspace
     ///
-    ///# Values which will work(currently)
+    ///# Values which currently work
     ///
     /// - `ColorSpace::RGBX` : Set it to RGB_X where X is anything between 0 and
     ///   255
@@ -550,6 +554,31 @@ impl Decoder
         self.info.height
     }
 
+    /// Set the number of threads the decoder should use during decoding
+    ///
+    /// This allows the end user to manually set decoding threads
+    ///
+    /// # Errors
+    /// Errors when value is `0`
+    ///
+    /// # Example
+    /// ```
+    /// use zune_jpeg::Decoder;
+    ///
+    /// let mut img = Decoder::new();
+    /// img.set_num_threads(3).unwrap(); // spawn only three threads
+    /// ```
+    pub fn set_num_threads(&mut self, threads: usize) -> Result<(), DecodeErrors>
+    {
+        if threads == 0
+        {
+            return Err(DecodeErrors::Format(format!(
+                "Cannot set zero threads to decode image"
+            )));
+        }
+        self.num_threads = Some(threads);
+        Ok(())
+    }
     /// Check that all components have the correct width and height
     /// before continuing to decode
     ///
