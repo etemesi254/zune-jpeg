@@ -381,19 +381,20 @@ where
     {
         // CS_i parameter, I don't need it so I might as well delete it
         let id = read_byte(&mut buf)?;
-        if seen[usize::from(id)]
-        {
-            return Err(DecodeErrors::SofError(format!(
-                "Duplicate ID {} seen twice in the same component",
-                id
-            )));
-        }
+
         if usize::from(id) > image.components.len()
         {
             return Err(DecodeErrors::SofError(format!(
                 "Too large component ID {}, expected value between 0 and {}",
                 id,
                 image.components.len()
+            )));
+        }
+        if seen[usize::from(id)]
+        {
+            return Err(DecodeErrors::SofError(format!(
+                "Duplicate ID {} seen twice in the same component",
+                id
             )));
         }
         seen[usize::from(i)] = true;
