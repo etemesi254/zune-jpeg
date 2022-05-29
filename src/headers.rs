@@ -343,6 +343,8 @@ where
 {
     let mut buf = buf;
 
+    let mut seen = [false; MAX_COMPONENTS];
+
     // Scan header length
     let ls = read_u16_be(&mut buf)?;
 
@@ -373,11 +375,19 @@ where
             "Number of components cannot be zero."
         )));
     }
+
     // consume spec parameters
     for i in 0..ns
     {
         // CS_i parameter, I don't need it so I might as well delete it
         let id = read_byte(&mut buf)?;
+        if seen[usize::from(id)]
+        {
+            return Err(DecodeErrors::SofError(format!(
+                "Duplicate ID {} seen twice in the same component",
+                id
+            )));
+        }
         if usize::from(id) > image.components.len()
         {
             return Err(DecodeErrors::SofError(format!(
@@ -386,6 +396,7 @@ where
                 image.components.len()
             )));
         }
+        seen[usize::from(i)] = true;
 
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
