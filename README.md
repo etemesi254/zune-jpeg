@@ -1,21 +1,25 @@
-# Zune-JPEG
+# Zune-jpeg
 
-A jpeg decoder with wings.
+An incredibly spicy jpeg decoder.
+
 
 # Features
 
 - [x] A Pretty fast 8*8 integer IDCT.
 - [x] Fast Huffman Decoding
 - [x] Fast color convert functions.
-- [x] Support for extended colorspaces like GrayScale, RGBA
+- [x] Support for extended colorspaces like GrayScale and RGBA
 - [X] Multi-threaded decoding.
 
 
-# Features  
+# Crate Features  
 
-|feature|on|Capabilities|
-|-------|---|------------|
-|`x86`| ✅ | Enables `x86` specific instructions, specifically `avx` and `sse` for accelerated decoding.|
+| feature  | on   | Capabilities                                                                                |
+|----------|------|---------------------------------------------------------------------------------------------|
+| `x86`    | ✅    | Enables `x86` specific instructions, specifically `avx` and `sse` for accelerated decoding. |
+
+Note that the `x86` features are automatically disabled on platforms that aren't x86 during compile 
+time hence there is no need to disable them explicitly if you are targeting such a platform.
 
 ## Debug vs release
 The decoder heavily relies on platform specific intrinsics, namely AVX2 and SSE to gain speed-ups in decoding, 
