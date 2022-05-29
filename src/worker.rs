@@ -227,7 +227,7 @@ let  e= (y_width.len()/16).saturating_sub(1);
         // color convert, and overwrite
         // This means some values will be color converted twice.
     
-        let diff = 64-(stride-position);
+        let diff = 64_usize.saturating_sub(stride.saturating_sub(position));
     
         position -= diff;
     
