@@ -45,7 +45,7 @@ pub fn dequantize_and_idct_int(
             if &vector[1..] == &[0_i16; 63]
             {
                 // okay then if you work, yaay, let's write you really quick
-                let coeff = [((vector[0] * (qt_table.0[0] as i16)) >> 3) + 128; 8];
+                let coeff = [((vector[0] .wrapping_mul (qt_table.0[0] as i16)) >> 3) + 128; 8];
 
                 macro_rules! store {
                     ($index:tt) => {
