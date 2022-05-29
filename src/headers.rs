@@ -397,7 +397,7 @@ where
                 id
             )));
         }
-        seen[usize::from(i)] = true;
+        seen[usize::from(id)] = true;
 
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
