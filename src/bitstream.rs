@@ -475,7 +475,7 @@ impl BitStream
         }
         if self.get_bit() == 1
         {
-            *block += 1 << self.successive_low;
+            *block = block.wrapping_add( 1 << self.successive_low);
         }
         Ok(())
     }
