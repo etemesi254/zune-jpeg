@@ -257,9 +257,9 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
             // update previous and next values
             assert!(input.len() >= pos + stride + 16);
             // Safety , the assert statement above ensures none of these goes out of bounds.
-            prev = (3 * (*input.get_unchecked(pos)) + (*input.get_unchecked(pos + stride)) + 2) >> 2;
+            prev = (3 * (*input.get(pos).unwrap_or(&0)) + (*input.get(pos + stride).unwrap_or(&0)) + 2) >> 2;
 
-            pixel_far = (3 * (*input.get_unchecked(pos + 16)) + (*input.get_unchecked(pos + stride + 16)) + 2) >> 2;
+            pixel_far = (3 * (*input.get(pos + 16).unwrap_or(&0)) + (input.get(pos + stride + 16).unwrap_or(&0)) + 2) >> 2;
         }
         // now there are some more data left, since we actually don't write
         // to the end of the array.
