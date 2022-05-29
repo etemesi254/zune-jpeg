@@ -45,7 +45,7 @@ pub fn dequantize_and_idct_int(
             if &vector[1..] == &[0_i16; 63]
             {
                 // okay then if you work, yaay, let's write you really quick
-                let coeff = [((vector[0] .wrapping_mul (qt_table.0[0] as i16)) >> 3) + 128; 8];
+                let coeff = [((vector[0].wrapping_mul(qt_table.0[0] as i16)) >> 3) + 128; 8];
 
                 macro_rules! store {
                     ($index:tt) => {
@@ -82,7 +82,7 @@ pub fn dequantize_and_idct_int(
 
                     let p3 = dequantize(vector[ptr + 48], qt_table.0[ptr + 48]);
 
-                    let p1 = (p2 + p3) * 2217;
+                    let p1 = (p2 + p3).wrapping_mul(2217);
 
                     let t2 = p1 + p3 * -7567;
 
@@ -223,13 +223,13 @@ pub fn dequantize_and_idct_int(
 
                     let p5 = (p3 + p4) * f2f(1.175875602);
 
-                    t0 *= 1223;
+                    t0 = t0.wrapping_mul(1223);
 
-                    t1 *= 8410;
+                    t1 = t1.wrapping_mul(8410);
 
-                    t2 *= 12586;
+                    t2 = t2.wrapping_mul(12586);
 
-                    t3 *= 6149;
+                    t3 = t3.wrapping_mul(6149);
 
                     let p1 = p5 + p1 * -3685;
 

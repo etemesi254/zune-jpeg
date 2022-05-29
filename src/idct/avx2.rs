@@ -161,7 +161,7 @@ unsafe fn dequantize_and_idct_int_avx2(
                     // AC terms all zero, idct of the block is  is (coeff[0] *qt[0])/8 + bias(128)
                     // (and clamped to 255)
                     let idct_value = _mm_set1_epi16(
-                        ((vector[0].wrapping_mul( qt_table.0[0] as i16) >> 3) + 128)
+                        ((vector[0].wrapping_mul(qt_table.0[0] as i16) >> 3) + 128)
                             .max(0)
                             .min(255),
                     );
