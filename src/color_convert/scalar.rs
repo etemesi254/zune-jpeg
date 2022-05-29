@@ -30,11 +30,11 @@ pub fn ycbcr_to_rgba_16_scalar(
 
         let cb = cb - 128;
 
-        let r = y + ((45 * cr) >> 5);
+        let r = y + ((45_i16.wrapping_mul(cr)) >> 5);
 
-        let g = y - ((11 * cb + 23 * cr) >> 5);
+        let g = y - ((11_i16.wrapping_mul(cb) + 23_i16.wrapping_mul(cr)) >> 5);
 
-        let b = y + ((113 * cb) >> 6);
+        let b = y + ((113_i16.wrapping_mul(cb)) >> 6);
 
         opt[p] = clamp(r);
 
@@ -69,11 +69,11 @@ pub fn ycbcr_to_rgb_16_scalar(
 
         let cb = cb - 128;
 
-        let r = y + ((45 * cr) >> 5);
+        let r = y + ((45_i16.wrapping_mul(cr)) >> 5);
 
-        let g = y - ((11 * cb + 23 * cr) >> 5);
+        let g = y - ((11_i16.wrapping_mul(cb) + 23_i16.wrapping_mul(cr)) >> 5);
 
-        let b = y + ((113 * cb) >> 6);
+        let b = y + ((113_i16.wrapping_mul(cb)) >> 6);
 
         opt[p] = clamp(r);
 
