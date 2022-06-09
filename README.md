@@ -51,7 +51,7 @@ up to the caller.
 
 # TODO
 - [ ] Add support for Adobe APP14 images.
-
+- [ ] Support more colorspace options. It would not be too bad if we support all color options libjpeg/mozjpeg supports.
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo/
 
