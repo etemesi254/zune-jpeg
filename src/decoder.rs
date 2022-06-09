@@ -247,7 +247,7 @@ impl Decoder
     ///  - SOF(n) -> Decoder images which are not baseline/progressive
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
-    fn decode_headers<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
+    fn decode_headers_internal<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
     where
         R: Read + BufRead,
     {
@@ -414,7 +414,7 @@ impl Decoder
     {
         let mut buf = buf;
 
-        self.decode_headers(&mut buf)?;
+        self.decode_headers_internal(&mut buf)?;
 
         if self.is_progressive
         {
@@ -424,6 +424,27 @@ impl Decoder
         {
             self.decode_mcu_ycbcr_baseline(&mut buf)
         }
+    }
+    /// Read only headers from a jpeg image buffer
+    ///
+    /// This allows you to extract important information like
+    /// image width and height without decoding the full image
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use zune_jpeg::Decoder;
+    /// let mut decoder = Decoder::new();
+    /// let img_data = std::fs::read("a_valid.jpeg").unwrap();
+    /// decoder.read_headers(&img_data).unwrap();
+    ///
+    /// println!("Total decoder dimensions are : {} pixels",usize::from(decoder.width()) * usize::from(decoder.height()));
+    /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
+    /// ```
+    pub fn read_headers(&mut self,buf:&[u8])->Result<(),DecodeErrors>{
+
+        let mut cursor = Cursor::new(buf);
+        self.decode_headers_internal(&mut cursor)?;
+        Ok(())
     }
 
     /// Set the output colorspace
@@ -632,7 +653,7 @@ pub struct ImageInfo
     /// Vertical sample
     pub y_density: u16,
     /// Number of components
-    pub(crate) components: u8,
+    pub components: u8,
 }
 
 impl ImageInfo
