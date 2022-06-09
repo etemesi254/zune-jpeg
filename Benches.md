@@ -46,10 +46,10 @@ To reproduce them
 
 ## Performance features of the three libraries
 
-|feature|image-rs/jpeg-decoder|libjpeg-turbo|zune-jpeg|
-|-------|---------------------|-------------|---------|
-|multithreaded|  ✅|❌|✅|
-|platform specific intrinsics|❌|✅|✅|
+| feature                      | image-rs/jpeg-decoder | libjpeg-turbo | zune-jpeg |
+|------------------------------|-----------------------|---------------|-----------|
+| multithreaded                | ✅                     | ❌             | ✅         |
+| platform specific intrinsics | ✅                     | ✅             | ✅         |
 
 
 - Image-rs/jpeg-decoder uses [rayon] under the hood but it's under a feature
@@ -60,6 +60,22 @@ the most common architectures out there but falls back to scalar
 code if it can't run in a platform.
 
 # Finally benchmarks
+## x86_64
+
+#### Machine Specs
+- Model name:          AMD Ryzen 5 4500U with Radeon Graphics
+- CPU family:          23
+- Model:               96
+
+
+- Thread(s) per core:  1
+- Core(s) per socket:  6
+
+
+- L1d:                   192 KiB (6 instances)
+- L1i:                   192 KiB (6 instances)
+- L2:                    3 MiB (6 instances)
+- L3:                    8 MiB (2 instances)
 
 ### 1 * 1 (No upsampling) Baseline RGB Decoding
 
@@ -128,9 +144,6 @@ This is probably the most common for low to medium quality images out there
 
 # Apple M1
 
-So recently I managed to land an apple macbook and it's nice to see how we stack 
-on that side, so here are the benchmarks.
-
 - Apple M1 2020
 - 8Gb unified memory
 
@@ -167,7 +180,7 @@ on that side, so here are the benchmarks.
 
 ## Progressive decoding
 
-Still ballistic.
+Still incredibly spicy.
 
 So here are the benchmarks.
 
