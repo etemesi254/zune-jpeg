@@ -57,6 +57,7 @@ extern crate log;
 
 pub use crate::decoder::Decoder;
 pub use crate::misc::ColorSpace;
+pub use crate::decoder::ImageInfo;
 
 mod bitstream;
 mod color_convert;
