@@ -107,28 +107,16 @@ where
     let mut buf = buf;
 
     // read length
-    let qt_length = read_u16_be(&mut buf)
-        .map_err(|c| DecodeErrors::Format(format!("Could not read  DQT length {}", c)))?;
-
-    let mut length_read: u16 = 0;
+    let mut qt_length = read_u16_be(&mut buf)
+        .map_err(|c| DecodeErrors::Format(format!("Could not read  DQT length {}", c)))?
+        .checked_sub(2)
+        .ok_or(DecodeErrors::DqtError(format!(
+            "Invalid DQT length. Length should be greater than 2"
+        )))?;
     // A single DQT header may have multiple QT's
-    while qt_length > length_read
+    while qt_length > 0
     {
         let qt_info = read_byte(&mut buf)?;
-
-        // If the first bit is set,panic
-        if ((qt_info >> 1) & 0x01) != 0
-        {
-            // bit mathematics
-            let second_bit = 2 * ((qt_info >> 2) & 0x01);
-
-            let third_bit = (qt_info >> 3) & 0x01;
-
-            return Err(DecodeErrors::DqtError(format!(
-                "Wrong QT bit set,expected value between 0 and 3,found {:?}\n",
-                4 + second_bit + third_bit
-            )));
-        };
 
         // 0 = 8 bit otherwise 16 bit dqt
         let precision = (qt_info >> 4) as usize;
@@ -147,15 +135,14 @@ where
                 buf.read_exact(&mut qt_values).map_err(|x| {
                     DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
                 })?;
-
-                length_read += 7 + precision_value as u16;
-
+                qt_length -=   (precision_value as u16) +1 /*QT BIT*/;
                 // carry out un zig-zag here
                 un_zig_zag(&qt_values)
             }
             1 =>
             {
                 // 16 bit quantization tables
+                //(cae) Before we enable this. Should 16 bit QT cause any other lib changes
                 return Err(DecodeErrors::DqtError(
                     "Support for 16 bit quantization table is not complete".to_string(),
                 ));
@@ -175,6 +162,7 @@ where
                 table_position
             )));
         }
+
         decoder.qt_tables[table_position] = Some(dct_table);
     }
 
