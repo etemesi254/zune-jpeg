@@ -53,3 +53,25 @@ fn huffman_third_index()
         OutColorSpace::JCS_GRAYSCALE,
     );
 }
+
+
+#[test]
+fn single_qt()
+{
+    // This image has a single quantization header
+    // with multiple QT tables defined.
+    // Allows us to ensure that the multi-table QT handling logic works
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/single_qt.jpeg";
+    let mut decoder = Decoder::new();
+    // Grayscale
+
+    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "single_qt.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_GRAYSCALE,
+    );
+}
