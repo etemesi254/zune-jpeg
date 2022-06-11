@@ -416,31 +416,41 @@ where
     }
 
     // Collect the component spec parameters
-    if image.info.sof == SOFMarkers::ProgressiveDctHuffman
+    // This is only needed for progressive images but I'll read
+    // them in order to ensure they are correct according to the spec
+
+    // Extract progressive information
+
+    // https://www.w3.org/Graphics/JPEG/itu-t81.pdf
+    // Page 42
+
+    // Start of spectral / predictor selection. (between 0 and 63)
+    image.spec_start = read_byte(&mut buf)? & 63;
+
+    // End of spectral selection
+    image.spec_end = read_byte(&mut buf)? & 63;
+
+    let bit_approx = read_byte(&mut buf)?;
+
+    // successive approximation bit position high
+    image.succ_high = bit_approx >> 4;
+
+    if image.succ_high > 13
     {
-        // Extract progressive information
-
-        // https://www.w3.org/Graphics/JPEG/itu-t81.pdf
-        // Page 42
-
-        // Start of spectral / predictor selection. (between 0 and 63)
-        image.spec_start = read_byte(&mut buf)? & 63;
-
-        // End of spectral selection
-        image.spec_end = read_byte(&mut buf)? & 63;
-
-        let bit_approx = read_byte(&mut buf)?;
-
-        // successive approximation bit position high
-        image.succ_high = bit_approx >> 4;
-
-        // successive approximation bit position low
-        image.succ_low = bit_approx & 0xF;
+        return Err(DecodeErrors::SofError(format!(
+            "Invalid Ah parameter {}, range should be 0-13",
+            image.succ_low
+        )));
     }
-    else
+    // successive approximation bit position low
+    image.succ_low = bit_approx & 0xF;
+
+    if image.succ_low > 13
     {
-        // ignore three bytes that contain progressive information
-        buf.consume(3);
+        return Err(DecodeErrors::SofError(format!(
+            "Invalid Al parameter {}, range should be 0-13",
+            image.succ_low
+        )));
     }
 
     Ok(())
