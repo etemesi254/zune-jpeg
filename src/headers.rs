@@ -126,6 +126,11 @@ where
 
         let precision_value = 64 * (precision + 1);
 
+        if (precision_value + 1) as u16 > qt_length
+        {
+            return Err(DecodeErrors::DqtError(format!("Invalid QT table bytes left :{}. Too small to construct a valid qt table which should be {} long", qt_length, precision_value + 1)));
+        }
+
         let dct_table = match precision
         {
             0 =>
@@ -135,7 +140,7 @@ where
                 buf.read_exact(&mut qt_values).map_err(|x| {
                     DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
                 })?;
-                qt_length -=   (precision_value as u16) +1 /*QT BIT*/;
+                qt_length -= (precision_value as u16) + 1 /*QT BIT*/;
                 // carry out un zig-zag here
                 un_zig_zag(&qt_values)
             }
