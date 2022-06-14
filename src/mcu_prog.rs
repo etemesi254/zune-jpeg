@@ -378,7 +378,9 @@ impl Decoder
                                 }
                             }
                         }
-                        self.todo -= 1;
+                        // We want wrapping subtraction here because it means
+                        // we get a higher number in the case this underflows
+                        self.todo = self.todo.wrapping_sub(1);
                         // after every scan that's a mcu, count down restart markers.
                         if self.todo == 0 {
                             self.handle_rst(stream)?;
