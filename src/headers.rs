@@ -1,8 +1,7 @@
 //! Decode Decoder markers/segments
 //!
-//! This file deals with decoding header information in a Decoder file
+//! This file deals with decoding header information in a jpeg file
 //!
-//! A good guide on markers can be found [here](http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm)
 
 use std::cmp::max;
 use std::io::{BufRead, Read};
@@ -40,11 +39,18 @@ where
         let ht_info = read_byte(&mut buf)?;
 
         // third bit indicates whether the huffman encoding is DC or AC type
-        let dc_or_ac = (ht_info >> 4) & 0x01;
+        let dc_or_ac = (ht_info >> 4) & 0xF;
 
         // Indicate the position of this table, should be less than 4;
-        let index = (ht_info & 3) as usize;
+        let index = (ht_info & 0xF) as usize;
 
+        if index >= MAX_COMPONENTS{
+            return Err(DecodeErrors::HuffmanDecode(format!("Invalid DHT index {}, expected between 0 and 3",index)));
+        }
+        if dc_or_ac > 1{
+            return Err(DecodeErrors::HuffmanDecode(format!("Invalid DHT postioon {}, should be 0 or 1",dc_or_ac)));
+
+        }
         // read the number of symbols
         let mut num_symbols: [u8; 17] = [0; 17];
 
