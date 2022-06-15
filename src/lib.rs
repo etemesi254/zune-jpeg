@@ -50,14 +50,13 @@
     clippy::missing_errors_doc,
     clippy::panic
 )]
-//#![deny(missing_docs)]
+#![cfg_attr(not(feature = "x86"), forbid(unsafe_code))]
 
 #[macro_use]
 extern crate log;
 
-pub use crate::decoder::Decoder;
+pub use crate::decoder::{Decoder, ImageInfo};
 pub use crate::misc::ColorSpace;
-pub use crate::decoder::ImageInfo;
 
 mod bitstream;
 mod color_convert;
