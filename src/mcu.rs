@@ -204,7 +204,6 @@ impl Decoder
         self.check_tables()?;
 
         let is_hv = self.sub_sample_ratio == SubSampRatios::HV;
-
         // Split output into different blocks each containing enough space for an MCU width
         let mut chunks =
             global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
@@ -244,19 +243,25 @@ impl Decoder
                         for pos in 0..self.input_colorspace.num_components()
                         {
                             let component = &mut self.components[pos];
-                            // Safety:The tables were confirmed to exist in self.check_tables();
-                            let dc_table = unsafe {
-                                self.dc_huffman_tables
-                                    .get_unchecked(component.dc_huff_table)
-                                    .as_ref()
-                                    .unwrap_or_else(|| std::hint::unreachable_unchecked())
-                            };
-                            let ac_table = unsafe {
-                                self.ac_huffman_tables
-                                    .get_unchecked(component.ac_huff_table)
-                                    .as_ref()
-                                    .unwrap_or_else(|| std::hint::unreachable_unchecked())
-                            };
+
+                            let dc_table = self.dc_huffman_tables[component.dc_huff_table & 3]
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    DecodeErrors::HuffmanDecode(format!(
+                                        "No DC table for component {:?}",
+                                        component.component_id
+                                    ))
+                                })?;
+
+                            let ac_table = self.ac_huffman_tables[component.ac_huff_table & 3]
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    DecodeErrors::HuffmanDecode(format!(
+                                        "No AC table for component {:?}",
+                                        component.component_id
+                                    ))
+                                })?;
+
                             // If image is interleaved iterate over scan  components,
                             // otherwise if it-s non-interleaved, these routines iterate in
                             // trivial scanline order(Y,Cb,Cr)
@@ -320,6 +325,7 @@ impl Decoder
                         }
                     }
                 }
+                
                 // Clone things, to make multithreading safe
                 let component = global_component.clone();
 
