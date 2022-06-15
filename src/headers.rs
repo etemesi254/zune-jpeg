@@ -44,12 +44,19 @@ where
         // Indicate the position of this table, should be less than 4;
         let index = (ht_info & 0xF) as usize;
 
-        if index >= MAX_COMPONENTS{
-            return Err(DecodeErrors::HuffmanDecode(format!("Invalid DHT index {}, expected between 0 and 3",index)));
+        if index >= MAX_COMPONENTS
+        {
+            return Err(DecodeErrors::HuffmanDecode(format!(
+                "Invalid DHT index {}, expected between 0 and 3",
+                index
+            )));
         }
-        if dc_or_ac > 1{
-            return Err(DecodeErrors::HuffmanDecode(format!("Invalid DHT postioon {}, should be 0 or 1",dc_or_ac)));
-
+        if dc_or_ac > 1
+        {
+            return Err(DecodeErrors::HuffmanDecode(format!(
+                "Invalid DHT postioon {}, should be 0 or 1",
+                dc_or_ac
+            )));
         }
         // read the number of symbols
         let mut num_symbols: [u8; 17] = [0; 17];

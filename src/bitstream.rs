@@ -523,7 +523,7 @@ impl BitStream
                 // run
                 k += ((fac >> 4) & 63) as usize;
                 // value
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 10).wrapping_mul (1 << shift);
+                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 10).wrapping_mul(1 << shift);
 
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
@@ -544,7 +544,8 @@ impl BitStream
 
                     symbol = huff_extend(r, symbol);
 
-                    block[UN_ZIGZAG[k as usize & 63] & 63] = (symbol as i16 ).wrapping_mul (1 << shift);
+                    block[UN_ZIGZAG[k as usize & 63] & 63] =
+                        (symbol as i16).wrapping_mul(1 << shift);
 
                     k += 1;
                 }

@@ -325,7 +325,6 @@ impl Decoder
                         }
                     }
                 }
-                
                 // Clone things, to make multithreading safe
                 let component = global_component.clone();
 

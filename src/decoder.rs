@@ -274,8 +274,6 @@ impl Decoder
             {
                 let marker = Marker::from_u8(m);
 
-                // Check http://www.vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
-                // for meanings of the values below
                 if let Some(m) = marker
                 {
                     match m
@@ -440,8 +438,8 @@ impl Decoder
     /// println!("Total decoder dimensions are : {} pixels",usize::from(decoder.width()) * usize::from(decoder.height()));
     /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
     /// ```
-    pub fn read_headers(&mut self,buf:&[u8])->Result<(),DecodeErrors>{
-
+    pub fn read_headers(&mut self, buf: &[u8]) -> Result<(), DecodeErrors>
+    {
         let mut cursor = Cursor::new(buf);
         self.decode_headers_internal(&mut cursor)?;
         Ok(())
