@@ -1,8 +1,11 @@
+### Version 0.1.4
+- Remove all `unsafe` instances except platform dependent intrinsics.
+- Numerous bug fixes identified by fuzzing.
+- Expose `ImageInfo` to the crate root.
+
 ### Version 0.1.3
 - Fix numerous panics found by fuzzing(thanks to @[Shnatsel] for the corpus)
 - Add new method `set_num_threads` that allows one to explicitly set the number of threads to use to decode the image.
-
-
 
 ### Version 0.1.2
 - Add more sub checks, contributed by @[5225225]
