@@ -229,7 +229,7 @@ let  e= (y_width.len()/16).saturating_sub(1);
     
         let diff = 64_usize.saturating_sub(stride.saturating_sub(position));
     
-        position -= diff;
+        position = position.saturating_sub(diff);
     
         (color_convert_16)(
             y_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
