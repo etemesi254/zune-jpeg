@@ -18,9 +18,8 @@ fn bad_ff_marker_size()
     let err = decoder
         .decode_buffer(&[0xff, 0xd8, 0xff, 0x00, 0x00, 0x00])
         .unwrap_err();
-
     assert!(
-        matches!(err, zune_jpeg::errors::DecodeErrors::Format(x) if x == "Got marker with invalid raw size 0")
+        matches!(err, zune_jpeg::errors::DecodeErrors::Format(x) if x == "Found a marker with invalid length : 0")
     );
 }
 
