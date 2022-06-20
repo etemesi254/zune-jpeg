@@ -270,7 +270,6 @@ impl Decoder
             if last_byte == 0xFF
             {
                 let marker = Marker::from_u8(m);
-
                 if let Some(n) = marker
                 {
                     self.parse_marker_inner(n, buf)?;
@@ -338,7 +337,7 @@ impl Decoder
                 return Err(DecodeErrors::Format("Unsupported image format".to_string()));
             }
             // APP(0) segment
-            Marker::APP(_) =>
+            Marker::APP(0 | 1) =>
             {
                 parse_app(buf, m, &mut self.info)?;
             }
@@ -361,6 +360,7 @@ impl Decoder
                 // what follows is the image data
                 return Ok(());
             }
+            Marker::EOI => return Err(DecodeErrors::Format("Premature End of image".to_string())),
 
             Marker::DAC | Marker::DNL =>
             {
@@ -698,7 +698,7 @@ impl ImageInfo
     /// Set image x-density(dots per pixel)
     ///
     /// Found in the APP(0) marker
-
+    #[allow(dead_code)]
     pub(crate) fn set_x(&mut self, sample: u16)
     {
         self.x_density = sample;
@@ -707,7 +707,7 @@ impl ImageInfo
     /// Set image y-density
     ///
     /// Found in the APP(0) marker
-
+    #[allow(dead_code)]
     pub(crate) fn set_y(&mut self, sample: u16)
     {
         self.y_density = sample;
