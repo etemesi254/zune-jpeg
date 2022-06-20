@@ -20,20 +20,16 @@ where
     R: Read,
 {
     // Read the length of the Huffman table
-    let dht_length = read_u16_be(&mut buf)
+    let mut dht_length = read_u16_be(&mut buf)
         .map_err(|_| {
             DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
         })?
         .checked_sub(2)
         .ok_or(DecodeErrors::HuffmanDecode(
             "Invalid Huffman length in image".to_string(),
-        ))?;
+        ))? as i32;
 
-    // how much have we read
-    let mut length_read: u16 = 0;
-
-    // A single DHT marker may contain multiple Huffman Tables.
-    while length_read < dht_length
+    while dht_length > 16
     {
         // HT information
         let ht_info = read_byte(&mut buf)?;
@@ -65,7 +61,9 @@ where
             DecodeErrors::HuffmanDecode("Could not read bytes into the buffer".to_string())
         })?;
 
-        let symbols_sum: u16 = num_symbols.iter().map(|f| u16::from(*f)).sum();
+        dht_length -= 1 + 16;
+
+        let symbols_sum: i32 = num_symbols.iter().map(|f| i32::from(*f)).sum();
 
         // The sum of the number of symbols cannot be greater than 256;
         if symbols_sum > 256
@@ -74,16 +72,22 @@ where
                 "Encountered Huffman table with excessive length in DHT".to_string(),
             ));
         }
+        if symbols_sum > dht_length
+        {
+            return Err(DecodeErrors::HuffmanDecode(format!(
+                "Excessive Huffman table of length {} found when header length is {}",
+                symbols_sum, dht_length
+            )));
+        }
+        dht_length -= symbols_sum;
 
         // A table containing symbols in increasing code length
         let mut symbols = [0; 256];
 
-        buf.read_exact(&mut symbols[0..symbols_sum.into()])
+        buf.read_exact(&mut symbols[0..(symbols_sum as usize)])
             .map_err(|x| {
                 DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
             })?;
-        length_read += 17 + symbols_sum;
-
         // store
         match dc_or_ac
         {
