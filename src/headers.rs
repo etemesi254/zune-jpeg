@@ -481,7 +481,7 @@ where
 }
 
 pub(crate) fn parse_app<R>(
-    mut buf: &mut R, marker: Marker, info: &mut ImageInfo,
+    buf: &mut R, marker: Marker, _info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
 where
     R: BufRead + Read,
@@ -492,7 +492,7 @@ where
         )))?;
 
 
-    let mut bytes_read = 2;
+    let mut bytes_read = 0;
     match marker
     {
         Marker::APP(0) =>
