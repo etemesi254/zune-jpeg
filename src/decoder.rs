@@ -282,7 +282,7 @@ impl Decoder
                 }
                 else
                 {
-                    error!("Marker 0xFF\"{:?}\" not known", m);
+                    error!("Marker 0xFF{:X} not known", m);
                     let length = read_u16_be(buf)?;
 
                     if length < 2
