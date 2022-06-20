@@ -255,149 +255,152 @@ impl Decoder
 
         // First two bytes should be jpeg soi marker
         let magic_bytes = read_u16_be(&mut buf)?;
-
         if magic_bytes != 0xffd8
         {
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
-
         let mut last_byte = 0;
 
         loop
         {
             // read a byte
             let m = read_byte(&mut buf)?;
-
             // Last byte should be 0xFF to confirm existence of a marker since markers look
             // like OxFF(some marker data)
             if last_byte == 0xFF
             {
                 let marker = Marker::from_u8(m);
 
-                if let Some(m) = marker
+                if let Some(n) = marker
                 {
-                    match m
+                    self.parse_marker_inner(n, buf)?;
+
+                    if n == Marker::SOS
                     {
-                        Marker::SOF(0 | 2) =>
-                        {
-                            let marker = {
-                                // choose marker
-                                if m == Marker::SOF(0)
-                                {
-                                    SOFMarkers::BaselineDct
-                                }
-                                else
-                                {
-                                    self.is_progressive = true;
-
-                                    SOFMarkers::ProgressiveDctHuffman
-                                }
-                            };
-                            info!("Image encoding scheme =`{:?}`", marker);
-
-                            // get components
-                            parse_start_of_frame(&mut buf, marker, self)?;
-                        }
-                        // Start of Frame Segments not supported
-                        Marker::SOF(v) =>
-                        {
-                            let feature = UnsupportedSchemes::from_int(v);
-
-                            if let Some(feature) = feature
-                            {
-                                return Err(DecodeErrors::Unsupported(feature));
-                            }
-
-                            return Err(DecodeErrors::Format(
-                                "Unsupported image format".to_string(),
-                            ));
-                        }
-                        // APP(0) segment
-                        Marker::APP(_) =>
-                        {
-                            parse_app(&mut buf, m, &mut self.info)?;
-                        }
-                        // Quantization tables
-                        Marker::DQT =>
-                        {
-                            parse_dqt(self, &mut buf)?;
-                        }
-                        // Huffman tables
-                        Marker::DHT =>
-                        {
-                            parse_huffman(self, &mut buf)?;
-                        }
-                        // Start of Scan Data
-                        Marker::SOS =>
-                        {
-                            parse_sos(&mut buf, self)?;
-
-                            // break after reading the start of scan.
-                            // what follows is the image data
-                            break;
-                        }
-
-                        Marker::DAC | Marker::DNL =>
-                        {
-                            return Err(DecodeErrors::Format(format!(
-                                "Parsing of the following header `{:?}` is not supported,\
-                                cannot continue",
-                                m
-                            )));
-                        }
-                        Marker::DRI =>
-                        {
-                            info!("DRI marker present");
-                            if read_u16_be(buf)? != 4
-                            {
-                                return Err(DecodeErrors::Format(
-                                    "Bad DRI length, Corrupt JPEG".to_string(),
-                                ));
-                            }
-                            self.restart_interval = usize::from(read_u16_be(buf)?);
-                            self.todo = self.restart_interval;
-                        }
-                        _ =>
-                        {
-                            warn!(
-                                "Capabilities for processing marker \"{:?}\" not implemented",
-                                m
-                            );
-                            let length = read_u16_be(&mut buf)?;
-
-                            if length < 2
-                            {
-                                return Err(DecodeErrors::Format(format!(
-                                    "Found a marker with invalid length:{}\n",
-                                    length
-                                )));
-                            }
-                            warn!("Skipping {} bytes", length - 2);
-                            buf.consume((length - 2) as usize);
-                        }
+                        return Ok(());
                     }
                 }
                 else
                 {
-                    let size = read_u16_be(&mut buf)?;
+                    error!("Marker 0xFF\"{:?}\" not known", m);
+                    let length = read_u16_be(buf)?;
 
-                    // We got very lost, and trying to recover here probably won't be helpful.
-                    if size < 2
+                    if length < 2
                     {
                         return Err(DecodeErrors::Format(format!(
-                            "Got marker with invalid raw size {:?}",
-                            size
+                            "Found a marker with invalid length : {}",
+                            length
                         )));
                     }
-                    warn!("Extraneous marker 0xFF{:X} found. Size: {}", m, size - 2);
-                    warn!("Skipping {} bytes", (size - 2));
-                    buf.consume((size - 2) as usize);
+                    warn!("Skipping {} bytes", length - 2);
+                    buf.consume((length - 2) as usize);
                 }
             }
-
             last_byte = m;
         }
+    }
+    pub(crate) fn parse_marker_inner<R: Read + BufRead>(
+        &mut self, m: Marker, buf: &mut R,
+    ) -> Result<(), DecodeErrors>
+    {
+        match m
+        {
+            Marker::SOF(0 | 2) =>
+            {
+                let marker = {
+                    // choose marker
+                    if m == Marker::SOF(0)
+                    {
+                        SOFMarkers::BaselineDct
+                    }
+                    else
+                    {
+                        self.is_progressive = true;
 
+                        SOFMarkers::ProgressiveDctHuffman
+                    }
+                };
+                info!("Image encoding scheme =`{:?}`", marker);
+
+                // get components
+                parse_start_of_frame(buf, marker, self)?;
+            }
+            // Start of Frame Segments not supported
+            Marker::SOF(v) =>
+            {
+                let feature = UnsupportedSchemes::from_int(v);
+
+                if let Some(feature) = feature
+                {
+                    return Err(DecodeErrors::Unsupported(feature));
+                }
+
+                return Err(DecodeErrors::Format("Unsupported image format".to_string()));
+            }
+            // APP(0) segment
+            Marker::APP(_) =>
+            {
+                parse_app(buf, m, &mut self.info)?;
+            }
+            // Quantization tables
+            Marker::DQT =>
+            {
+                parse_dqt(self, buf)?;
+            }
+            // Huffman tables
+            Marker::DHT =>
+            {
+                parse_huffman(self, buf)?;
+            }
+            // Start of Scan Data
+            Marker::SOS =>
+            {
+                parse_sos(buf, self)?;
+
+                // break after reading the start of scan.
+                // what follows is the image data
+                return Ok(());
+            }
+
+            Marker::DAC | Marker::DNL =>
+            {
+                return Err(DecodeErrors::Format(format!(
+                    "Parsing of the following header `{:?}` is not supported,\
+                                cannot continue",
+                    m
+                )));
+            }
+            Marker::DRI =>
+            {
+                info!("DRI marker present");
+                if read_u16_be(buf)? != 4
+                {
+                    return Err(DecodeErrors::Format(
+                        "Bad DRI length, Corrupt JPEG".to_string(),
+                    ));
+                }
+                self.restart_interval = usize::from(read_u16_be(buf)?);
+                self.todo = self.restart_interval;
+            }
+            _ =>
+            {
+                warn!(
+                    "Capabilities for processing marker \"{:?}\" not implemented",
+                    m
+                );
+                let length = read_u16_be(buf)?;
+
+                if length < 2
+                {
+                    return Err(DecodeErrors::Format(format!(
+                        "Found a marker with invalid length:{}\n",
+                        length
+                    )));
+                }
+                warn!("Skipping {} bytes", length - 2);
+                buf.consume((length - 2) as usize);
+            }
+        }
         Ok(())
     }
 
