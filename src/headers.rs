@@ -110,8 +110,10 @@ where
                 )?);
             }
         }
+    };
+    if dht_length > 0 {
+        return Err(DecodeErrors::HuffmanDecode(format!("Bogus Huffman table definition")));
     }
-
     Ok(())
 }
 
@@ -484,25 +486,22 @@ pub(crate) fn parse_app<R>(
 where
     R: BufRead + Read,
 {
-    let length = read_u16_be(buf)? as usize;
+    let length = read_u16_be(buf)?.checked_sub(2)
+        .ok_or(DecodeErrors::Format(format!(
+            "Invalid APP0 length. Length should be greater than 2"
+        )))?;
+
 
     let mut bytes_read = 2;
-
     match marker
     {
         Marker::APP(0) =>
         {
-            // The only thing we need is the x and y pixel densities here
-            // which are found 10 bytes away
-            buf.consume(8);
-
-            let x_density = read_u16_be(&mut buf)?;
-
-            info.set_x(x_density);
-
-            let y_density = read_u16_be(&mut buf)?;
-
-            info.set_y(y_density);
+            if length !=14{
+                warn!("Incorrect length of APP0 ,{}, should be 14",length);
+            }
+         // Don't handle APP0 as of now
+            buf.consume(length as usize);
         }
         Marker::APP(1) =>
         {
@@ -520,7 +519,7 @@ where
                 // 4.5.4 Basic Structure of Decoder Compressed Data
                 if &buffer == b"Exif\x00\x00"
                 {
-                    buf.consume(length - bytes_read);
+                    buf.consume(length as usize - bytes_read);
                 }
             }
         }
