@@ -169,7 +169,6 @@ impl Decoder
 
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
-
         let mut stream = BitStream::new();
         // Size of our output image(width*height)
         let capacity = usize::from(self.info.width + 7) * usize::from(self.info.height + 7);
@@ -321,6 +320,30 @@ impl Decoder
                             if self.todo == 0
                             {
                                 self.handle_rst(&mut stream)?;
+                            }
+
+                            // In some corrupt images, it may occur that header markers occur in the stream.
+                            // The spec EXPLICITLY FORBIDS this, specifically, in
+                            // routine F.2.2.5  it says
+                            // `The only valid marker which may occur within the Huffman coded data is the RSTm marker.`
+                            //
+                            // But libjpeg-turbo allows it because of some weird reason. so I'll also
+                            // allow it because of some weird reason.
+                            if let Some(m)= stream.marker
+                            {
+                                if m==Marker::EOI
+                                {
+                                    break;
+                                }
+                                match m
+                                {
+                                    // leave RST handling to the other routine when it's ready
+                                    Marker::RST(_)=> continue,
+                                    _=>{}
+                                }
+                                error!("Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",m);
+                                self.parse_marker_inner(m,reader)?;
+
                             }
                         }
                     }
