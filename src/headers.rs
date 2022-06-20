@@ -110,9 +110,12 @@ where
                 )?);
             }
         }
-    };
-    if dht_length > 0 {
-        return Err(DecodeErrors::HuffmanDecode(format!("Bogus Huffman table definition")));
+    }
+    if dht_length > 0
+    {
+        return Err(DecodeErrors::HuffmanDecode(format!(
+            "Bogus Huffman table definition"
+        )));
     }
     Ok(())
 }
@@ -486,21 +489,22 @@ pub(crate) fn parse_app<R>(
 where
     R: BufRead + Read,
 {
-    let length = read_u16_be(buf)?.checked_sub(2)
+    let length = read_u16_be(buf)?
+        .checked_sub(2)
         .ok_or(DecodeErrors::Format(format!(
             "Invalid APP0 length. Length should be greater than 2"
         )))?;
-
 
     let mut bytes_read = 0;
     match marker
     {
         Marker::APP(0) =>
         {
-            if length !=14{
-                warn!("Incorrect length of APP0 ,{}, should be 14",length);
+            if length != 14
+            {
+                warn!("Incorrect length of APP0 ,{}, should be 14", length);
             }
-         // Don't handle APP0 as of now
+            // Don't handle APP0 as of now
             buf.consume(length as usize);
         }
         Marker::APP(1) =>
