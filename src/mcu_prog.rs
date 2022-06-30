@@ -441,13 +441,3 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
     }
 }
 
-
-#[test]
-fn decode_mcu1(){
-    let mut decoder = Decoder::new();
-    decoder.set_num_threads(1).unwrap();
-    decoder.decode_file("/home/caleb/8.jpg").unwrap();
-
-    let pixels = decoder.decode_file("/home/caleb/7.jpg").unwrap();
-
-}
