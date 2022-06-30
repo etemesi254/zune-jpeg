@@ -126,10 +126,14 @@ impl Decoder
         self.set_upsampling()?;
 
         let mut mcu_width = mcu_width;
+        let mut bias = 1;
 
         if self.sub_sample_ratio == SubSampRatios::H
         {
             mcu_width *= 2;
+        }
+        if self.sub_sample_ratio == SubSampRatios::HV{
+            bias=2;
         }
         // remove items from  top block
         let y = &block[0];
@@ -162,22 +166,22 @@ impl Decoder
         let width = usize::from(self.width());
 
         // Divide the output into small blocks and send to threads/
-        let chunks_size = width * self.output_colorspace.num_components() * 8 * h_max * v_max;
+        let chunks_size = width * self.output_colorspace.num_components() * 8 * h_max * v_max ;
 
         let out_chunks = out_vector.chunks_exact_mut(chunks_size);
 
         // Chunk sizes. Each determine how many pixels go per thread.
         let y_chunk_size =
-            mcu_width * self.components[0].vertical_sample * self.components[0].horizontal_sample;
-
+            mcu_width * self.components[0].vertical_sample * self.components[0].horizontal_sample * bias;
         // Cb and Cr contains equal sub-sampling so don't calculate for them.
 
         // Divide into chunks
         let y_chunk = y.chunks_exact(y_chunk_size);
-        if self.input_colorspace.num_components() == 3 {
-            let cb_chunk_size =
-                mcu_width * self.components[1].vertical_sample * self.components[1].horizontal_sample;
 
+        if self.input_colorspace.num_components() == 3 {
+
+            let cb_chunk_size =
+                mcu_width * self.components[1].vertical_sample * self.components[1].horizontal_sample * bias;
 
             let cb_chunk = cb.chunks_exact(cb_chunk_size);
 
@@ -435,4 +439,15 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
             }
         }
     }
+}
+
+
+#[test]
+fn decode_mcu1(){
+    let mut decoder = Decoder::new();
+    decoder.set_num_threads(1).unwrap();
+    decoder.decode_file("/home/caleb/8.jpg").unwrap();
+
+    let pixels = decoder.decode_file("/home/caleb/7.jpg").unwrap();
+
 }
