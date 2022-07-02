@@ -9,7 +9,6 @@ use std::arch::x86_64::*;
 use std::convert::TryInto;
 
 #[inline]
-
 pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 {
     unsafe { upsample_horizontal_sse_u(input, output_len) }
@@ -22,7 +21,6 @@ pub fn upsample_horizontal_sse(input: &[i16], output_len: usize) -> Vec<i16>
 //Some things are weird...
 #[target_feature(enable = "sse4.1")]
 #[inline]
-
 pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec<i16>
 {
     //let mut out = align_zero_alloc::<i16, 16>(output_len);
@@ -103,7 +101,7 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
         let cn = _mm_srai_epi16::<2>(_mm_add_epi16(an, bn));
 
         // write to array
-        _mm_storeu_si128(out.as_mut_ptr().add(i * 8).cast(), cn);
+        _mm_storeu_si128(out.get_mut(i * 8..(i * 8) + 16).unwrap().as_mut_ptr().cast(), cn);
     }
 
     // Do the last 8 manually because we can't  do it  with SSE because of out of bounds access

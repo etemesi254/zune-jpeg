@@ -179,7 +179,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
 
             let cn = _mm256_srai_epi16::<2>(_mm256_add_epi16(an, bn));
 
-            _mm256_storeu_si256(output.get_unchecked_mut(output_position+$stride..).as_mut_ptr().cast(), cn);
+            _mm256_storeu_si256(output.get_mut(output_position+$stride..).unwrap().as_mut_ptr().cast(), cn);
 
 
             let nn = _mm256_blend_epi16::<0b1010_1010>(prev_hi, next_hi);
@@ -190,7 +190,7 @@ pub unsafe fn upsample_hv_avx(input: &[i16], output_len: usize) -> Vec<i16>
 
             let cn = _mm256_srai_epi16::<2>(_mm256_add_epi16(an, bn));
             // hi is stored one output width lower.
-            _mm256_storeu_si256(output.get_unchecked_mut(output_position+$stride+16..).as_mut_ptr().cast(), cn);
+            _mm256_storeu_si256(output.get_mut(output_position+$stride+16..).unwrap().as_mut_ptr().cast(), cn);
 
 
         };
