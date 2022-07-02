@@ -140,7 +140,7 @@ impl Decoder
         let cb = &block[1];
         let cr = &block[2];
 
-        let capacity = usize::from(self.info.width) * usize::from(self.info.height);
+        let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
 
         let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components()];
 

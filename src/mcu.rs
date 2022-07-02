@@ -169,9 +169,10 @@ impl Decoder
 
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
+
         let mut stream = BitStream::new();
         // Size of our output image(width*height)
-        let capacity = usize::from(self.info.width + 7) * usize::from(self.info.height + 7);
+        let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
 
         let component_capacity = mcu_width * DCT_BLOCK;
         // Create an Arc of components to prevent cloning on every MCU width
@@ -203,6 +204,7 @@ impl Decoder
         self.check_tables()?;
 
         let is_hv = self.sub_sample_ratio == SubSampRatios::HV;
+
         // Split output into different blocks each containing enough space for an MCU width
         let mut chunks =
             global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
