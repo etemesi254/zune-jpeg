@@ -170,7 +170,8 @@ unsafe fn dequantize_and_idct_int_avx2(
                             // store
                             _mm_storeu_si128(
                                 out_vector
-                                    .get_unchecked_mut($pos..$pos + 8)
+                                    .get_mut($pos..$pos + 8)
+                                    .unwrap()
                                     .as_mut_ptr()
                                     .cast(),
                                 $value,
@@ -364,7 +365,8 @@ unsafe fn dequantize_and_idct_int_avx2(
                     // store first vector
                     _mm_storeu_si128(
                         ($out)
-                            .get_unchecked_mut($index..$index + 8)
+                            .get_mut($index..$index + 8)
+                            .unwrap()
                             .as_mut_ptr()
                             .cast(),
                         _mm256_extractf128_si256::<0>(c),
@@ -373,7 +375,8 @@ unsafe fn dequantize_and_idct_int_avx2(
                     // second vector
                     _mm_storeu_si128(
                         ($out)
-                            .get_unchecked_mut($index..$index + 8)
+                            .get_mut($index..$index + 8)
+                            .unwrap()
                             .as_mut_ptr()
                             .cast(),
                         _mm256_extractf128_si256::<1>(c),
