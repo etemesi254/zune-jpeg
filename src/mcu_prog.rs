@@ -217,6 +217,12 @@ impl Decoder
         }
         debug!("Finished decoding image");
 
+        out_vector.truncate(
+            usize::from(self.width())
+                * usize::from(self.height())
+                * self.output_colorspace.num_components(),
+        );
+
         return Ok(out_vector);
     }
 
