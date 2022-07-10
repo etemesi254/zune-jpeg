@@ -142,21 +142,19 @@ impl Decoder
             Apparently, grayscale images which can be down sampled exists, which is weird in the sense
             that it has one component Y, which is not usually down sampled.
 
-            This means some calculations will be wrongly made, so for that we explicitly reset params
+            This means some calculations will be wrong, so for that we explicitly reset params
             for such occurrences, warn and reset the image info to appear as if it were
             a non-sampled image to ensure decoding works
 
             NOTE: not tested on progressive images as I couldn't find such an image.
             */
             warn!("Grayscale image with down-sampled component, resetting component details");
-            mcu_width = ((self.info.width + 7) / 8) as usize;
             self.h_max = 1;
             self.v_max = 1;
             self.sub_sample_ratio = SubSampRatios::None;
             self.components[0].vertical_sample = 1;
             self.components[0].width_stride = mcu_width* 8;
             self.components[0].horizontal_sample = mcu_width;
-            mcu_height = ((self.info.height + 7) / 8) as usize;
             bias=1;
         }
         // remove items from  top block
