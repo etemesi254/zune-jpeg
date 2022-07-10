@@ -62,7 +62,7 @@ use crate::components::{ComponentID, SubSampRatios};
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::post_process;
-use crate::Decoder;
+use crate::{Decoder, ColorSpace};
 
 /// The size of a DC block for a MCU.
 
@@ -132,7 +132,7 @@ impl Decoder
         let mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or( num_cpus::get()) as u32);
         info!("Created {} worker threads", scoped_pools.thread_count());
 
-        let (mcu_width, mcu_height);
+        let (mut mcu_width, mut mcu_height);
         let mut bias = 1;
 
         if self.interleaved
@@ -156,6 +156,8 @@ impl Decoder
                 mcu_height = self.mcu_y / 2;
 
                 bias = 2;
+
+        
                 // V;
             } else {
                 mcu_width = self.mcu_x;
@@ -170,6 +172,28 @@ impl Decoder
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
 
+        if self.input_colorspace == ColorSpace::GRAYSCALE   && self.interleaved{
+            /*
+            Apparently, grayscale images which can be down sampled exists, which is weird in the sense
+            that it has one component Y, which is not usually down sampled.
+
+            This means some calculations will be wrongly made, so for that we explicitly reset params
+            for such occurrences, warn and reset the image info to appear as if it were
+            a non-sampled image to ensure decoding works
+            
+            */
+            warn!("Grayscale image with down-sampled component, resetting component details");
+            mcu_width = ((self.info.width + 7) / 8) as usize;
+            self.h_max = 1;
+            self.v_max = 1;
+            self.sub_sample_ratio = SubSampRatios::None;
+            self.components[0].vertical_sample = 1;
+            self.components[0].width_stride = mcu_width* 8;
+            self.components[0].horizontal_sample = mcu_width;
+            mcu_height = ((self.info.height + 7) / 8) as usize;
+            bias=1;
+        }
+       
         let mut stream = BitStream::new();
         // Size of our output image(width*height)
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
@@ -204,12 +228,13 @@ impl Decoder
         self.check_tables()?;
 
         let is_hv = self.sub_sample_ratio == SubSampRatios::HV;
+        
 
         // Split output into different blocks each containing enough space for an MCU width
         let mut chunks =
             global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
 
-        let mut tmp = [0; DCT_BLOCK];
+         let mut tmp = [0; DCT_BLOCK];
 
         // Argument for scoped threadpools, see file docs.
         scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
@@ -354,6 +379,7 @@ impl Decoder
                 let component = global_component.clone();
 
                 let next_chunk = chunks.next().unwrap();
+                println!("{:?}",component[0].width_stride);
 
                 scope.execute(move || {
                     post_process(&mut temporary, &component,
