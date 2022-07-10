@@ -177,7 +177,7 @@ impl Decoder
             Apparently, grayscale images which can be down sampled exists, which is weird in the sense
             that it has one component Y, which is not usually down sampled.
 
-            This means some calculations will be wrongly made, so for that we explicitly reset params
+            This means some calculations will be wrong, so for that we explicitly reset params
             for such occurrences, warn and reset the image info to appear as if it were
             a non-sampled image to ensure decoding works
             
