@@ -379,7 +379,6 @@ impl Decoder
                 let component = global_component.clone();
 
                 let next_chunk = chunks.next().unwrap();
-                println!("{:?}",component[0].width_stride);
 
                 scope.execute(move || {
                     post_process(&mut temporary, &component,
