@@ -483,7 +483,7 @@ where
     Ok(())
 }
 
-pub(crate) fn parse_app<R>(
+pub(crate) fn _parse_app<R>(
     buf: &mut R, marker: Marker, _info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
 where

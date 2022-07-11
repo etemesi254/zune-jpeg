@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{ComponentID, Components, SubSampRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
-use crate::headers::{parse_app, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
+use crate::headers::{parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
@@ -281,7 +281,7 @@ impl Decoder
                 }
                 else
                 {
-                    error!("Marker 0xFF{:X} not known", m);
+                    warn!("Marker 0xFF{:X} not known", m);
                     let length = read_u16_be(buf)?;
 
                     if length < 2
@@ -337,10 +337,10 @@ impl Decoder
                 return Err(DecodeErrors::Format("Unsupported image format".to_string()));
             }
             // APP(0) segment
-            Marker::APP(0 | 1) =>
-            {
-                parse_app(buf, m, &mut self.info)?;
-            }
+            // Marker::APP(0 | 1) =>
+            // {
+            //     parse_app(buf, m, &mut self.info)?;
+            // }
             // Quantization tables
             Marker::DQT =>
             {
