@@ -7,7 +7,7 @@ use std::cmp::max;
 use std::io::{BufRead, Read};
 
 use crate::components::Components;
-use crate::decoder::{Decoder, ImageInfo, MAX_COMPONENTS, MAX_DIMENSIONS};
+use crate::decoder::{Decoder, ImageInfo, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::marker::Marker;
@@ -16,8 +16,8 @@ use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers, UN_
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names)]
 pub(crate) fn parse_huffman<R>(decoder: &mut Decoder, mut buf: &mut R) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     // Read the length of the Huffman table
     let mut dht_length = read_u16_be(&mut buf)
@@ -92,23 +92,23 @@ where
         match dc_or_ac
         {
             0 =>
-            {
-                decoder.dc_huffman_tables[index] = Some(HuffmanTable::new(
-                    &num_symbols,
-                    symbols,
-                    true,
-                    decoder.is_progressive,
-                )?);
-            }
+                {
+                    decoder.dc_huffman_tables[index] = Some(HuffmanTable::new(
+                        &num_symbols,
+                        symbols,
+                        true,
+                        decoder.is_progressive,
+                    )?);
+                }
             _ =>
-            {
-                decoder.ac_huffman_tables[index] = Some(HuffmanTable::new(
-                    &num_symbols,
-                    symbols,
-                    false,
-                    decoder.is_progressive,
-                )?);
-            }
+                {
+                    decoder.ac_huffman_tables[index] = Some(HuffmanTable::new(
+                        &num_symbols,
+                        symbols,
+                        false,
+                        decoder.is_progressive,
+                    )?);
+                }
         }
     }
     if dht_length > 0
@@ -123,8 +123,8 @@ where
 ///**B.2.4.1 Quantization table-specification syntax**
 #[allow(clippy::cast_possible_truncation)]
 pub(crate) fn parse_dqt<R>(decoder: &mut Decoder, buf: &mut R) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut buf = buf;
 
@@ -156,31 +156,31 @@ where
         let dct_table = match precision
         {
             0 =>
-            {
-                let mut qt_values = [0; 64];
+                {
+                    let mut qt_values = [0; 64];
 
-                buf.read_exact(&mut qt_values).map_err(|x| {
-                    DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
-                })?;
-                qt_length -= (precision_value as u16) + 1 /*QT BIT*/;
-                // carry out un zig-zag here
-                un_zig_zag(&qt_values)
-            }
+                    buf.read_exact(&mut qt_values).map_err(|x| {
+                        DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+                    })?;
+                    qt_length -= (precision_value as u16) + 1 /*QT BIT*/;
+                    // carry out un zig-zag here
+                    un_zig_zag(&qt_values)
+                }
             1 =>
-            {
-                // 16 bit quantization tables
-                //(cae) Before we enable this. Should 16 bit QT cause any other lib changes
-                return Err(DecodeErrors::DqtError(
-                    "Support for 16 bit quantization table is not complete".to_string(),
-                ));
-            }
+                {
+                    // 16 bit quantization tables
+                    //(cae) Before we enable this. Should 16 bit QT cause any other lib changes
+                    return Err(DecodeErrors::DqtError(
+                        "Support for 16 bit quantization table is not complete".to_string(),
+                    ));
+                }
             _ =>
-            {
-                return Err(DecodeErrors::DqtError(format!(
-                    "Expected QT precision value of either 0 or 1, found {:?}",
-                    precision
-                )));
-            }
+                {
+                    return Err(DecodeErrors::DqtError(format!(
+                        "Expected QT precision value of either 0 or 1, found {:?}",
+                        precision
+                    )));
+                }
         };
         if table_position >= MAX_COMPONENTS
         {
@@ -201,8 +201,8 @@ where
 pub(crate) fn parse_start_of_frame<R>(
     buf: &mut R, sof: SOFMarkers, img: &mut Decoder,
 ) -> Result<(), DecodeErrors>
-where
-    R: Read,
+    where
+        R: Read,
 {
     let mut buf = buf;
 
@@ -240,10 +240,12 @@ where
     info!("Image width  :{}", img_width);
     info!("Image height :{}", img_height);
 
-    let dimensions = usize::from(img_width) * usize::from(img_height);
-    if dimensions > MAX_DIMENSIONS
-    {
-        return Err(DecodeErrors::LargeDimensions(dimensions));
+    if img_width > img.max_width {
+        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.max_width)));
+    }
+
+    if img_height > img.max_height {
+        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_width, img.max_width)));
     }
 
     // Check image width or height is zero
@@ -353,8 +355,8 @@ where
 
 /// Parse a start of scan data
 pub(crate) fn parse_sos<R>(buf: &mut R, image: &mut Decoder) -> Result<(), DecodeErrors>
-where
-    R: Read + BufRead,
+    where
+        R: Read + BufRead,
 {
     let mut buf = buf;
 
@@ -486,8 +488,8 @@ where
 pub(crate) fn _parse_app<R>(
     buf: &mut R, marker: Marker, _info: &mut ImageInfo,
 ) -> Result<(), DecodeErrors>
-where
-    R: BufRead + Read,
+    where
+        R: BufRead + Read,
 {
     let length = read_u16_be(buf)?
         .checked_sub(2)
@@ -499,36 +501,36 @@ where
     match marker
     {
         Marker::APP(0) =>
-        {
-            if length != 14
             {
-                warn!("Incorrect length of APP0 ,{}, should be 14", length);
-            }
-            // Don't handle APP0 as of now
-            buf.consume(length as usize);
-        }
-        Marker::APP(1) =>
-        {
-            if length >= 6
-            {
-                let mut buffer = [0_u8; 6];
-
-                buf.read_exact(&mut buffer).map_err(|x| {
-                    DecodeErrors::Format(format!("Could not read Exif data\n{}", x))
-                })?;
-
-                bytes_read += 6;
-
-                // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
-                // 4.5.4 Basic Structure of Decoder Compressed Data
-                if &buffer == b"Exif\x00\x00"
+                if length != 14
                 {
-                    buf.consume(length as usize - bytes_read);
+                    warn!("Incorrect length of APP0 ,{}, should be 14", length);
+                }
+                // Don't handle APP0 as of now
+                buf.consume(length as usize);
+            }
+        Marker::APP(1) =>
+            {
+                if length >= 6
+                {
+                    let mut buffer = [0_u8; 6];
+
+                    buf.read_exact(&mut buffer).map_err(|x| {
+                        DecodeErrors::Format(format!("Could not read Exif data\n{}", x))
+                    })?;
+
+                    bytes_read += 6;
+
+                    // https://web.archive.org/web/20190624045241if_/http://www.cipa.jp:80/std/documents/e/DC-008-Translation-2019-E.pdf
+                    // 4.5.4 Basic Structure of Decoder Compressed Data
+                    if &buffer == b"Exif\x00\x00"
+                    {
+                        buf.consume(length as usize - bytes_read);
+                    }
                 }
             }
-        }
         _ =>
-        {}
+            {}
     }
 
     Ok(())

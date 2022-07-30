@@ -125,6 +125,10 @@ pub struct Decoder
 
     // threads
     pub(crate) num_threads: Option<usize>,
+
+    // image limits
+    pub(crate) max_width: u16,
+    pub(crate) max_height: u16,
 }
 
 impl Default for Decoder
@@ -174,6 +178,10 @@ impl Default for Decoder
             restart_interval: 0,
             todo: 0x7fff_ffff,
             num_threads: None,
+
+            // image limits
+            max_width: 1 << 14,
+            max_height: 1 << 14,
         }
     }
 }
@@ -202,8 +210,8 @@ impl Decoder
     /// Decode a valid jpeg file
     ///
     pub fn decode_file<P>(&mut self, file: P) -> Result<Vec<u8>, DecodeErrors>
-    where
-        P: AsRef<Path> + Clone,
+        where
+            P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file)?);
@@ -248,8 +256,8 @@ impl Decoder
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers_internal<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
-    where
-        R: Read + BufRead,
+        where
+            R: Read + BufRead,
     {
         let mut buf = buf;
 
@@ -278,9 +286,7 @@ impl Decoder
                     {
                         return Ok(());
                     }
-                }
-                else
-                {
+                } else {
                     warn!("Marker 0xFF{:X} not known", m);
                     let length = read_u16_be(buf)?;
 
@@ -305,37 +311,35 @@ impl Decoder
         match m
         {
             Marker::SOF(0 | 2) =>
-            {
-                let marker = {
-                    // choose marker
-                    if m == Marker::SOF(0)
-                    {
-                        SOFMarkers::BaselineDct
-                    }
-                    else
-                    {
-                        self.is_progressive = true;
+                {
+                    let marker = {
+                        // choose marker
+                        if m == Marker::SOF(0)
+                        {
+                            SOFMarkers::BaselineDct
+                        } else {
+                            self.is_progressive = true;
 
-                        SOFMarkers::ProgressiveDctHuffman
-                    }
-                };
-                info!("Image encoding scheme =`{:?}`", marker);
+                            SOFMarkers::ProgressiveDctHuffman
+                        }
+                    };
+                    info!("Image encoding scheme =`{:?}`", marker);
 
-                // get components
-                parse_start_of_frame(buf, marker, self)?;
-            }
+                    // get components
+                    parse_start_of_frame(buf, marker, self)?;
+                }
             // Start of Frame Segments not supported
             Marker::SOF(v) =>
-            {
-                let feature = UnsupportedSchemes::from_int(v);
-
-                if let Some(feature) = feature
                 {
-                    return Err(DecodeErrors::Unsupported(feature));
-                }
+                    let feature = UnsupportedSchemes::from_int(v);
 
-                return Err(DecodeErrors::Format("Unsupported image format".to_string()));
-            }
+                    if let Some(feature) = feature
+                    {
+                        return Err(DecodeErrors::Unsupported(feature));
+                    }
+
+                    return Err(DecodeErrors::Format("Unsupported image format".to_string()));
+                }
             // APP(0) segment
             // Marker::APP(0 | 1) =>
             // {
@@ -343,63 +347,63 @@ impl Decoder
             // }
             // Quantization tables
             Marker::DQT =>
-            {
-                parse_dqt(self, buf)?;
-            }
+                {
+                    parse_dqt(self, buf)?;
+                }
             // Huffman tables
             Marker::DHT =>
-            {
-                parse_huffman(self, buf)?;
-            }
+                {
+                    parse_huffman(self, buf)?;
+                }
             // Start of Scan Data
             Marker::SOS =>
-            {
-                parse_sos(buf, self)?;
+                {
+                    parse_sos(buf, self)?;
 
-                // break after reading the start of scan.
-                // what follows is the image data
-                return Ok(());
-            }
+                    // break after reading the start of scan.
+                    // what follows is the image data
+                    return Ok(());
+                }
             Marker::EOI => return Err(DecodeErrors::Format("Premature End of image".to_string())),
 
             Marker::DAC | Marker::DNL =>
-            {
-                return Err(DecodeErrors::Format(format!(
-                    "Parsing of the following header `{:?}` is not supported,\
-                                cannot continue",
-                    m
-                )));
-            }
-            Marker::DRI =>
-            {
-                info!("DRI marker present");
-                if read_u16_be(buf)? != 4
                 {
-                    return Err(DecodeErrors::Format(
-                        "Bad DRI length, Corrupt JPEG".to_string(),
-                    ));
+                    return Err(DecodeErrors::Format(format!(
+                        "Parsing of the following header `{:?}` is not supported,\
+                                cannot continue",
+                        m
+                    )));
                 }
-                self.restart_interval = usize::from(read_u16_be(buf)?);
-                self.todo = self.restart_interval;
-            }
+            Marker::DRI =>
+                {
+                    info!("DRI marker present");
+                    if read_u16_be(buf)? != 4
+                    {
+                        return Err(DecodeErrors::Format(
+                            "Bad DRI length, Corrupt JPEG".to_string(),
+                        ));
+                    }
+                    self.restart_interval = usize::from(read_u16_be(buf)?);
+                    self.todo = self.restart_interval;
+                }
             _ =>
-            {
-                warn!(
+                {
+                    warn!(
                     "Capabilities for processing marker \"{:?}\" not implemented",
                     m
                 );
-                let length = read_u16_be(buf)?;
+                    let length = read_u16_be(buf)?;
 
-                if length < 2
-                {
-                    return Err(DecodeErrors::Format(format!(
-                        "Found a marker with invalid length:{}\n",
-                        length
-                    )));
+                    if length < 2
+                    {
+                        return Err(DecodeErrors::Format(format!(
+                            "Found a marker with invalid length:{}\n",
+                            length
+                        )));
+                    }
+                    warn!("Skipping {} bytes", length - 2);
+                    buf.consume((length - 2) as usize);
                 }
-                warn!("Skipping {} bytes", length - 2);
-                buf.consume((length - 2) as usize);
-            }
         }
         Ok(())
     }
@@ -420,9 +424,7 @@ impl Decoder
         if self.is_progressive
         {
             self.decode_mcu_ycbcr_progressive(&mut buf)
-        }
-        else
-        {
+        } else {
             self.decode_mcu_ycbcr_baseline(&mut buf)
         }
     }
@@ -479,14 +481,28 @@ impl Decoder
         match colorspace
         {
             ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA =>
-            {
-                let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
+                {
+                    let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
 
-                self.color_convert_16 = func_ptr;
-            }
+                    self.color_convert_16 = func_ptr;
+                }
             // do nothing for others
             _ => (),
         }
+    }
+    /// Set image width and height limits.
+    ///
+    /// To protect the library from over-allocating memory, which
+    /// might be the case for corrupt images, the library imposes a standard
+    /// limit on how big the output image dimensions are and errors out if images are greater
+    /// than that dimension, but for some use cases there may be need to increase this.
+    ///
+    /// But may lead to high memory usage if set to high values
+    ///
+    /// Current default is 16,384 by 16,384
+    pub fn set_limits(&mut self, max_width: u16, max_height: u16) {
+        self.max_height = max_height;
+        self.max_width = max_width;
     }
 
     /// Set up-sampling routines in case an image is down sampled
@@ -503,44 +519,44 @@ impl Decoder
         match (self.h_max, self.v_max)
         {
             (2, 1) =>
-            {
-                self.sub_sample_ratio = SubSampRatios::H;
-                // horizontal sub-sampling
-                info!("Horizontal sub-sampling (2,1)");
+                {
+                    self.sub_sample_ratio = SubSampRatios::H;
+                    // horizontal sub-sampling
+                    info!("Horizontal sub-sampling (2,1)");
 
-                let up_sampler = choose_horizontal_samp_function();
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = up_sampler);
-            }
+                    let up_sampler = choose_horizontal_samp_function();
+                    self.components[1..]
+                        .iter_mut()
+                        .for_each(|x| x.up_sampler = up_sampler);
+                }
             (1, 2) =>
-            {
-                self.sub_sample_ratio = SubSampRatios::V;
-                // Vertical sub-sampling
-                info!("Vertical sub-sampling (1,2)");
+                {
+                    self.sub_sample_ratio = SubSampRatios::V;
+                    // Vertical sub-sampling
+                    info!("Vertical sub-sampling (1,2)");
 
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = upsample_vertical);
-            }
+                    self.components[1..]
+                        .iter_mut()
+                        .for_each(|x| x.up_sampler = upsample_vertical);
+                }
             (2, 2) =>
-            {
-                self.sub_sample_ratio = SubSampRatios::HV;
-                // vertical and horizontal sub sampling
-                info!("Vertical and horizontal sub-sampling(2,2)");
+                {
+                    self.sub_sample_ratio = SubSampRatios::HV;
+                    // vertical and horizontal sub sampling
+                    info!("Vertical and horizontal sub-sampling(2,2)");
 
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = choose_hv_samp_function());
-            }
+                    self.components[1..]
+                        .iter_mut()
+                        .for_each(|x| x.up_sampler = choose_hv_samp_function());
+                }
             (_, _) =>
-            {
-                // no op. Do nothing
-                // Jokes , panic...
-                return Err(DecodeErrors::Format(
-                    "Unknown down-sampling method, cannot continue".to_string(),
-                ));
-            }
+                {
+                    // no op. Do nothing
+                    // Jokes , panic...
+                    return Err(DecodeErrors::Format(
+                        "Unknown down-sampling method, cannot continue".to_string(),
+                    ));
+                }
         }
 
         return Ok(());
@@ -628,7 +644,7 @@ impl Decoder
             }
             if comp.width_stride != cb_cr_width
             {
-                return Err(DecodeErrors::Format(format!("Invalid image width and height stride for component {:?}, expected {}, but found {}", comp.component_id, cb_cr_width,comp.width_stride)));
+                return Err(DecodeErrors::Format(format!("Invalid image width and height stride for component {:?}, expected {}, but found {}", comp.component_id, cb_cr_width, comp.width_stride)));
             }
         }
 
