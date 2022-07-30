@@ -56,7 +56,6 @@
 use std::cmp::min;
 use std::io::Cursor;
 use std::sync::Arc;
-
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
 use crate::errors::DecodeErrors;
@@ -129,7 +128,7 @@ impl Decoder
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         self.check_component_dimensions()?;
-        let mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or( num_cpus::get()) as u32);
+        let mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(num_cpus::get()) as u32);
         info!("Created {} worker threads", scoped_pools.thread_count());
 
         let (mut mcu_width, mut mcu_height);
@@ -153,11 +152,11 @@ impl Decoder
             {
                 mcu_width = self.mcu_x;
 
-                mcu_height = self.mcu_y / 2;
+                mcu_height = (self.mcu_y / 2);
 
                 bias = 2;
 
-        
+
                 // V;
             } else {
                 mcu_width = self.mcu_x;
@@ -172,7 +171,7 @@ impl Decoder
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
 
-        if self.input_colorspace == ColorSpace::GRAYSCALE   && self.interleaved{
+        if self.input_colorspace == ColorSpace::GRAYSCALE && self.interleaved {
             /*
             Apparently, grayscale images which can be down sampled exists, which is weird in the sense
             that it has one component Y, which is not usually down sampled.
@@ -188,12 +187,11 @@ impl Decoder
             self.v_max = 1;
             self.sub_sample_ratio = SubSampRatios::None;
             self.components[0].vertical_sample = 1;
-            self.components[0].width_stride = mcu_width* 8;
+            self.components[0].width_stride = mcu_width * 8;
             self.components[0].horizontal_sample = mcu_width;
             mcu_height = ((self.info.height + 7) / 8) as usize;
-            bias=1;
+            bias = 1;
         }
-       
         let mut stream = BitStream::new();
         // Size of our output image(width*height)
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
@@ -202,8 +200,16 @@ impl Decoder
         // Create an Arc of components to prevent cloning on every MCU width
         let global_component = Arc::new(self.components.clone());
 
+        let is_hv = self.sub_sample_ratio == SubSampRatios::HV || self.sub_sample_ratio == SubsamplingRatio::H;
+
+        // There are some images where we need to overallocate  especially for small buffers,
+        // because the chunking calculation will do it wrongly,
+        // this only applies to  small down-sampled images
+        // See https://github.com/etemesi254/zune-jpeg/issues/11
+        let extra_space = usize::from(is_hv) * 32 * usize::from(self.height()) * self.output_colorspace.num_components();
+
         // Storage for decoded pixels
-        let mut global_channel = vec![0; capacity * self.output_colorspace.num_components()];
+        let mut global_channel = vec![0; (capacity * self.output_colorspace.num_components()) + extra_space];
 
         // things needed for post processing that we can remove out of the loop
         let input = self.input_colorspace;
@@ -227,14 +233,12 @@ impl Decoder
         // check dc and AC tables
         self.check_tables()?;
 
-        let is_hv = self.sub_sample_ratio == SubSampRatios::HV;
-        
 
         // Split output into different blocks each containing enough space for an MCU width
         let mut chunks =
             global_channel.chunks_exact_mut(width * output.num_components() * 8 * h_max * v_max);
 
-         let mut tmp = [0; DCT_BLOCK];
+        let mut tmp = [0; DCT_BLOCK];
 
         // Argument for scoped threadpools, see file docs.
         scoped_pools.scoped::<_, Result<(), DecodeErrors>>(|scope| {
@@ -334,9 +338,7 @@ impl Decoder
                                         let tmp: &mut [i16; 64] = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
 
                                         stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
-                                    }
-                                    else
-                                    {
+                                    } else {
                                         // component not needed, decode and discard bits
                                         stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
                                     }
@@ -356,21 +358,20 @@ impl Decoder
                             //
                             // But libjpeg-turbo allows it because of some weird reason. so I'll also
                             // allow it because of some weird reason.
-                            if let Some(m)= stream.marker
+                            if let Some(m) = stream.marker
                             {
-                                if m==Marker::EOI
+                                if m == Marker::EOI
                                 {
                                     break;
                                 }
                                 match m
                                 {
                                     // leave RST handling to the other routine when it's ready
-                                    Marker::RST(_)=> continue,
-                                    _=>{}
+                                    Marker::RST(_) => continue,
+                                    _ => {}
                                 }
                                 error!("Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",m);
-                                self.parse_marker_inner(m,reader)?;
-
+                                self.parse_marker_inner(m, reader)?;
                             }
                         }
                     }
@@ -384,7 +385,7 @@ impl Decoder
                     post_process(&mut temporary, &component,
                                  idct_func, color_convert_16,
                                  input, output, next_chunk,
-                                  width);
+                                 width);
                 });
             }
             //everything is okay
@@ -414,24 +415,24 @@ impl Decoder
             match marker
             {
                 Marker::RST(_) =>
-                {
-                    // reset stream
-                    stream.reset();
-                    // Initialize dc predictions to zero for all components
-                    self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-                    // Start iterating again. from position.
-                }
+                    {
+                        // reset stream
+                        stream.reset();
+                        // Initialize dc predictions to zero for all components
+                        self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+                        // Start iterating again. from position.
+                    }
                 Marker::EOI =>
-                {
-                    // silent pass
-                }
+                    {
+                        // silent pass
+                    }
                 _ =>
-                {
-                    return Err(DecodeErrors::MCUError(format!(
-                        "Marker {:?} found in bitstream, possibly corrupt jpeg",
-                        marker
-                    )));
-                }
+                    {
+                        return Err(DecodeErrors::MCUError(format!(
+                            "Marker {:?} found in bitstream, possibly corrupt jpeg",
+                            marker
+                        )));
+                    }
             }
         }
 
