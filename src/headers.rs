@@ -245,7 +245,7 @@ pub(crate) fn parse_start_of_frame<R>(
     }
 
     if img_height > img.max_height {
-        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_width, img.max_width)));
+        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.max_height)));
     }
 
     // Check image width or height is zero
