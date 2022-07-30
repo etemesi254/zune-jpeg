@@ -329,7 +329,7 @@ impl BitStream
     clippy::cast_sign_loss
     )]
     #[rustfmt::skip]
-    #[inline(always)]
+    #[inline(never)]
     pub fn decode_mcu_block(
         &mut self,
         reader: &mut Cursor<Vec<u8>>,
