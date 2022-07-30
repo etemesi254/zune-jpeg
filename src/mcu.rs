@@ -152,7 +152,7 @@ impl Decoder
             {
                 mcu_width = self.mcu_x;
 
-                mcu_height = (self.mcu_y / 2);
+                mcu_height = self.mcu_y / 2;
 
                 bias = 2;
 
@@ -200,7 +200,7 @@ impl Decoder
         // Create an Arc of components to prevent cloning on every MCU width
         let global_component = Arc::new(self.components.clone());
 
-        let is_hv = self.sub_sample_ratio == SubSampRatios::HV || self.sub_sample_ratio == SubsamplingRatio::H;
+        let is_hv = self.sub_sample_ratio == SubSampRatios::HV || self.sub_sample_ratio == SubSampRatios::H;
 
         // There are some images where we need to overallocate  especially for small buffers,
         // because the chunking calculation will do it wrongly,
