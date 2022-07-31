@@ -200,13 +200,13 @@ impl Decoder
         // Create an Arc of components to prevent cloning on every MCU width
         let global_component = Arc::new(self.components.clone());
 
-        let is_hv = self.sub_sample_ratio == SubSampRatios::HV || self.sub_sample_ratio == SubSampRatios::H;
+        let is_hv = self.sub_sample_ratio == SubSampRatios::HV;
 
         // There are some images where we need to overallocate  especially for small buffers,
         // because the chunking calculation will do it wrongly,
         // this only applies to  small down-sampled images
         // See https://github.com/etemesi254/zune-jpeg/issues/11
-        let extra_space = usize::from(is_hv) * 32 * usize::from(self.height()) * self.output_colorspace.num_components();
+        let extra_space = usize::from(is_hv || self.sub_sample_ratio==SubSampRatios::H) * 64 * usize::from(self.height()) * self.output_colorspace.num_components();
 
         // Storage for decoded pixels
         let mut global_channel = vec![0; (capacity * self.output_colorspace.num_components()) + extra_space];
