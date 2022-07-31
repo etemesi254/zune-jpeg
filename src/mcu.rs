@@ -207,7 +207,7 @@ impl Decoder
         // because the chunking calculation will do it wrongly,
         // this only applies to  small down-sampled images
         // See https://github.com/etemesi254/zune-jpeg/issues/11
-        let extra_space = usize::from(is_hv || self.sub_sample_ratio==SubSampRatios::H) * 64 * usize::from(self.height()) * self.output_colorspace.num_components();
+        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.output_colorspace.num_components();
 
         // Storage for decoded pixels
         let mut global_channel = vec![0; (capacity * self.output_colorspace.num_components()) + extra_space];
