@@ -184,11 +184,12 @@ impl Decoder
             warn!("Grayscale image with down-sampled component, resetting component details");
             mcu_width = ((self.info.width + 7) / 8) as usize;
             self.h_max = 1;
+            self.output_colorspace= ColorSpace::GRAYSCALE;
             self.v_max = 1;
             self.sub_sample_ratio = SubSampRatios::None;
             self.components[0].vertical_sample = 1;
             self.components[0].width_stride = mcu_width * 8;
-            self.components[0].horizontal_sample = mcu_width;
+            self.components[0].horizontal_sample = 1;
             mcu_height = ((self.info.height + 7) / 8) as usize;
             bias = 1;
         }
