@@ -221,12 +221,23 @@ fn color_convert_ycbcr(
         let  e= (y_width.len()/16).saturating_sub(1);
 
         if width < 16{
+            // allocate temporary buffers for the values received from idct
+            let mut y_out = [0;16];
+
+            let mut cb_out = [0;16];
+
+            let mut cr_out = [0;16];
+            // copy those small widths to that buffer
+            y_out[0..y_width.len()].copy_from_slice(y_width);
+
+            cb_out[0..cb_width.len()].copy_from_slice(cb_width);
+
+            cr_out[0..cr_width.len()].copy_from_slice(cr_width);
+            
             // we handle widths less than 16 a bit differently, allocating a temporary
             // buffer and writing to that and then flushing to the out buffer
             // because of the optimizations applied below,
-            (color_convert_16)(y_width.chunks_exact(16).next().unwrap().try_into().unwrap(),
-                               cb_width.chunks_exact(16).next().unwrap().try_into().unwrap(),
-                               cr_width.chunks_exact(16).next().unwrap().try_into().unwrap(), &mut temp, &mut 0);
+            (color_convert_16)(&y_out,&cb_out,&cr_out, &mut temp, &mut 0);
 
             // copy to stride
             out[position..position+width*output_colorspace.num_components()].copy_from_slice(&temp[0..width*output_colorspace.num_components()]);
