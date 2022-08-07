@@ -161,10 +161,13 @@ impl Decoder
         let y = &block[0];
         let cb = &block[1];
         let cr = &block[2];
+        
+        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.output_colorspace.num_components();
+
 
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
 
-        let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components()];
+        let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components()+extra_space];
 
 
         // Things we need for multithreading.
