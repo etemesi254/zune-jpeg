@@ -161,7 +161,7 @@ impl Decoder
         let y = &block[0];
         let cb = &block[1];
         let cr = &block[2];
-        
+
         let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.output_colorspace.num_components();
 
 
@@ -297,8 +297,12 @@ impl Decoder
                 while j < mcu_width
                 {
                     let start = 64 * (j + i * (self.components[k].width_stride / 8));
-
-                    let data: &mut [i16; 64] = buffer.get_mut(k).unwrap().get_mut(start..start + 64)
+                   
+                    if i >= mcu_height{
+                        break;
+                    }
+                    let data: &mut [i16; 64] = buffer.get_mut(k)
+                        .unwrap().get_mut(start..start + 64)
                         .unwrap().try_into().unwrap();
 
                     if self.spec_start == 0
@@ -363,6 +367,8 @@ impl Decoder
                 }
                 j = 0;
                 i += 1;
+
+                
             }
         } else {
             if self.spec_end != 0
