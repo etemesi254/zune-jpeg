@@ -647,7 +647,7 @@ impl Decoder
                 return Err(DecodeErrors::Format(format!("Invalid image width and height stride for component {:?}, expected {}, but found {}", comp.component_id, cb_cr_width, comp.width_stride)));
             }
             if (comp.horizontal_sample != 1 || comp.vertical_sample != 1) && comp.component_id != ComponentID::Y {
-                return Err(DecodeErrors::Format(format!("Invalid component ID for {} for {:?} component, expected 1", comp.horizontal_sample,comp.component_id)));
+                return Err(DecodeErrors::Format(format!("Invalid component sample for component {:?}, expected (1,1), found ({},{})", comp.component_id,comp.vertical_sample,comp.horizontal_sample)));
             }
         }
 
