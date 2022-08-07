@@ -257,6 +257,7 @@ impl Decoder
         &mut self, reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream, buffer: &mut [Vec<i16>; 3],
     ) -> Result<bool, DecodeErrors>
     {
+        self.check_component_dimensions()?;
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
 
@@ -301,6 +302,7 @@ impl Decoder
                     if i >= mcu_height{
                         break;
                     }
+                  
                     let data: &mut [i16; 64] = buffer.get_mut(k)
                         .unwrap().get_mut(start..start + 64)
                         .unwrap().try_into().unwrap();
