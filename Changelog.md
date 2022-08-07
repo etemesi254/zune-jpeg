@@ -1,3 +1,9 @@
+### Version 0.1.5
+- Allow user to set memory limits in during decoding explicitly via `set_limits`
+- Fixed some bugs discovered by fuzzing
+- Correctly handle small images less than 16 pixels
+- Gracefully handle incorrectly sampled images.
+
 ### Version 0.1.4
 - Remove all `unsafe` instances except platform dependent intrinsics.
 - Numerous bug fixes identified by fuzzing.
