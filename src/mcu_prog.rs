@@ -123,7 +123,7 @@ impl Decoder
     }
 
     #[rustfmt::skip]
-    fn finish_progressive_decoding(&mut self, block: &[Vec<i16>; 3], mcu_width: usize) -> Result<Vec<u8> ,DecodeErrors>{
+    fn finish_progressive_decoding(&mut self, block: &[Vec<i16>; 3], mcu_width: usize) -> Result<Vec<u8>, DecodeErrors> {
         self.set_upsampling()?;
 
         let mut mcu_width = mcu_width;
@@ -133,12 +133,12 @@ impl Decoder
         {
             mcu_width *= 2;
         }
-        if self.sub_sample_ratio == SubSampRatios::HV{
-            bias=2;
+        if self.sub_sample_ratio == SubSampRatios::HV {
+            bias = 2;
         }
 
 
-        if self.input_colorspace == ColorSpace::GRAYSCALE   && self.interleaved{
+        if self.input_colorspace == ColorSpace::GRAYSCALE && self.interleaved {
             /*
             Apparently, grayscale images which can be down sampled exists, which is weird in the sense
             that it has one component Y, which is not usually down sampled.
@@ -154,9 +154,9 @@ impl Decoder
             self.v_max = 1;
             self.sub_sample_ratio = SubSampRatios::None;
             self.components[0].vertical_sample = 1;
-            self.components[0].width_stride = mcu_width* 8;
+            self.components[0].width_stride = mcu_width * 8;
             self.components[0].horizontal_sample = mcu_width;
-            bias=1;
+            bias = 1;
         }
         // remove items from  top block
         let y = &block[0];
@@ -168,7 +168,7 @@ impl Decoder
 
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
 
-        let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components()+extra_space];
+        let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components() + extra_space];
 
 
         // Things we need for multithreading.
@@ -178,7 +178,7 @@ impl Decoder
 
         let components = Arc::new(self.components.clone());
 
-        let mut pool = scoped_threadpool::Pool::new(self.num_threads.unwrap_or( num_cpus::get()) as u32);
+        let mut pool = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(num_cpus::get()) as u32);
 
         let input = self.input_colorspace;
 
@@ -192,7 +192,7 @@ impl Decoder
         let width = usize::from(self.width());
 
         // Divide the output into small blocks and send to threads/
-        let chunks_size = width * self.output_colorspace.num_components() * 8 * h_max * v_max ;
+        let chunks_size = width * self.output_colorspace.num_components() * 8 * h_max * v_max;
 
         let out_chunks = out_vector.chunks_exact_mut(chunks_size);
 
@@ -205,7 +205,6 @@ impl Decoder
         let y_chunk = y.chunks_exact(y_chunk_size);
 
         if self.input_colorspace.num_components() == 3 {
-
             let cb_chunk_size =
                 mcu_width * self.components[1].vertical_sample * self.components[1].horizontal_sample * bias;
 
@@ -261,7 +260,7 @@ impl Decoder
         self.check_component_dimensions()?;
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-        self.check_tables()?;
+//        self.check_tables()?;
 
         if self.num_scans == 1
         {
@@ -301,20 +300,22 @@ impl Decoder
                 while j < mcu_width
                 {
                     let start = 64 * (j + i * (self.components[k].width_stride / 8));
-                   
-                    if i >= mcu_height{
+
+                    if i >= mcu_height {
                         break;
                     }
-                  
+
                     let data: &mut [i16; 64] = buffer.get_mut(k)
                         .unwrap().get_mut(start..start + 64)
                         .unwrap().try_into().unwrap();
 
                     if self.spec_start == 0
                     {
-                        let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS-1);
-                        let dc_table =self.dc_huffman_tables[pos]
-                            .as_ref().unwrap();
+                        let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS - 1);
+                        let dc_table = self.dc_huffman_tables.get(pos)
+                            .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", pos)))?
+                            .as_ref()
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized", pos)))?;
 
                         let dc_pred = &mut self.components[k].dc_pred;
                         if self.succ_high == 0
@@ -331,7 +332,7 @@ impl Decoder
                         let ac_table = self.ac_huffman_tables.get(pos)
                             .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", pos)))?
                             .as_ref()
-                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized",pos)))?;
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized", pos)))?;
 
                         if self.succ_high == 0
                         {
@@ -372,8 +373,6 @@ impl Decoder
                 }
                 j = 0;
                 i += 1;
-
-                
             }
         } else {
             if self.spec_end != 0
@@ -400,7 +399,7 @@ impl Decoder
                         let huff_table = self.dc_huffman_tables.get(component.dc_huff_table)
                             .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", component.dc_huff_table)))?
                             .as_ref()
-                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized",component.dc_huff_table)))?
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized", component.dc_huff_table)))?
                             ;
 
                         for v_samp in 0..component.vertical_sample
