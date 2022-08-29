@@ -37,6 +37,7 @@ use crate::marker::Marker;
 use crate::misc::read_byte;
 use crate::worker::post_process_prog;
 use crate::{ColorSpace, Decoder};
+use crate::decoder::MAX_COMPONENTS;
 
 impl Decoder
 {
@@ -260,6 +261,7 @@ impl Decoder
         self.check_component_dimensions()?;
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+        self.check_tables()?;
 
         if self.num_scans == 1
         {
@@ -293,6 +295,7 @@ impl Decoder
 
             let mut j = 0;
 
+
             while i < mcu_height
             {
                 while j < mcu_width
@@ -309,9 +312,9 @@ impl Decoder
 
                     if self.spec_start == 0
                     {
-                        let pos = self.components[k].dc_huff_table;
-
-                        let dc_table = self.dc_huffman_tables.get(pos).unwrap().as_ref().unwrap();
+                        let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS-1);
+                        let dc_table =self.dc_huffman_tables[pos]
+                            .as_ref().unwrap();
 
                         let dc_pred = &mut self.components[k].dc_pred;
                         if self.succ_high == 0
