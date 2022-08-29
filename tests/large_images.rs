@@ -56,6 +56,27 @@ fn large_no_sampling_factors_rgb()
     }
 }
 
+
+/// Decodes a large image
+#[test]
+fn large_vertical_sampling_factors_rgb()
+{
+    //
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_vertical_samp_7680_4320.jpg";
+    let mut decoder = Decoder::new();
+    // RGB
+    {
+        decoder.set_output_colorspace(ColorSpace::RGB);
+        let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+        write_output(
+            "large_vertical_samp_rgb_7680_4320.jpg",
+            &pixels,
+            decoder.width() as usize,
+            decoder.height() as usize,
+            OutColorSpace::JCS_RGB,
+        );
+    }
+}
 #[test]
 fn large_no_sampling_factors_grayscale()
 {
