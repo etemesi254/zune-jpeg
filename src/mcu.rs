@@ -70,7 +70,7 @@ pub const DCT_BLOCK: usize = 64;
 impl Decoder
 {
     /// Check for existence of DC and AC Huffman Tables
-    fn check_tables(&self) -> Result<(), DecodeErrors>
+    pub (crate) fn check_tables(&self) -> Result<(), DecodeErrors>
     {
         // check that dc and AC tables exist outside the hot path
         for i in 0..self.input_colorspace.num_components()
