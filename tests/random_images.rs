@@ -75,3 +75,43 @@ fn single_qt()
         OutColorSpace::JCS_GRAYSCALE,
     );
 }
+
+
+#[test]
+fn google_pixel()
+{
+    //
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/google_pixel.jpg";
+    let mut decoder = Decoder::new();
+    // Grayscale
+
+    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "google_pixel.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_GRAYSCALE,
+    );
+}
+
+
+#[test]
+fn google_pixel_progressive()
+{
+    //
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/google_pixel_progressive.jpg";
+    let mut decoder = Decoder::new();
+    // Grayscale
+
+    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    write_output(
+        "google_pixel_progressive.jpg",
+        &pixels,
+        decoder.width() as usize,
+        decoder.height() as usize,
+        OutColorSpace::JCS_GRAYSCALE,
+    );
+}
