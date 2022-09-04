@@ -38,6 +38,7 @@ use crate::misc::read_byte;
 use crate::worker::post_process_prog;
 use crate::{ColorSpace, Decoder};
 use crate::decoder::MAX_COMPONENTS;
+use crate::errors::DecodeErrors::Format;
 
 impl Decoder
 {
@@ -137,7 +138,6 @@ impl Decoder
             bias = 2;
         }
 
-
         if self.input_colorspace == ColorSpace::GRAYSCALE && self.interleaved {
             /*
             Apparently, grayscale images which can be down sampled exists, which is weird in the sense
@@ -165,11 +165,9 @@ impl Decoder
 
         let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.output_colorspace.num_components();
 
-
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
 
         let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components() + extra_space];
-
 
         // Things we need for multithreading.
         let h_max = self.h_max;
@@ -260,7 +258,11 @@ impl Decoder
         self.check_component_dimensions()?;
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
-//        self.check_tables()?;
+
+
+        if usize::from(self.num_scans) > self.input_colorspace.num_components(){
+            return Err(Format(format!("Number of scans {} cannot be greater than number of components, {}",self.num_scans,self.input_colorspace.num_components())));
+        }
 
         if self.num_scans == 1
         {
@@ -274,7 +276,9 @@ impl Decoder
             // non interleaved data, process one block at a time in trivial scanline order
 
             let k = self.z_order[0];
-
+            if k >= self.components.len() {
+                return Err(DecodeErrors::Format(format!("Cannot find component {}, corrupt image", k)));
+            }
             let (mcu_width, mcu_height);
             // For Y channel  or non interleaved scans , mcu's is the image dimensions divided
             // by 8
@@ -304,7 +308,6 @@ impl Decoder
                     if i >= mcu_height {
                         break;
                     }
-
                     let data: &mut [i16; 64] = buffer.get_mut(k)
                         .unwrap().get_mut(start..start + 64)
                         .unwrap().try_into().unwrap();
@@ -393,6 +396,9 @@ impl Decoder
                     for k in 0..self.num_scans
                     {
                         let n = self.z_order[k as usize];
+                        if n >= self.components.len() {
+                            return Err(DecodeErrors::Format(format!("Cannot find component {}, corrupt image", n)));
+                        }
 
                         let component = &mut self.components[n];
 
