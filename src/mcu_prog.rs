@@ -27,6 +27,7 @@
 //! So here we use a different scheme. Just decode everything and then finally use threads when post processing.
 
 use std::io::Cursor;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use crate::bitstream::BitStream;
@@ -176,7 +177,7 @@ impl Decoder
 
         let components = Arc::new(self.components.clone());
 
-        let mut pool = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(num_cpus::get()) as u32);
+        let mut pool = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(4).unwrap()).get()) as u32);
 
         let input = self.input_colorspace;
 
@@ -260,8 +261,8 @@ impl Decoder
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
 
 
-        if usize::from(self.num_scans) > self.input_colorspace.num_components(){
-            return Err(Format(format!("Number of scans {} cannot be greater than number of components, {}",self.num_scans,self.input_colorspace.num_components())));
+        if usize::from(self.num_scans) > self.input_colorspace.num_components() {
+            return Err(Format(format!("Number of scans {} cannot be greater than number of components, {}", self.num_scans, self.input_colorspace.num_components())));
         }
 
         if self.num_scans == 1

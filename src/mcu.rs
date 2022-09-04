@@ -55,6 +55,7 @@
 
 use std::cmp::min;
 use std::io::Cursor;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
@@ -128,7 +129,7 @@ impl Decoder
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         self.check_component_dimensions()?;
-        let mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(num_cpus::get()) as u32);
+        let  mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(4).unwrap()).get()) as u32);
         info!("Created {} worker threads", scoped_pools.thread_count());
 
         let (mut mcu_width, mut mcu_height);
