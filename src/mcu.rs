@@ -177,6 +177,10 @@ impl Decoder
             for such occurrences, warn and reset the image info to appear as if it were
             a non-sampled image to ensure decoding works
             */
+            if self.options.get_strict_mode(){
+                return Err(DecodeErrors::FormatStatic("[strict-mode]: Grayscale image with down-sampled component."))
+            }
+
             warn!("Grayscale image with down-sampled component, resetting component details");
 
             mcu_width = ((self.info.width + 7) / 8) as usize;
