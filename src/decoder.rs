@@ -244,12 +244,12 @@ impl Decoder
         let magic_bytes = read_u16_be(buf)?;
 
         let mut last_byte = 0;
+        let mut bytes_before_marker = 0;
 
         if magic_bytes != 0xffd8
         {
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
-
         loop
         {
             // read a byte
@@ -259,6 +259,8 @@ impl Decoder
             if last_byte == 0xFF
             {
                 let marker = Marker::from_u8(m);
+
+                bytes_before_marker = 0;
 
                 if let Some(n) = marker
                 {
@@ -288,6 +290,15 @@ impl Decoder
                 }
             }
             last_byte = m;
+            bytes_before_marker += 1;
+
+            if self.options.get_strict_mode() && bytes_before_marker > 3
+            /*No reason to use this*/
+            {
+                return Err(DecodeErrors::FormatStatic(
+                    "[strict-mode]: Extra bytes between headers",
+                ));
+            }
         }
     }
     pub(crate) fn parse_marker_inner<R: Read + BufRead>(
