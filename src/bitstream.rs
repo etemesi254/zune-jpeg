@@ -393,11 +393,10 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
-        let bits;
         let mask = (1_u64 << n_bits) - 1;
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
-        bits = (self.aligned_buffer & mask) as i32;
+        let bits = (self.aligned_buffer & mask) as i32;
         self.bits_left = self.bits_left.saturating_sub(n_bits);
         bits
     }
