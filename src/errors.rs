@@ -17,6 +17,9 @@ pub enum DecodeErrors
 {
     /// Any other thing we do not know
     Format(String),
+    /// Any other thing we do not know but we
+    /// don't need to allocate space on the heap
+    FormatStatic(&'static str),
     /// Illegal Magic Bytes
     IllegalMagicBytes(u16),
     /// problems with the Huffman Tables in a Decoder file
@@ -46,6 +49,8 @@ impl Debug for DecodeErrors
         match &self
         {
             Self::Format(ref a) => write!(f, "{:?}", a),
+            Self::FormatStatic(ref a) => write!(f, "{:?}", a),
+
             Self::HuffmanDecode(ref reason) =>
             {
                 write!(f, "Error decoding huffman values: {}", reason)
@@ -80,6 +85,7 @@ impl Display for DecodeErrors
         match &self
         {
             Self::Format(ref a) => write!(f, "{}", a),
+            Self::FormatStatic(ref a) => write!(f, "{:?}", a),
             Self::HuffmanDecode(ref reason) =>
             {
                 write!(f, "Error decoding huffman tables.Reason:{}", reason)
