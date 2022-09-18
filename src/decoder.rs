@@ -3,6 +3,7 @@
 
 use std::fs::read;
 use std::io::{BufRead, Cursor, Read};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
@@ -16,6 +17,7 @@ use crate::misc::{read_byte, read_u16_be, Aligned32, ColorSpace, SOFMarkers};
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, upsample_vertical,
 };
+use crate::ZuneJpegOptions;
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
@@ -87,8 +89,6 @@ pub struct Decoder
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
     pub(crate) input_colorspace:  ColorSpace,
-    /// Image output_colorspace, what input colorspace should be converted to
-    pub(crate) output_colorspace: ColorSpace,
     // Progressive image details
     /// Is the image progressive?
     pub(crate) is_progressive:    bool,
@@ -116,74 +116,65 @@ pub struct Decoder
     /// restart markers
     pub(crate) restart_interval: usize,
     pub(crate) todo:             usize,
-    // threads
-    pub(crate) num_threads:      Option<usize>,
-    // image limits
-    pub(crate) max_width:        u16,
-    pub(crate) max_height:       u16,
-}
-
-impl Default for Decoder
-{
-    fn default() -> Self
-    {
-        let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
-        Decoder {
-            info:              ImageInfo::default(),
-            qt_tables:         [None, None, None, None],
-            dc_huffman_tables: [None, None, None, None],
-            ac_huffman_tables: [None, None, None, None],
-            components:        vec![],
-
-            // Interleaved information
-            h_max:            1,
-            v_max:            1,
-            mcu_height:       0,
-            mcu_width:        0,
-            mcu_x:            0,
-            mcu_y:            0,
-            interleaved:      false,
-            sub_sample_ratio: SubSampRatios::None,
-
-            // Progressive information
-            is_progressive: false,
-            spec_start:     0,
-            spec_end:       0,
-            succ_high:      0,
-            succ_low:       0,
-            num_scans:      0,
-
-            // Function pointers
-            idct_func:        choose_idct_func(),
-            color_convert_16: color_convert,
-
-            // Colorspace
-            input_colorspace:  ColorSpace::YCbCr,
-            output_colorspace: ColorSpace::RGB,
-            // This should be kept at par with MAX_COMPONENTS, or until the RFC at
-            // https://github.com/rust-lang/rfcs/pull/2920 is accepted
-            // Store MCU blocks
-            // This should probably be changed..
-            z_order:           [0; 4],
-            restart_interval:  0,
-            todo:              0x7fff_ffff,
-            num_threads:       None,
-            // image limits
-            max_width:         1 << 14,
-            max_height:        1 << 14,
-        }
-    }
+    // decoder options
+    pub(crate) options:          ZuneJpegOptions,
 }
 
 impl Decoder
 {
+    fn default(options: ZuneJpegOptions) -> Self
+    {
+        let color_convert =
+            choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, options.get_use_unsafe()).unwrap();
+        Decoder {
+            info: ImageInfo::default(),
+            qt_tables: [None, None, None, None],
+            dc_huffman_tables: [None, None, None, None],
+            ac_huffman_tables: [None, None, None, None],
+            components: vec![],
+
+            // Interleaved information
+            h_max: 1,
+            v_max: 1,
+            mcu_height: 0,
+            mcu_width: 0,
+            mcu_x: 0,
+            mcu_y: 0,
+            interleaved: false,
+            sub_sample_ratio: SubSampRatios::None,
+
+            // Progressive information
+            is_progressive: false,
+            spec_start: 0,
+            spec_end: 0,
+            succ_high: 0,
+            succ_low: 0,
+            num_scans: 0,
+
+            // Function pointers
+            idct_func: choose_idct_func(options.get_use_unsafe()),
+            color_convert_16: color_convert,
+
+            // Colorspace
+            input_colorspace: ColorSpace::YCbCr,
+            // This should be kept at par with MAX_COMPONENTS, or until the RFC at
+            // https://github.com/rust-lang/rfcs/pull/2920 is accepted
+            // Store MCU blocks
+            // This should probably be changed..
+            z_order: [0; 4],
+            restart_interval: 0,
+            todo: 0x7fff_ffff,
+            // options
+            options,
+        }
+    }
     /// Decode a buffer already in memory
     ///
     /// The buffer should be a valid jpeg file, perhaps created by the command
     /// `std:::fs::read()` or a JPEG file downloaded from the internet.
     ///
     /// # Errors
-    /// If the image is not a valid jpeg file
+    /// See DecodeErrors for an explanation
     pub fn decode_buffer(&mut self, buf: &[u8]) -> Result<Vec<u8>, DecodeErrors>
     {
         self.decode_internal(Cursor::new(buf.to_vec()))
@@ -191,9 +182,10 @@ impl Decoder
 
     /// Create a new Decoder instance
     #[must_use]
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Decoder
     {
-        Decoder::default()
+        Decoder::default(ZuneJpegOptions::new())
     }
 
     /// Decode a valid jpeg file
@@ -411,7 +403,7 @@ impl Decoder
     #[must_use]
     pub fn get_output_colorspace(&self) -> ColorSpace
     {
-        return self.output_colorspace;
+        return self.options.get_out_colorspace();
     }
 
     fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors>
@@ -444,6 +436,8 @@ impl Decoder
     /// println!("Total decoder dimensions are : {} pixels",usize::from(decoder.width()) * usize::from(decoder.height()));
     /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
     /// ```
+    /// # Errors
+    /// See DecodeErrors enum for list of possible errors during decoding
     pub fn read_headers(&mut self, buf: &[u8]) -> Result<(), DecodeErrors>
     {
         let mut cursor = Cursor::new(buf);
@@ -451,62 +445,12 @@ impl Decoder
         self.decode_headers_internal(&mut cursor)?;
         Ok(())
     }
-
-    /// Set the output colorspace
-    ///
-    ///# Values which currently work
-    ///
-    /// - `ColorSpace::RGBX` : Set it to RGB_X where X is anything between 0 and
-    ///   255
-    /// (cool for playing with alpha channels)
-    ///
-    /// - `ColorSpace::RGBA` : Set is to RGB_A where A is the alpha channel ,
-    ///   useful for converting JPEG
-    /// images to PNG images
-    ///
-    /// - `ColorSpace::RGB` : Use the normal color convert function where YCbCr
-    ///   is converted to RGB colorspace.
-    ///
-    /// - `ColorSpace::GRAYSCALE`:Convert normal image to a black and white
-    ///   image(grayscale)
-    ///
-    /// - `ColorSpace::YCbCr`: Do not do colorspace conversion.
-    #[allow(clippy::expect_used)]
-    pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
+    /// Create a new decoder with the specified options to be used for decoding
+    /// an image
+    #[must_use]
+    pub fn new_with_options(options: ZuneJpegOptions) -> Decoder
     {
-        if self.output_colorspace == colorspace
-        {
-            return;
-        }
-
-        self.output_colorspace = colorspace;
-
-        match colorspace
-        {
-            ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA =>
-            {
-                let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
-
-                self.color_convert_16 = func_ptr;
-            }
-            // do nothing for others
-            _ => (),
-        }
-    }
-    /// Set image width and height limits.
-    ///
-    /// To protect the library from over-allocating memory, which
-    /// might be the case for corrupt images, the library imposes a standard
-    /// limit on how big the output image dimensions are and errors out if images are greater
-    /// than that dimension, but for some use cases there may be need to increase this.
-    ///
-    /// But may lead to high memory usage if set to high values
-    ///
-    /// Current default is 16,384 by 16,384
-    pub fn set_limits(&mut self, max_width: u16, max_height: u16)
-    {
-        self.max_height = max_height;
-        self.max_width = max_width;
+        Decoder::default(options)
     }
 
     /// Set up-sampling routines in case an image is down sampled
@@ -528,7 +472,7 @@ impl Decoder
                 // horizontal sub-sampling
                 info!("Horizontal sub-sampling (2,1)");
 
-                let up_sampler = choose_horizontal_samp_function();
+                let up_sampler = choose_horizontal_samp_function(self.options.get_use_unsafe());
 
                 self.components[1..]
                     .iter_mut()
@@ -550,9 +494,9 @@ impl Decoder
                 // vertical and horizontal sub sampling
                 info!("Vertical and horizontal sub-sampling(2,2)");
 
-                self.components[1..]
-                    .iter_mut()
-                    .for_each(|x| x.up_sampler = choose_hv_samp_function());
+                self.components[1..].iter_mut().for_each(|x| {
+                    x.up_sampler = choose_hv_samp_function(self.options.get_use_unsafe());
+                });
             }
             (_, _) =>
             {
@@ -573,12 +517,32 @@ impl Decoder
     /// use zune_jpeg::{Decoder, ColorSpace};
     /// Decoder::new().set_output_colorspace(ColorSpace::RGBA);
     /// ```
+    #[deprecated(
+        since = "0.2.0",
+        note = "Set options in the ZuneJpegOptions struct and then use new_with_options"
+    )]
     pub fn rgba(&mut self)
     {
         // told you so
-        self.set_output_colorspace(ColorSpace::RGBA);
+        self.options = self.options.set_out_colorspace(ColorSpace::RGBA);
     }
 
+    #[deprecated(
+        since = "0.2.0",
+        note = "Set options in the ZuneJpegOptions struct and then use new_with_options"
+    )]
+    pub fn set_limits(&mut self, width: u16, height: u16)
+    {
+        self.options = self.options.set_max_width(width).set_max_height(height);
+    }
+    #[deprecated(
+        since = "0.2.0",
+        note = "Set options in the ZuneJpegOptions struct and then use new_with_options"
+    )]
+    pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
+    {
+        self.options = self.options.set_out_colorspace(colorspace);
+    }
     #[must_use]
     /// Get the width of the image as a u16
     ///
@@ -611,15 +575,19 @@ impl Decoder
     /// let mut img = Decoder::new();
     /// img.set_num_threads(3).unwrap(); // spawn only three threads
     /// ```
+    #[deprecated(since = "0.2.0", note = "Use new_with_options to set options")]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn set_num_threads(&mut self, threads: usize) -> Result<(), DecodeErrors>
     {
         if threads == 0
         {
-            return Err(DecodeErrors::Format(
-                "Cannot set zero threads to decode image".to_string(),
+            return Err(DecodeErrors::FormatStatic(
+                "Cannot set zero threads to decode image",
             ));
         }
-        self.num_threads = Some(threads);
+        self.options = self
+            .options
+            .set_num_threads(NonZeroU32::new(threads as u32).unwrap());
         Ok(())
     }
     /// Check that all components have the correct width and height
@@ -634,9 +602,9 @@ impl Decoder
             .components
             .iter()
             .find(|c| c.component_id == ComponentID::Y)
-            .ok_or_else(|| {
-                DecodeErrors::Format("Could not find Y component for the image".to_string())
-            })?;
+            .ok_or(DecodeErrors::FormatStatic(
+                "Could not find Y component for the image",
+            ))?;
 
         let y_width = y_comp.width_stride;
         let cb_cr_width = y_width / self.h_max;
