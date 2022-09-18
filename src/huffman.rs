@@ -67,7 +67,8 @@ impl HuffmanTable
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
-        clippy::cast_sign_loss
+        clippy::cast_sign_loss,
+        clippy::too_many_lines
     )]
     fn make_derived_table(&mut self, is_dc: bool, is_progressive: bool)
         -> Result<(), DecodeErrors>

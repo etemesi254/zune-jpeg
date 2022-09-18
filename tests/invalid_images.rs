@@ -47,7 +47,7 @@ fn huffman_length_subtraction_overflow()
         .unwrap_err();
 
     assert!(
-        matches!(err, zune_jpeg::errors::DecodeErrors::HuffmanDecode(x) if x == "Invalid Huffman length in image")
+        matches!(err, zune_jpeg::errors::DecodeErrors::FormatStatic(x) if x == "Invalid Huffman length in image")
     );
 }
 

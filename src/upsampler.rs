@@ -79,27 +79,31 @@ mod scalar;
 mod sse;
 
 // choose best possible implementation for this platform
-pub fn choose_horizontal_samp_function() -> UpSampler
+pub fn choose_horizontal_samp_function(use_unsafe:bool) -> UpSampler
 {
-    #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
-    {
-        if is_x86_feature_detected!("sse4.1")
+    if use_unsafe {
+        #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
         {
-            debug!("Using sse H up-sampler");
-            return sse::upsample_horizontal_sse;
+            if is_x86_feature_detected!("sse4.1")
+            {
+                debug!("Using sse H up-sampler");
+                return sse::upsample_horizontal_sse;
+            }
         }
     }
     debug!("Using scalar H up-sampler");
     return scalar::upsample_horizontal;
 }
-pub fn choose_hv_samp_function() -> UpSampler
+pub fn choose_hv_samp_function(use_unsafe:bool) -> UpSampler
 {
-    #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
-    {
-        if is_x86_feature_detected!("avx2")
+    if use_unsafe {
+        #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
         {
-            debug!("Using avx HV up-sampler");
-            return avx2::upsample_hv_simd;
+            if is_x86_feature_detected!("avx2")
+            {
+                debug!("Using avx HV up-sampler");
+                return avx2::upsample_hv_simd;
+            }
         }
     }
     debug!("using scalar HV up-sampler");

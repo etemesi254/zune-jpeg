@@ -22,12 +22,10 @@ where
     // Read the length of the Huffman table
     let mut dht_length = i32::from(
         read_u16_be(&mut buf)
-            .map_err(|_| {
-                DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
-            })?
+            .map_err(|_| DecodeErrors::FormatStatic("Could not read Huffman length from image"))?
             .checked_sub(2)
-            .ok_or(DecodeErrors::HuffmanDecode(
-                "Invalid Huffman length in image".to_string(),
+            .ok_or(DecodeErrors::FormatStatic(
+                "Invalid Huffman length in image",
             ))?,
     );
 
@@ -133,9 +131,11 @@ where
     let mut qt_length = read_u16_be(&mut buf)
         .map_err(|c| DecodeErrors::Format(format!("Could not read  DQT length {}", c)))?
         .checked_sub(2)
-        .ok_or(DecodeErrors::DqtError(
-            "Invalid DQT length. Length should be greater than 2".to_string(),
-        ))?;
+        .ok_or_else(|| {
+            DecodeErrors::DqtError(
+                "Invalid DQT length. Length should be greater than 2".to_string(),
+            )
+        })?;
     // A single DQT header may have multiple QT's
     while qt_length > 0
     {
@@ -237,14 +237,14 @@ where
     info!("Image width  :{}", img_width);
     info!("Image height :{}", img_height);
 
-    if img_width > img.max_width
+    if img_width > img.options.get_max_width()
     {
-        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.max_width)));
+        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.get_max_width())));
     }
 
-    if img_height > img.max_height
+    if img_height > img.options.get_max_height()
     {
-        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.max_height)));
+        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.get_max_height())));
     }
 
     // Check image width or height is zero
@@ -281,7 +281,7 @@ where
         // and that to us translates to setting input and output
         // colorspaces to zero
         img.input_colorspace = ColorSpace::GRAYSCALE;
-        img.output_colorspace = ColorSpace::GRAYSCALE;
+        img.options = img.options.set_out_colorspace(ColorSpace::GRAYSCALE);
     }
 
     // set number of components

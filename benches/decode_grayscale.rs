@@ -4,13 +4,12 @@ use std::fs::read;
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use zune_jpeg::{ColorSpace, Decoder};
+use zune_jpeg::{ColorSpace, Decoder, ZuneJpegOptions};
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
-    let mut d = Decoder::new();
-
-    d.set_output_colorspace(ColorSpace::GRAYSCALE);
+    let mut d =
+        Decoder::new_with_options(ZuneJpegOptions::new().set_out_colorspace(ColorSpace::GRAYSCALE));
 
     d.decode_buffer(buf).unwrap()
 }

@@ -15,7 +15,7 @@ use std::convert::TryInto;
 union XmmRegister
 {
     array: [i16; 8],
-    reg: __m128i,
+    reg:   __m128i,
 }
 
 pub fn ycbcr_to_rgb_sse(

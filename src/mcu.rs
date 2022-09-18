@@ -55,7 +55,6 @@
 
 use std::cmp::min;
 use std::io::Cursor;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use crate::bitstream::BitStream;
@@ -122,7 +121,7 @@ impl Decoder
     ///
     /// Because of this, we pull in some very crazy optimization tricks hence readability is a pinch
     /// here.
-    #[allow(clippy::similar_names)]
+    #[allow(clippy::similar_names,clippy::too_many_lines,clippy::cast_possible_truncation)]
     #[inline(never)]
     #[rustfmt::skip]
     pub(crate) fn decode_mcu_ycbcr_baseline(
@@ -133,7 +132,8 @@ impl Decoder
         // check dc and AC tables
         self.check_tables()?;
 
-        let  mut scoped_pools = scoped_threadpool::Pool::new(self.num_threads.unwrap_or(std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(4).unwrap()).get()) as u32);
+        let  mut scoped_pools = scoped_threadpool::Pool::new(
+            self.options.get_threads());
         info!("Created {} worker threads", scoped_pools.thread_count());
 
         let (mut mcu_width, mut mcu_height);
@@ -177,11 +177,15 @@ impl Decoder
             for such occurrences, warn and reset the image info to appear as if it were
             a non-sampled image to ensure decoding works
             */
+            if self.options.get_strict_mode(){
+                return Err(DecodeErrors::FormatStatic("[strict-mode]: Grayscale image with down-sampled component."))
+            }
+
             warn!("Grayscale image with down-sampled component, resetting component details");
 
             mcu_width = ((self.info.width + 7) / 8) as usize;
             self.h_max = 1;
-            self.output_colorspace= ColorSpace::GRAYSCALE;
+            self.options = self.options.set_out_colorspace(ColorSpace::GRAYSCALE);
             self.v_max = 1;
             self.sub_sample_ratio = SubSampRatios::None;
             self.components[0].vertical_sample = 1;
@@ -200,10 +204,10 @@ impl Decoder
         // because the chunking calculation will do it wrongly,
         // this only applies to  small down-sampled images
         // See https://github.com/etemesi254/zune-jpeg/issues/11
-        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.output_colorspace.num_components();
+        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.options.get_out_colorspace().num_components();
         // things needed for post processing that we can remove out of the loop
         let input = self.input_colorspace;
-        let output = self.output_colorspace;
+        let output = self.options.get_out_colorspace();
         let idct_func = self.idct_func;
         let color_convert_16 = self.color_convert_16;
         let width = usize::from(self.width());
@@ -215,7 +219,7 @@ impl Decoder
 
         let mut stream = BitStream::new();
         // Storage for decoded pixels
-        let mut global_channel = vec![0; (capacity * self.output_colorspace.num_components()) + extra_space];
+        let mut global_channel = vec![0; (capacity * self.options.get_out_colorspace().num_components()) + extra_space];
 
         // Split output into different blocks each containing enough space for an MCU width
         let mut chunks =
@@ -237,7 +241,7 @@ impl Decoder
                 {
                     // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
                     // Allocate only needed components.
-                    if min(self.output_colorspace.num_components() - 1, pos) == pos
+                    if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
                     {
                         let len = component_capacity * comp.vertical_sample * comp.horizontal_sample * bias;
 
@@ -280,7 +284,7 @@ impl Decoder
                                 for h_samp in 0..component.horizontal_sample
                                 {
                                     // only decode needed components
-                                    if min(self.output_colorspace.num_components() - 1, pos) == pos
+                                    if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
                                     {
                                         // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
@@ -337,12 +341,8 @@ impl Decoder
                                     break;
                                 }
 
-                                match m
-                                {
-                                    // leave RST handling to the other routine when it's ready
-                                    Marker::RST(_) => continue,
-                                    _ => {}
-                                }
+                                if let Marker::RST(_) = m { continue }
+
                                 error!("Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",m);
                                 self.parse_marker_inner(m, reader)?;
                             }
@@ -354,12 +354,14 @@ impl Decoder
                 let next_chunk = chunks.next().unwrap();
 
                 scope.execute(move || {
-                    let mut coeffs :[&[i16];3]=[&[];3];
+
+                    let mut coeff :[&[i16];3]=[&[];3];
 
                     temporary.iter().enumerate().for_each(|(pos,x)|{
-                        coeffs[pos] = x;
+                        coeff[pos] = x;
                     });
-                    post_process(&coeffs, &component,
+
+                    post_process(&coeff, &component,
                                  idct_func, color_convert_16,
                                  input, output, next_chunk,
                                  width);
@@ -373,7 +375,7 @@ impl Decoder
         global_channel.truncate(
             usize::from(self.width())
                 * usize::from(self.height())
-                * self.output_colorspace.num_components(),
+                * self.options.get_out_colorspace().num_components(),
         );
         return Ok(global_channel);
     }
@@ -412,7 +414,6 @@ impl Decoder
                 }
             }
         }
-
         Ok(())
     }
 }

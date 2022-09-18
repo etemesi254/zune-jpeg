@@ -27,7 +27,6 @@
 //! So here we use a different scheme. Just decode everything and then finally use threads when post processing.
 
 use std::io::Cursor;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use crate::bitstream::BitStream;
@@ -58,6 +57,8 @@ impl Decoder
         let mut block = [vec![], vec![], vec![]];
         let mut mcu_width;
 
+        let mut seen_scans = 1;
+
         if self.interleaved
         {
             mcu_width = self.mcu_x;
@@ -84,10 +85,11 @@ impl Decoder
         self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
 
         // extract marker
-        let mut marker = stream.marker.take().ok_or_else(|| DecodeErrors::FormatStatic("Marker missing where expected"))?;
+        let mut marker = stream.marker.take().ok_or(DecodeErrors::FormatStatic("Marker missing where expected"))?;
         // if marker is EOI, we are done, otherwise continue scanning.
         'eoi: while marker != Marker::EOI
         {
+
             match marker
             {
                 Marker::DHT => {
@@ -104,7 +106,12 @@ impl Decoder
                         self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
                         // extract marker, might either indicate end of image or we continue
                         // scanning(hence the continue statement to determine).
-                        marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::FormatStatic("Marker missing where expected"))?;
+                        marker = get_marker(reader, &mut stream).ok_or(DecodeErrors::FormatStatic("Marker missing where expected"))?;
+                        seen_scans+=1;
+
+                        if seen_scans >  self.options.get_max_scans(){
+                            return Err(DecodeErrors::Format(format!("Too many scans, exceeded limit of {}", self.options.get_max_scans())))
+                        }
 
                         stream.reset();
                         continue 'eoi;
@@ -114,7 +121,8 @@ impl Decoder
                         break 'eoi;
                     }
             }
-            marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::FormatStatic("Marker missing where expected"))?;
+
+            marker = get_marker(reader, &mut stream).ok_or(DecodeErrors::FormatStatic("Marker missing where expected"))?;
         }
 
         self.finish_progressive_decoding(&block, mcu_width)
@@ -146,6 +154,9 @@ impl Decoder
 
             NOTE: not tested on progressive images as I couldn't find such an image.
             */
+            if self.options.get_strict_mode(){
+                return Err(DecodeErrors::FormatStatic("[strict-mode]: Grayscale image with down-sampled component."))
+            }
             warn!("Grayscale image with down-sampled component, resetting component details");
             self.h_max = 1;
             self.v_max = 1;
@@ -159,22 +170,22 @@ impl Decoder
         let y = &block[0];
         let cb = &block[1];
         let cr = &block[2];
-        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.output_colorspace.num_components();
+        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.options.get_out_colorspace().num_components();
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
 
-        let mut out_vector = vec![0_u8; capacity * self.output_colorspace.num_components() + extra_space];
+        let mut out_vector = vec![0_u8; capacity * self.options.get_out_colorspace().num_components() + extra_space];
 
         // Things we need for multithreading.
         let h_max = self.h_max;
         let v_max = self.v_max;
         let components = Arc::new(self.components.clone());
         let input = self.input_colorspace;
-        let output = self.output_colorspace;
+        let output = self.options.get_out_colorspace();
         let idct_func = self.idct_func;
         let color_convert_16 = self.color_convert_16;
         let width = usize::from(self.width());
         // Divide the output into small blocks and send to threads/
-        let chunks_size = width * self.output_colorspace.num_components() * 8 * h_max * v_max;
+        let chunks_size = width * self.options.get_out_colorspace().num_components() * 8 * h_max * v_max;
         let out_chunks = out_vector.chunks_exact_mut(chunks_size);
         // Chunk sizes. Each determine how many pixels go per thread.
         let y_chunk_size =
@@ -182,9 +193,7 @@ impl Decoder
         // Divide into chunks
         let y_chunk = y.chunks_exact(y_chunk_size);
 
-        let mut pool = scoped_threadpool::Pool::new(self.num_threads
-            .unwrap_or(std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(4).unwrap()).get()) as u32);
-
+        let mut pool = scoped_threadpool::Pool::new(self.options.get_threads());
 
         if self.input_colorspace.num_components() == 3 {
             let cb_chunk_size =
@@ -228,7 +237,7 @@ impl Decoder
         out_vector.truncate(
             usize::from(self.width())
                 * usize::from(self.height())
-                * self.output_colorspace.num_components(),
+                * self.options.get_out_colorspace().num_components(),
         );
 
         return Ok(out_vector);
@@ -236,6 +245,7 @@ impl Decoder
 
 
     #[rustfmt::skip]
+    #[allow(clippy::too_many_lines)]
     fn parse_entropy_coded_data(
         &mut self, reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream, buffer: &mut [Vec<i16>; 3],
     ) -> Result<bool, DecodeErrors>

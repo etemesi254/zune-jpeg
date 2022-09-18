@@ -10,8 +10,6 @@ fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
     let mut d = Decoder::new();
 
-    d.set_output_colorspace(ColorSpace::RGB);
-
     d.decode_buffer(buf).unwrap()
 }
 
