@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 use mozjpeg::ColorSpace as OutColorSpace;
-use zune_jpeg::{ColorSpace, Decoder};
+use zune_jpeg::{ColorSpace, Decoder, ZuneJpegOptions};
 
 fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspace: OutColorSpace)
 {
@@ -44,9 +44,9 @@ fn medium_no_sampling_factors_rgb()
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_no_samp_2500x1786.jpg";
     let mut decoder = Decoder::new();
+
     // RGB
     {
-        decoder.set_output_colorspace(ColorSpace::RGB);
         let pixels = decoder.decode_file(&path).expect("Test failed decoding");
         write_output(
             "medium_no_samp_rgb_7680_4320.jpg",
@@ -64,10 +64,11 @@ fn medium_no_sampling_factors_grayscale()
     //
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_no_samp_2500x1786.jpg";
-    let mut decoder = Decoder::new();
+    let mut decoder = Decoder::new_with_options(
+        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::GRAYSCALE),
+    );
     // Grayscale
 
-    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
     let pixels = decoder.decode_file(&path).expect("Test failed decoding");
     write_output(
         "medium_no_samp_grayscale_7680_4320.jpg",
@@ -86,7 +87,6 @@ fn medium_horizontal_sampling_rgb()
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
     let mut decoder = Decoder::new();
 
-    decoder.set_output_colorspace(ColorSpace::RGB);
     let pixels = decoder.decode_file(&path).expect("Test failed decoding");
     write_output(
         "medium_horiz_samp_rgb_7680_4320.jpg",
@@ -103,9 +103,10 @@ fn medium_horizontal_sampling_grayscale()
     // Grayscale
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
-    let mut decoder = Decoder::new();
+    let mut decoder = Decoder::new_with_options(
+        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::GRAYSCALE),
+    );
 
-    decoder.set_output_colorspace(ColorSpace::GRAYSCALE);
     let pixels = decoder.decode_file(&path).expect("Test failed decoding");
     write_output(
         "medium_horiz_samp_grayscale_7680_4320.jpg",
@@ -121,11 +122,12 @@ fn medium_horizontal_sampling_cymk()
 {
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
-    let mut decoder = Decoder::new();
+    let mut decoder =
+        Decoder::new_with_options(ZuneJpegOptions::default().set_out_colorspace(ColorSpace::YCbCr));
     // cymk
 
-    decoder.set_output_colorspace(ColorSpace::YCbCr);
     let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+
     write_output(
         "medium_horiz_samp_ycbcr_7680_4320.jpg",
         &pixels,
