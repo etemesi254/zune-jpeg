@@ -245,7 +245,7 @@ impl HuffmanTable
                         };
 
                         // if result is small enough fit into fast ac table
-                        if k >= -128 && k <= 127
+                        if (-128..=127).contains(&k)
                         {
                             fast_ac[i] = (k << 10) + (run << 4) + (len + mag_bits);
                         }
