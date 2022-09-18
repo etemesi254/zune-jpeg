@@ -10,7 +10,7 @@ use crate::misc::ColorSpace;
 /// This handles routines for images which are interleaved for non-interleaved use post_process_non_interleaved
 ///
 /// # Arguments
-/// - unprocessed- Contains Y,Cb,Cr components straight from the bitstream decoder
+/// - coeff - Contains Y,Cb,Cr components straight from the bitstream decoder
 /// - component_data - Contains metadata for unprocessed values, e.g QT tables and such
 /// - idct_func - IDCT function pointer
 /// - color_convert_16 - Carry out color conversion on 2 mcu's
@@ -30,7 +30,7 @@ clippy::single_match
 )]
 #[rustfmt::skip]
 pub(crate) fn post_process(
-    unprocessed: &mut [Vec<i16>; 3],
+    coeff: &[&[i16]; 3],
     component_data: &[Components],
     idct_func: IDCTPtr,
     color_convert_16: ColorConvert16Ptr,
@@ -56,11 +56,12 @@ pub(crate) fn post_process(
     // (1)      -> (1) => Decode 1 component
     // RGB -> RGBA
     // (3) -> (4) => Decode 3 channels
-
     let x = min(
         input_colorspace.num_components(),
         output_colorspace.num_components(),
     );
+    let mut unprocessed = [vec![], vec![], vec![]];
+
 
     (0..x).for_each(|z| {
         // Calculate stride
@@ -72,53 +73,17 @@ pub(crate) fn post_process(
         let v_samp_idct = {
             if z == 0 { 1 } else { v_samp }
         };
-        unprocessed[z] = idct_func(&unprocessed[z],
+        unprocessed[z] = idct_func(coeff[z],
                                    &component_data[z].quantization_table,
                                    component_data[z].width_stride,
                                    h_samp * v_samp,
                                    v_samp_idct);
     });
 
-    post_process_inner(unprocessed, component_data, color_convert_16,
+    post_process_inner(&mut unprocessed, component_data, color_convert_16,
                        input_colorspace, output_colorspace, output,  width);
 }
 
-#[rustfmt::skip]
-pub(crate) fn post_process_prog(
-    block: &[&[i16]; 3], /*The difference with post process*/
-    component_data: &[Components],
-    idct_func: IDCTPtr,
-    color_convert_16: ColorConvert16Ptr,
-    input_colorspace: ColorSpace,
-    output_colorspace: ColorSpace,
-    output: &mut [u8],
-    width: usize,
-) // so many parameters..
-{
-    let mut unprocessed = [vec![], vec![], vec![]];
-    // maximum sampling factors are in Y-channel, no need to pass them.
-    let h_samp = component_data[0].horizontal_sample;
-    let v_samp = component_data[0].vertical_sample;
-
-    let x = min(
-        input_colorspace.num_components(),
-        output_colorspace.num_components(),
-    );
-    //
-    (0..x).for_each(|z| {
-
-        // carry out IDCT.
-        let v_samp_idct = { if z == 0 { 1 } else { v_samp } };
-
-        unprocessed[z] = idct_func(block[z],
-                                   &component_data[z].quantization_table,
-                                   component_data[z].width_stride,
-                                   h_samp * v_samp,
-                                   v_samp_idct);
-    });
-    post_process_inner(&mut unprocessed, component_data, color_convert_16,
-        input_colorspace,  output_colorspace, output,  width);
-}
 #[rustfmt::skip]
 pub(crate) fn post_process_inner(
     unprocessed: &mut [Vec<i16>; 3], component_data: &[Components],
@@ -133,7 +98,6 @@ pub(crate) fn post_process_inner(
     );
     // maximum sampling factors are in Y-channel, no need to pass them.
     let h_samp = component_data[0].horizontal_sample;
-
     let v_samp = component_data[0].vertical_sample;
 
     if h_samp != 1 || v_samp != 1
@@ -171,110 +135,117 @@ pub(crate) fn post_process_inner(
 
 /// Do color-conversion for interleaved MCU
 #[allow(
-clippy::similar_names,
-clippy::too_many_arguments,
-clippy::needless_pass_by_value,
-clippy::unwrap_used
+    clippy::similar_names,
+    clippy::too_many_arguments,
+    clippy::needless_pass_by_value,
+    clippy::unwrap_used
 )]
-#[rustfmt::skip]
 fn color_convert_ycbcr(
-    mcu_block: &[Vec<i16>; 3],
-    width: usize,
-    h_samp: usize,
-    v_samp: usize,
-    output_colorspace: ColorSpace,
-    color_convert_16: ColorConvert16Ptr,
-    output: &mut [u8],
+    mcu_block: &[Vec<i16>; 3], width: usize, h_samp: usize, v_samp: usize,
+    output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr, output: &mut [u8],
 )
 {
-
-
     let mcu_chunks = mcu_block[0].len() / (h_samp * v_samp);
-
     // Width of image which takes into account fill bytes(it may be larger than actual width).
     let width_chunk = mcu_chunks >> 3;
-
-    let mut start = 0;
-
     let stride = width * output_colorspace.num_components();
 
+    let mut start = 0;
     let mut end = stride;
     // over allocate to account for fill bytes
-    // TODO remove this over-allocation ans use better systems CALEB..
     let mut temp = vec![];
 
-    if width < 16{
+    if width < 16
+    {
         // Allocate temporary buffer for small widths less than
         // 16.
-        temp = vec![0;16*output_colorspace.num_components()];
+        temp = vec![0; 16 * output_colorspace.num_components()];
     }
     // We need to chunk per width to ensure we can discard extra values at the end of the width.
     // Since the encoder may pad bits to ensure the width is a multiple of 8.
-    for ((y_width, cb_width), cr_width) in mcu_block[0].chunks_exact(width_chunk)
+    for ((y_width, cb_width), cr_width) in mcu_block[0]
+        .chunks_exact(width_chunk)
         .zip(mcu_block[1].chunks_exact(width_chunk))
         .zip(mcu_block[2].chunks_exact(width_chunk))
     {
-        let mut position = 0;
+        let elements = (y_width.len() / 16).saturating_sub(1);
 
+        let mut position = 0;
         let mut out = &mut output[start..end];
 
-        let  e= (y_width.len()/16).saturating_sub(1);
-
-        if width < 16{
+        if width < 16
+        {
             // allocate temporary buffers for the values received from idct
-            let mut y_out = [0;16];
-
-            let mut cb_out = [0;16];
-
-            let mut cr_out = [0;16];
+            let mut y_out = [0; 16];
+            let mut cb_out = [0; 16];
+            let mut cr_out = [0; 16];
             // copy those small widths to that buffer
             y_out[0..y_width.len()].copy_from_slice(y_width);
-
             cb_out[0..cb_width.len()].copy_from_slice(cb_width);
-
             cr_out[0..cr_width.len()].copy_from_slice(cr_width);
-            
             // we handle widths less than 16 a bit differently, allocating a temporary
             // buffer and writing to that and then flushing to the out buffer
             // because of the optimizations applied below,
-            (color_convert_16)(&y_out,&cb_out,&cr_out, &mut temp, &mut 0);
-
+            (color_convert_16)(&y_out, &cb_out, &cr_out, &mut temp, &mut 0);
             // copy to stride
-            out[position..position+width*output_colorspace.num_components()].copy_from_slice(&temp[0..width*output_colorspace.num_components()]);
+            out[position..position + width * output_colorspace.num_components()]
+                .copy_from_slice(&temp[0..width * output_colorspace.num_components()]);
             // increment position
-            start +=stride;
-            end +=stride;
+            start += stride;
+            end += stride;
             // next
             continue;
         }
 
-         // Chunk in outputs of 16 to pass to color_convert as an array of 16 i16's.
-        for ((y, cb), cr) in y_width.chunks_exact(16).take(e)
-            .zip(cb_width.chunks_exact(16)).take(e)
-            .zip(cr_width.chunks_exact(16)).take(e)
+        // Chunk in outputs of 16 to pass to color_convert as an array of 16 i16's.
+        for ((y, cb), cr) in y_width
+            .chunks_exact(16)
+            .zip(cb_width.chunks_exact(16))
+            .zip(cr_width.chunks_exact(16))
+            .take(elements)
         {
-            // @ OPTIMIZE-TIP, use slices with known sizes, can turn on some optimization,
-            // e.g autovectorization.
-            (color_convert_16)(y.try_into().unwrap(), cb.try_into().unwrap(), cr.try_into().unwrap(), &mut out, &mut position);
+            (color_convert_16)(
+                y.try_into().unwrap(),
+                cb.try_into().unwrap(),
+                cr.try_into().unwrap(),
+                &mut out,
+                &mut position,
+            );
         }
 
         // we have more pixels in the end that can't be handled by the main loop.
         // move pointer back a little bit to get last 16 bytes,
         // color convert, and overwrite
         // This means some values will be color converted twice.
-    
+
         let diff = 64_usize.saturating_sub(stride.saturating_sub(position));
 
         position = position.saturating_sub(diff);
 
         (color_convert_16)(
-            y_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
-            cb_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
-            cr_width.rchunks_exact(16).next().unwrap().try_into().unwrap(),
-        &mut out,&mut position);
+            y_width
+                .rchunks_exact(16)
+                .next()
+                .unwrap()
+                .try_into()
+                .unwrap(),
+            cb_width
+                .rchunks_exact(16)
+                .next()
+                .unwrap()
+                .try_into()
+                .unwrap(),
+            cr_width
+                .rchunks_exact(16)
+                .next()
+                .unwrap()
+                .try_into()
+                .unwrap(),
+            &mut out,
+            &mut position,
+        );
 
         start += stride;
-
         end += stride;
     }
 }
