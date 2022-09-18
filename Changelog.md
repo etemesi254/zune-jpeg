@@ -1,3 +1,11 @@
+### Version 0.2.0
+- New `ZuneJpegOptions` struct, this is the now recommended way to set up  decoding options for
+decoding
+- Deprecated previous options setting functions.
+- More code cleanups
+- Fixed new bugs discovered by fuzzing
+- Removed dependency on `num_cpu`
+
 ### Version 0.1.5
 - Allow user to set memory limits in during decoding explicitly via `set_limits`
 - Fixed some bugs discovered by fuzzing
