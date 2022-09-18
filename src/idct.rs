@@ -37,17 +37,21 @@ mod scalar;
 
 /// Choose an appropriate IDCT function
 
-pub fn choose_idct_func() -> IDCTPtr
+pub fn choose_idct_func(use_unsafe: bool) -> IDCTPtr
 {
-    #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
+    if use_unsafe
     {
-        if is_x86_feature_detected!("avx2")
+        #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
         {
-            debug!("Using AVX optimized integer IDCT");
-            // use avx one
-            return crate::idct::avx2::dequantize_and_idct_avx2;
+            if is_x86_feature_detected!("avx2")
+            {
+                debug!("Using AVX optimized integer IDCT");
+                // use avx one
+                return crate::idct::avx2::dequantize_and_idct_avx2;
+            }
         }
     }
+    debug!("Using scalar integer IDCT");
     // Fun fact, when compiling this with -C target-feature=+avx2, Rust won't
     // use CPUID instructions for run-time detection and this function will boil down
     // to a return statement above.
