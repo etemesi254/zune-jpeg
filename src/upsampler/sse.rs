@@ -101,7 +101,10 @@ pub unsafe fn upsample_horizontal_sse_u(input: &[i16], output_len: usize) -> Vec
         let cn = _mm_srai_epi16::<2>(_mm_add_epi16(an, bn));
 
         // write to array
-        _mm_storeu_si128(out.get_mut(i * 8..(i * 8) + 8).unwrap().as_mut_ptr().cast(), cn);
+        _mm_storeu_si128(
+            out.get_mut(i * 8..(i * 8) + 8).unwrap().as_mut_ptr().cast(),
+            cn,
+        );
     }
 
     // Do the last 8 manually because we can't  do it  with SSE because of out of bounds access
