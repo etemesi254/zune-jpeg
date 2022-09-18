@@ -20,6 +20,8 @@ pub struct ZuneJpegOptions
     max_height:     u16,
     /// Maximum number of scans to allow in the image
     max_scans:      usize,
+    /// Treat warnings as errors.
+    strict_mode:    bool,
 }
 impl Default for ZuneJpegOptions
 {
@@ -32,6 +34,7 @@ impl Default for ZuneJpegOptions
             max_width:      1 << 14,
             max_height:     1 << 14,
             max_scans:      64,
+            strict_mode:    false,
         }
     }
 }
@@ -139,6 +142,19 @@ impl ZuneJpegOptions
     pub fn set_max_scans(mut self, scans: usize) -> ZuneJpegOptions
     {
         self.max_scans = scans;
+        self
+    }
+    /// Get if the library will treat warnings as errors.
+    #[must_use]
+    pub const fn get_strict_mode(&self) -> bool
+    {
+        self.strict_mode
+    }
+    /// Set whether to treat warnings as errors
+    #[must_use]
+    pub fn set_strict_mode(mut self, choice: bool) -> ZuneJpegOptions
+    {
+        self.strict_mode = choice;
         self
     }
 }
