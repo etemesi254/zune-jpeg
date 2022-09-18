@@ -171,7 +171,7 @@ fn color_convert_ycbcr(
         let elements = (y_width.len() / 16).saturating_sub(1);
 
         let mut position = 0;
-        let mut out = &mut output[start..end];
+        let out = &mut output[start..end];
 
         if width < 16
         {
@@ -208,7 +208,7 @@ fn color_convert_ycbcr(
                 y.try_into().unwrap(),
                 cb.try_into().unwrap(),
                 cr.try_into().unwrap(),
-                &mut out,
+                out,
                 &mut position,
             );
         }
@@ -241,7 +241,7 @@ fn color_convert_ycbcr(
                 .unwrap()
                 .try_into()
                 .unwrap(),
-            &mut out,
+            out,
             &mut position,
         );
 
