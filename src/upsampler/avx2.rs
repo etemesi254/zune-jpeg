@@ -3,7 +3,11 @@
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use std::arch::x86_64::{
+    _mm256_add_epi16, _mm256_alignr_epi8, _mm256_blend_epi16, _mm256_insert_epi16,
+    _mm256_loadu_si256, _mm256_mullo_epi16, _mm256_permute2x128_si256, _mm256_set1_epi16,
+    _mm256_srai_epi16, _mm256_storeu_si256, _mm256_unpackhi_epi16, _mm256_unpacklo_epi16,
+};
 
 use crate::upsampler::scalar::upsample_hv;
 
