@@ -1,6 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Marker
 {
     /// Start Of Frame markers
