@@ -84,7 +84,7 @@ impl Decoder
         self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
 
         // extract marker
-        let mut marker = stream.marker.take().ok_or_else(|| DecodeErrors::Format(format!("Marker missing where expected")))?;
+        let mut marker = stream.marker.take().ok_or_else(|| DecodeErrors::FormatStatic("Marker missing where expected"))?;
         // if marker is EOI, we are done, otherwise continue scanning.
         'eoi: while marker != Marker::EOI
         {
@@ -104,7 +104,7 @@ impl Decoder
                         self.parse_entropy_coded_data(reader, &mut stream, &mut block)?;
                         // extract marker, might either indicate end of image or we continue
                         // scanning(hence the continue statement to determine).
-                        marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::Format(format!("Marker missing where expected")))?;
+                        marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::FormatStatic("Marker missing where expected"))?;
 
                         stream.reset();
                         continue 'eoi;
@@ -114,7 +114,7 @@ impl Decoder
                         break 'eoi;
                     }
             }
-            marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::Format(format!("Marker missing where expected")))?;
+            marker = get_marker(reader, &mut stream).ok_or_else(|| DecodeErrors::FormatStatic("Marker missing where expected"))?;
         }
 
         self.finish_progressive_decoding(&block, mcu_width)
@@ -448,11 +448,9 @@ fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Ma
 
             if r != 0
             {
-                return Some(
-                    Marker::from_u8(r)
-                        .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{:X}", r)))
-                        .ok()?,
-                );
+                return Marker::from_u8(r)
+                    .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{:X}", r)))
+                    .ok();
             }
 
             if reader.position() >= len
