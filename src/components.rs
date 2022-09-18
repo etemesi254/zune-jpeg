@@ -18,28 +18,28 @@ pub type UpSampler = fn(&[i16], usize) -> Vec<i16>;
 pub(crate) struct Components
 {
     /// The type of component that has the metadata below, can be Y,Cb or Cr
-    pub component_id: ComponentID,
+    pub component_id:              ComponentID,
     /// Sub-sampling ratio of this component in the x-plane
-    pub vertical_sample: usize,
+    pub vertical_sample:           usize,
     /// Sub-sampling ratio of this component in the y-plane
-    pub horizontal_sample: usize,
+    pub horizontal_sample:         usize,
     /// DC huffman table position
-    pub dc_huff_table: usize,
+    pub dc_huff_table:             usize,
     /// AC huffman table position for this element.
-    pub ac_huff_table: usize,
+    pub ac_huff_table:             usize,
     /// Quantization table number
     pub quantization_table_number: u8,
     /// Specifies quantization table to use with this component
-    pub quantization_table: Aligned32<[i32; 64]>,
+    pub quantization_table:        Aligned32<[i32; 64]>,
     /// dc prediction for the component
-    pub dc_pred: i32,
+    pub dc_pred:                   i32,
     /// An up-sampling function, can be basic or SSE, depending
     /// on the platform
-    pub up_sampler: UpSampler,
+    pub up_sampler:                UpSampler,
     /// How pixels do we need to go to get to the next line?
-    pub width_stride: usize,
+    pub width_stride:              usize,
     /// Component ID for progressive
-    pub(crate) id: u8,
+    pub(crate) id:                 u8,
 }
 
 impl Components
@@ -62,12 +62,8 @@ impl Components
             }
         };
 
-        // top 4 bits are horizontal sampling factors
         let horizontal_sample = (a[1] >> 4) as usize;
-
-        // last 4 bits are vertical sampling factors
         let vertical_sample = (a[1] & 0x0f) as usize;
-
         let quantization_table_number = a[2];
         // confirm quantization number is between 0 and MAX_COMPONENTS
         if usize::from(quantization_table_number) >= MAX_COMPONENTS
@@ -77,7 +73,6 @@ impl Components
                 quantization_table_number, MAX_COMPONENTS
             )));
         }
-
         // check that upsampling ratios are powers of two
         // if these fail, it's probably a corrupt image.
         if !horizontal_sample.is_power_of_two()
@@ -103,24 +98,17 @@ impl Components
 
         Ok(Components {
             component_id: id,
-
             vertical_sample,
             horizontal_sample,
-
             quantization_table_number,
-
             // These two will be set with sof marker
             dc_huff_table: 0,
             ac_huff_table: 0,
-
             quantization_table: Aligned32([0; 64]),
-
             dc_pred: 0,
             up_sampler: upsample_no_op,
-            // calculated again at a later point, when all data needed
-            // is available
+            // set later
             width_stride: horizontal_sample,
-
             id: a[0],
         })
     }
