@@ -615,9 +615,9 @@ impl Decoder
     {
         if threads == 0
         {
-            return Err(DecodeErrors::Format(format!(
-                "Cannot set zero threads to decode image"
-            )));
+            return Err(DecodeErrors::Format(
+                "Cannot set zero threads to decode image".to_string(),
+            ));
         }
         self.num_threads = Some(threads);
         Ok(())
@@ -635,7 +635,7 @@ impl Decoder
             .iter()
             .find(|c| c.component_id == ComponentID::Y)
             .ok_or_else(|| {
-                DecodeErrors::Format(format!("Could not find Y component for the image"))
+                DecodeErrors::Format("Could not find Y component for the image".to_string())
             })?;
 
         let y_width = y_comp.width_stride;
