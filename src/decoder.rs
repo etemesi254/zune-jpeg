@@ -58,55 +58,51 @@ pub type IDCTPtr = fn(&[i16], &Aligned32<[i32; 64]>, usize, usize, usize) -> Vec
 pub struct Decoder
 {
     /// Struct to hold image information from SOI
-    pub(crate) info: ImageInfo,
+    pub(crate) info:              ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
     /// be moved to `components` field
-    pub(crate) qt_tables: [Option<[i32; 64]>; MAX_COMPONENTS],
+    pub(crate) qt_tables:         [Option<[i32; 64]>; MAX_COMPONENTS],
     /// DC Huffman Tables with a maximum of 4 tables for each  component
     pub(crate) dc_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// AC Huffman Tables with a maximum of 4 tables for each component
     pub(crate) ac_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// Image components, holds information like DC prediction and quantization
     /// tables of a component
-    pub(crate) components: Vec<Components>,
-
+    pub(crate) components:        Vec<Components>,
     /// maximum horizontal component of all channels in the image
-    pub(crate) h_max: usize,
+    pub(crate) h_max:             usize,
     // maximum vertical component of all channels in the image
-    pub(crate) v_max: usize,
+    pub(crate) v_max:             usize,
     /// mcu's  width (interleaved scans)
-    pub(crate) mcu_width: usize,
+    pub(crate) mcu_width:         usize,
     /// MCU height(interleaved scans
-    pub(crate) mcu_height: usize,
+    pub(crate) mcu_height:        usize,
     /// Number of MCU's in the x plane
-    pub(crate) mcu_x: usize,
+    pub(crate) mcu_x:             usize,
     /// Number of MCU's in the y plane
-    pub(crate) mcu_y: usize,
+    pub(crate) mcu_y:             usize,
     /// Is the image interleaved?
-    pub(crate) interleaved: bool,
-
-    pub(crate) sub_sample_ratio: SubSampRatios,
-
+    pub(crate) interleaved:       bool,
+    pub(crate) sub_sample_ratio:  SubSampRatios,
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
-    pub(crate) input_colorspace: ColorSpace,
+    pub(crate) input_colorspace:  ColorSpace,
     /// Image output_colorspace, what input colorspace should be converted to
     pub(crate) output_colorspace: ColorSpace,
     // Progressive image details
     /// Is the image progressive?
-    pub(crate) is_progressive: bool,
+    pub(crate) is_progressive:    bool,
 
     /// Start of spectral scan
-    pub(crate) spec_start: u8,
+    pub(crate) spec_start:       u8,
     /// End of spectral scan
-    pub(crate) spec_end: u8,
+    pub(crate) spec_end:         u8,
     /// Successive approximation bit position high
-    pub(crate) succ_high: u8,
+    pub(crate) succ_high:        u8,
     /// Successive approximation bit position low
-    pub(crate) succ_low: u8,
+    pub(crate) succ_low:         u8,
     /// Number of components.
-    pub(crate) num_scans: u8,
-
+    pub(crate) num_scans:        u8,
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     // This is determined at runtime which function to run, statically it's
@@ -116,19 +112,15 @@ pub struct Decoder
     pub(crate) idct_func: IDCTPtr,
     // Color convert function which acts on 16 YcbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
-
-    pub(crate) z_order: [usize; 4],
-
+    pub(crate) z_order:          [usize; 4],
     /// restart markers
     pub(crate) restart_interval: usize,
-    pub(crate) todo: usize,
-
+    pub(crate) todo:             usize,
     // threads
-    pub(crate) num_threads: Option<usize>,
-
+    pub(crate) num_threads:      Option<usize>,
     // image limits
-    pub(crate) max_width: u16,
-    pub(crate) max_height: u16,
+    pub(crate) max_width:        u16,
+    pub(crate) max_height:       u16,
 }
 
 impl Default for Decoder
@@ -137,51 +129,48 @@ impl Default for Decoder
     {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB).unwrap();
         Decoder {
-            info: ImageInfo::default(),
-            qt_tables: [None, None, None, None],
+            info:              ImageInfo::default(),
+            qt_tables:         [None, None, None, None],
             dc_huffman_tables: [None, None, None, None],
             ac_huffman_tables: [None, None, None, None],
-            components: vec![],
+            components:        vec![],
 
             // Interleaved information
-            h_max: 1,
-            v_max: 1,
-            mcu_height: 0,
-            mcu_width: 0,
-            mcu_x: 0,
-            mcu_y: 0,
-            interleaved: false,
+            h_max:            1,
+            v_max:            1,
+            mcu_height:       0,
+            mcu_width:        0,
+            mcu_x:            0,
+            mcu_y:            0,
+            interleaved:      false,
             sub_sample_ratio: SubSampRatios::None,
 
             // Progressive information
             is_progressive: false,
-            spec_start: 0,
-            spec_end: 0,
-            succ_high: 0,
-            succ_low: 0,
-            num_scans: 0,
+            spec_start:     0,
+            spec_end:       0,
+            succ_high:      0,
+            succ_low:       0,
+            num_scans:      0,
 
             // Function pointers
-            idct_func: choose_idct_func(),
+            idct_func:        choose_idct_func(),
             color_convert_16: color_convert,
 
             // Colorspace
-            input_colorspace: ColorSpace::YCbCr,
+            input_colorspace:  ColorSpace::YCbCr,
             output_colorspace: ColorSpace::RGB,
-
             // This should be kept at par with MAX_COMPONENTS, or until the RFC at
             // https://github.com/rust-lang/rfcs/pull/2920 is accepted
             // Store MCU blocks
             // This should probably be changed..
-            z_order: [0; 4],
-
-            restart_interval: 0,
-            todo: 0x7fff_ffff,
-            num_threads: None,
-
+            z_order:           [0; 4],
+            restart_interval:  0,
+            todo:              0x7fff_ffff,
+            num_threads:       None,
             // image limits
-            max_width: 1 << 14,
-            max_height: 1 << 14,
+            max_width:         1 << 14,
+            max_height:        1 << 14,
         }
     }
 }
@@ -210,13 +199,13 @@ impl Decoder
     /// Decode a valid jpeg file
     ///
     pub fn decode_file<P>(&mut self, file: P) -> Result<Vec<u8>, DecodeErrors>
-        where
-            P: AsRef<Path> + Clone,
+    where
+        P: AsRef<Path> + Clone,
     {
         //Read to an in memory buffer
         let buffer = Cursor::new(read(file)?);
-        info!("File size: {} bytes", buffer.get_ref().len());
 
+        info!("File size: {} bytes", buffer.get_ref().len());
         self.decode_internal(buffer)
     }
 
@@ -256,28 +245,29 @@ impl Decoder
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers_internal<R>(&mut self, buf: &mut R) -> Result<(), DecodeErrors>
-        where
-            R: Read + BufRead,
+    where
+        R: Read + BufRead,
     {
-        let mut buf = buf;
-
         // First two bytes should be jpeg soi marker
-        let magic_bytes = read_u16_be(&mut buf)?;
+        let magic_bytes = read_u16_be(buf)?;
+
+        let mut last_byte = 0;
+
         if magic_bytes != 0xffd8
         {
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
-        let mut last_byte = 0;
 
         loop
         {
             // read a byte
-            let m = read_byte(&mut buf)?;
+            let m = read_byte(buf)?;
             // Last byte should be 0xFF to confirm existence of a marker since markers look
             // like OxFF(some marker data)
             if last_byte == 0xFF
             {
                 let marker = Marker::from_u8(m);
+
                 if let Some(n) = marker
                 {
                     self.parse_marker_inner(n, buf)?;
@@ -286,8 +276,11 @@ impl Decoder
                     {
                         return Ok(());
                     }
-                } else {
+                }
+                else
+                {
                     warn!("Marker 0xFF{:X} not known", m);
+
                     let length = read_u16_be(buf)?;
 
                     if length < 2
@@ -297,6 +290,7 @@ impl Decoder
                             length
                         )));
                     }
+
                     warn!("Skipping {} bytes", length - 2);
                     buf.consume((length - 2) as usize);
                 }
@@ -311,35 +305,37 @@ impl Decoder
         match m
         {
             Marker::SOF(0 | 2) =>
-                {
-                    let marker = {
-                        // choose marker
-                        if m == Marker::SOF(0)
-                        {
-                            SOFMarkers::BaselineDct
-                        } else {
-                            self.is_progressive = true;
+            {
+                let marker = {
+                    // choose marker
+                    if m == Marker::SOF(0)
+                    {
+                        SOFMarkers::BaselineDct
+                    }
+                    else
+                    {
+                        self.is_progressive = true;
 
-                            SOFMarkers::ProgressiveDctHuffman
-                        }
-                    };
-                    info!("Image encoding scheme =`{:?}`", marker);
+                        SOFMarkers::ProgressiveDctHuffman
+                    }
+                };
 
-                    // get components
-                    parse_start_of_frame(buf, marker, self)?;
-                }
+                info!("Image encoding scheme =`{:?}`", marker);
+                // get components
+                parse_start_of_frame(buf, marker, self)?;
+            }
             // Start of Frame Segments not supported
             Marker::SOF(v) =>
+            {
+                let feature = UnsupportedSchemes::from_int(v);
+
+                if let Some(feature) = feature
                 {
-                    let feature = UnsupportedSchemes::from_int(v);
-
-                    if let Some(feature) = feature
-                    {
-                        return Err(DecodeErrors::Unsupported(feature));
-                    }
-
-                    return Err(DecodeErrors::Format("Unsupported image format".to_string()));
+                    return Err(DecodeErrors::Unsupported(feature));
                 }
+
+                return Err(DecodeErrors::Format("Unsupported image format".to_string()));
+            }
             // APP(0) segment
             // Marker::APP(0 | 1) =>
             // {
@@ -347,63 +343,66 @@ impl Decoder
             // }
             // Quantization tables
             Marker::DQT =>
-                {
-                    parse_dqt(self, buf)?;
-                }
+            {
+                parse_dqt(self, buf)?;
+            }
             // Huffman tables
             Marker::DHT =>
-                {
-                    parse_huffman(self, buf)?;
-                }
+            {
+                parse_huffman(self, buf)?;
+            }
             // Start of Scan Data
             Marker::SOS =>
-                {
-                    parse_sos(buf, self)?;
+            {
+                parse_sos(buf, self)?;
 
-                    // break after reading the start of scan.
-                    // what follows is the image data
-                    return Ok(());
-                }
+                // break after reading the start of scan.
+                // what follows is the image data
+                return Ok(());
+            }
             Marker::EOI => return Err(DecodeErrors::Format("Premature End of image".to_string())),
 
             Marker::DAC | Marker::DNL =>
-                {
-                    return Err(DecodeErrors::Format(format!(
-                        "Parsing of the following header `{:?}` is not supported,\
+            {
+                return Err(DecodeErrors::Format(format!(
+                    "Parsing of the following header `{:?}` is not supported,\
                                 cannot continue",
-                        m
-                    )));
-                }
+                    m
+                )));
+            }
             Marker::DRI =>
+            {
+                info!("DRI marker present");
+
+                if read_u16_be(buf)? != 4
                 {
-                    info!("DRI marker present");
-                    if read_u16_be(buf)? != 4
-                    {
-                        return Err(DecodeErrors::Format(
-                            "Bad DRI length, Corrupt JPEG".to_string(),
-                        ));
-                    }
-                    self.restart_interval = usize::from(read_u16_be(buf)?);
-                    self.todo = self.restart_interval;
+                    return Err(DecodeErrors::Format(
+                        "Bad DRI length, Corrupt JPEG".to_string(),
+                    ));
                 }
+
+                self.restart_interval = usize::from(read_u16_be(buf)?);
+                self.todo = self.restart_interval;
+            }
             _ =>
-                {
-                    warn!(
+            {
+                warn!(
                     "Capabilities for processing marker \"{:?}\" not implemented",
                     m
                 );
-                    let length = read_u16_be(buf)?;
 
-                    if length < 2
-                    {
-                        return Err(DecodeErrors::Format(format!(
-                            "Found a marker with invalid length:{}\n",
-                            length
-                        )));
-                    }
-                    warn!("Skipping {} bytes", length - 2);
-                    buf.consume((length - 2) as usize);
+                let length = read_u16_be(buf)?;
+
+                if length < 2
+                {
+                    return Err(DecodeErrors::Format(format!(
+                        "Found a marker with invalid length:{}\n",
+                        length
+                    )));
                 }
+                warn!("Skipping {} bytes", length - 2);
+                buf.consume((length - 2) as usize);
+            }
         }
         Ok(())
     }
@@ -424,7 +423,9 @@ impl Decoder
         if self.is_progressive
         {
             self.decode_mcu_ycbcr_progressive(&mut buf)
-        } else {
+        }
+        else
+        {
             self.decode_mcu_ycbcr_baseline(&mut buf)
         }
     }
@@ -446,6 +447,7 @@ impl Decoder
     pub fn read_headers(&mut self, buf: &[u8]) -> Result<(), DecodeErrors>
     {
         let mut cursor = Cursor::new(buf);
+
         self.decode_headers_internal(&mut cursor)?;
         Ok(())
     }
@@ -476,16 +478,17 @@ impl Decoder
         {
             return;
         }
+
         self.output_colorspace = colorspace;
 
         match colorspace
         {
             ColorSpace::RGB | ColorSpace::RGBX | ColorSpace::RGBA =>
-                {
-                    let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
+            {
+                let func_ptr = choose_ycbcr_to_rgb_convert_func(colorspace).unwrap();
 
-                    self.color_convert_16 = func_ptr;
-                }
+                self.color_convert_16 = func_ptr;
+            }
             // do nothing for others
             _ => (),
         }
@@ -500,7 +503,8 @@ impl Decoder
     /// But may lead to high memory usage if set to high values
     ///
     /// Current default is 16,384 by 16,384
-    pub fn set_limits(&mut self, max_width: u16, max_height: u16) {
+    pub fn set_limits(&mut self, max_width: u16, max_height: u16)
+    {
         self.max_height = max_height;
         self.max_width = max_width;
     }
@@ -519,44 +523,45 @@ impl Decoder
         match (self.h_max, self.v_max)
         {
             (2, 1) =>
-                {
-                    self.sub_sample_ratio = SubSampRatios::H;
-                    // horizontal sub-sampling
-                    info!("Horizontal sub-sampling (2,1)");
+            {
+                self.sub_sample_ratio = SubSampRatios::H;
+                // horizontal sub-sampling
+                info!("Horizontal sub-sampling (2,1)");
 
-                    let up_sampler = choose_horizontal_samp_function();
-                    self.components[1..]
-                        .iter_mut()
-                        .for_each(|x| x.up_sampler = up_sampler);
-                }
+                let up_sampler = choose_horizontal_samp_function();
+
+                self.components[1..]
+                    .iter_mut()
+                    .for_each(|x| x.up_sampler = up_sampler);
+            }
             (1, 2) =>
-                {
-                    self.sub_sample_ratio = SubSampRatios::V;
-                    // Vertical sub-sampling
-                    info!("Vertical sub-sampling (1,2)");
+            {
+                self.sub_sample_ratio = SubSampRatios::V;
+                // Vertical sub-sampling
+                info!("Vertical sub-sampling (1,2)");
 
-                    self.components[1..]
-                        .iter_mut()
-                        .for_each(|x| x.up_sampler = upsample_vertical);
-                }
+                self.components[1..]
+                    .iter_mut()
+                    .for_each(|x| x.up_sampler = upsample_vertical);
+            }
             (2, 2) =>
-                {
-                    self.sub_sample_ratio = SubSampRatios::HV;
-                    // vertical and horizontal sub sampling
-                    info!("Vertical and horizontal sub-sampling(2,2)");
+            {
+                self.sub_sample_ratio = SubSampRatios::HV;
+                // vertical and horizontal sub sampling
+                info!("Vertical and horizontal sub-sampling(2,2)");
 
-                    self.components[1..]
-                        .iter_mut()
-                        .for_each(|x| x.up_sampler = choose_hv_samp_function());
-                }
+                self.components[1..]
+                    .iter_mut()
+                    .for_each(|x| x.up_sampler = choose_hv_samp_function());
+            }
             (_, _) =>
-                {
-                    // no op. Do nothing
-                    // Jokes , panic...
-                    return Err(DecodeErrors::Format(
-                        "Unknown down-sampling method, cannot continue".to_string(),
-                    ));
-                }
+            {
+                // no op. Do nothing
+                // Jokes , panic...
+                return Err(DecodeErrors::Format(
+                    "Unknown down-sampling method, cannot continue".to_string(),
+                ));
+            }
         }
 
         return Ok(());
@@ -624,7 +629,7 @@ impl Decoder
     /// before trying to decode.
     pub(crate) fn check_component_dimensions(&self) -> Result<(), DecodeErrors>
     {
-       // find  y component
+        // find  y component
         let y_comp = self
             .components
             .iter()
@@ -642,12 +647,19 @@ impl Decoder
             {
                 continue;
             }
+
             if comp.width_stride != cb_cr_width
             {
                 return Err(DecodeErrors::Format(format!("Invalid image width and height stride for component {:?}, expected {}, but found {}", comp.component_id, cb_cr_width, comp.width_stride)));
             }
-            if (comp.horizontal_sample != 1 || comp.vertical_sample != 1) && comp.component_id != ComponentID::Y {
-                return Err(DecodeErrors::Format(format!("Invalid component sample for component {:?}, expected (1,1), found ({},{})", comp.component_id,comp.vertical_sample,comp.horizontal_sample)));
+
+            if (comp.horizontal_sample != 1 || comp.vertical_sample != 1)
+                && comp.component_id != ComponentID::Y
+            {
+                return Err(DecodeErrors::Format(format!(
+                    "Invalid component sample for component {:?}, expected (1,1), found ({},{})",
+                    comp.component_id, comp.vertical_sample, comp.horizontal_sample
+                )));
             }
         }
 
@@ -661,19 +673,19 @@ impl Decoder
 pub struct ImageInfo
 {
     /// Width of the image
-    pub width: u16,
+    pub width:         u16,
     /// Height of image
-    pub height: u16,
+    pub height:        u16,
     /// PixelDensity
     pub pixel_density: u8,
     /// Start of frame markers
-    pub sof: SOFMarkers,
+    pub sof:           SOFMarkers,
     /// Horizontal sample
-    pub x_density: u16,
+    pub x_density:     u16,
     /// Vertical sample
-    pub y_density: u16,
+    pub y_density:     u16,
     /// Number of components
-    pub components: u8,
+    pub components:    u8,
 }
 
 impl ImageInfo
