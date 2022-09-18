@@ -154,6 +154,9 @@ impl Decoder
 
             NOTE: not tested on progressive images as I couldn't find such an image.
             */
+            if self.options.get_strict_mode(){
+                return Err(DecodeErrors::FormatStatic("[strict-mode]: Grayscale image with down-sampled component."))
+            }
             warn!("Grayscale image with down-sampled component, resetting component details");
             self.h_max = 1;
             self.v_max = 1;
