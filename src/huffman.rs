@@ -19,13 +19,13 @@ pub struct HuffmanTable
     /// offset for codes of length k
     /// Answers the question, where do code-lengths of length k end
     /// Element 0 is unused
-    pub(crate) offset: [i32; 18],
+    pub(crate) offset:  [i32; 18],
     /// lookup table for fast decoding
     ///
     /// top  bits above HUFF_LOOKAHEAD contain the code length.
     ///
     /// Lower (8) bits contain the symbol in order of increasing code length.
-    pub(crate) lookup: [i32; 1 << HUFF_LOOKAHEAD],
+    pub(crate) lookup:  [i32; 1 << HUFF_LOOKAHEAD],
 
     /// A table which can be used to decode small AC coefficients and
     /// do an equivalent of receive_extend
@@ -74,24 +74,19 @@ impl HuffmanTable
     {
         // build a list of code size
         let mut huff_size = [0; 257];
-
         // Huffman code lengths
         let mut huff_code: [u32; 257] = [0; 257];
-
         // figure C.1 make table of Huffman code length for each symbol
         let mut p = 0;
 
         for l in 1..=16
         {
             let mut i = i32::from(self.bits[l]);
-
             // table overrun is checked before ,so we dont need to check
             while i != 0
             {
                 huff_size[p] = l as u8;
-
                 p += 1;
-
                 i -= 1;
             }
         }
@@ -99,11 +94,9 @@ impl HuffmanTable
         huff_size[p] = 0;
 
         let num_symbols = p;
-
         // Generate the codes themselves
         // We also validate that the counts represent a legal Huffman code tree
         let mut code = 0;
-
         let mut si = i32::from(huff_size[0]);
 
         p = 0;
@@ -113,9 +106,7 @@ impl HuffmanTable
             while i32::from(huff_size[p]) == si
             {
                 huff_code[p] = code;
-
                 code += 1;
-
                 p += 1;
             }
             // maximum code of length si, pre-shifted by 16-k bits
@@ -126,8 +117,8 @@ impl HuffmanTable
             {
                 return Err(DecodeErrors::HuffmanDecode("Bad Huffman Table".to_string()));
             }
-            code <<= 1;
 
+            code <<= 1;
             si += 1;
         }
 
@@ -146,13 +137,11 @@ impl HuffmanTable
                 // offset[l]=codes[index of 1st symbol of code length l
                 // minus minimum code of length l]
                 self.offset[l] = (p as i32) - (huff_code[p]) as i32;
-
                 p += usize::from(self.bits[l]);
             }
         }
 
         self.offset[17] = 0;
-
         // we ensure that decode terminates
         self.maxcode[17] = 0x000F_FFFF;
 
@@ -180,29 +169,26 @@ impl HuffmanTable
                 {
                     self.lookup[look_bits] =
                         (i32::from(l) << HUFF_LOOKAHEAD) | i32::from(self.values[p]);
-
                     look_bits += 1;
                 }
 
                 p += 1;
             }
         }
-
         // build an ac table that does an equivalent of decode and receive_extend
         if !is_dc
         {
             let mut fast = [255; 1 << HUFF_LOOKAHEAD];
-
             // Iterate over number of symbols
             for i in 0..num_symbols
             {
                 // get code size for an item
                 let s = huff_size[i];
+
                 if s <= HUFF_LOOKAHEAD
                 {
                     // if it's lower than what we need for our lookup table create the table
                     let c = (huff_code[i] << (HUFF_LOOKAHEAD - s)) as usize;
-
                     let m = (1 << (HUFF_LOOKAHEAD - s)) as usize;
 
                     for j in 0..m
