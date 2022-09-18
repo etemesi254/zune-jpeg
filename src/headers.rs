@@ -20,14 +20,16 @@ where
     R: Read,
 {
     // Read the length of the Huffman table
-    let mut dht_length = read_u16_be(&mut buf)
-        .map_err(|_| {
-            DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
-        })?
-        .checked_sub(2)
-        .ok_or(DecodeErrors::HuffmanDecode(
-            "Invalid Huffman length in image".to_string(),
-        ))? as i32;
+    let mut dht_length = i32::from(
+        read_u16_be(&mut buf)
+            .map_err(|_| {
+                DecodeErrors::HuffmanDecode("Could not read Huffman length from image".to_string())
+            })?
+            .checked_sub(2)
+            .ok_or(DecodeErrors::HuffmanDecode(
+                "Invalid Huffman length in image".to_string(),
+            ))?,
+    );
 
     while dht_length > 16
     {
@@ -112,9 +114,9 @@ where
 
     if dht_length > 0
     {
-        return Err(DecodeErrors::HuffmanDecode(format!(
-            "Bogus Huffman table definition"
-        )));
+        return Err(DecodeErrors::HuffmanDecode(
+            "Bogus Huffman table definition".to_string(),
+        ));
     }
 
     Ok(())
@@ -131,9 +133,9 @@ where
     let mut qt_length = read_u16_be(&mut buf)
         .map_err(|c| DecodeErrors::Format(format!("Could not read  DQT length {}", c)))?
         .checked_sub(2)
-        .ok_or(DecodeErrors::DqtError(format!(
-            "Invalid DQT length. Length should be greater than 2"
-        )))?;
+        .ok_or(DecodeErrors::DqtError(
+            "Invalid DQT length. Length should be greater than 2".to_string(),
+        ))?;
     // A single DQT header may have multiple QT's
     while qt_length > 0
     {
@@ -256,9 +258,9 @@ where
 
     if num_components == 0
     {
-        return Err(DecodeErrors::SofError(format!(
-            "Number of components cannot be zero."
-        )));
+        return Err(DecodeErrors::SofError(
+            "Number of components cannot be zero.".to_string(),
+        ));
     }
 
     let expected = 8 + 3 * u16::from(num_components);
@@ -377,9 +379,9 @@ where
 
     if image.info.components == 0
     {
-        return Err(DecodeErrors::SofError(format!(
-            "Number of components cannot be zero."
-        )));
+        return Err(DecodeErrors::SofError(
+            "Number of components cannot be zero.".to_string(),
+        ));
     }
 
     // consume spec parameters
@@ -482,9 +484,9 @@ where
 {
     let length = read_u16_be(buf)?
         .checked_sub(2)
-        .ok_or(DecodeErrors::Format(format!(
-            "Invalid APP0 length. Length should be greater than 2"
-        )))?;
+        .ok_or(DecodeErrors::Format(
+            "Invalid APP0 length. Length should be greater than 2".to_string(),
+        ))?;
 
     let mut bytes_read = 0;
 
