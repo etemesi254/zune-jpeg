@@ -47,7 +47,7 @@ impl Decoder
     /// This routine decodes a progressive image, stopping if it finds any error.
     #[rustfmt::skip]
     pub(crate) fn decode_mcu_ycbcr_progressive(
-        &mut self, reader: &mut Cursor<Vec<u8>>,
+        &mut self, reader: &mut Cursor<&[u8]>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         self.check_component_dimensions()?;
@@ -247,7 +247,7 @@ impl Decoder
     #[rustfmt::skip]
     #[allow(clippy::too_many_lines)]
     fn parse_entropy_coded_data(
-        &mut self, reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream, buffer: &mut [Vec<i16>; 3],
+        &mut self, reader: &mut Cursor<&[u8]>, stream: &mut BitStream, buffer: &mut [Vec<i16>; 3],
     ) -> Result<bool, DecodeErrors>
     {
         self.check_component_dimensions()?;
@@ -433,7 +433,7 @@ impl Decoder
 ///Get a marker from the bit-stream.
 ///
 /// This reads until it gets a marker or end of file is encountered
-fn get_marker(reader: &mut Cursor<Vec<u8>>, stream: &mut BitStream) -> Option<Marker>
+fn get_marker(reader: &mut Cursor<&[u8]>, stream: &mut BitStream) -> Option<Marker>
 {
     if let Some(marker) = stream.marker
     {
