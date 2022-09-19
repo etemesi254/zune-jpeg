@@ -156,7 +156,7 @@ impl BitStream
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(never)] // to many call sites?
-    fn refill(&mut self, reader: &mut Cursor<Vec<u8>>) -> Result<bool, DecodeErrors>
+    fn refill(&mut self, reader: &mut Cursor<&[u8]>) -> Result<bool, DecodeErrors>
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -270,7 +270,7 @@ impl BitStream
     )]
     #[inline(always)]
     fn decode_dc(
-        &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
+        &mut self, reader: &mut Cursor<&[u8]>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
     ) -> Result<bool, DecodeErrors>
     {
         let (mut symbol, r);
@@ -312,7 +312,7 @@ impl BitStream
     )]
     #[inline(never)]
     pub fn decode_mcu_block(
-        &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
+        &mut self, reader: &mut Cursor<&[u8]>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
         block: &mut [i16; 64], dc_prediction: &mut i32,
     ) -> Result<(), DecodeErrors>
     {
@@ -405,7 +405,7 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     #[inline]
     pub(crate) fn decode_prog_dc_first(
-        &mut self, reader: &mut Cursor<Vec<u8>>, dc_table: &HuffmanTable, block: &mut i16,
+        &mut self, reader: &mut Cursor<&[u8]>, dc_table: &HuffmanTable, block: &mut i16,
         dc_prediction: &mut i32,
     ) -> Result<(), DecodeErrors>
     {
@@ -415,7 +415,7 @@ impl BitStream
     }
     #[inline]
     pub(crate) fn decode_prog_dc_refine(
-        &mut self, reader: &mut Cursor<Vec<u8>>, block: &mut i16,
+        &mut self, reader: &mut Cursor<&[u8]>, block: &mut i16,
     ) -> Result<(), DecodeErrors>
     {
         // refinement scan
@@ -441,7 +441,7 @@ impl BitStream
         return k;
     }
     pub(crate) fn decode_mcu_ac_first(
-        &mut self, reader: &mut Cursor<Vec<u8>>, ac_table: &HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut Cursor<&[u8]>, ac_table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
         let shift = self.successive_low;
@@ -505,7 +505,7 @@ impl BitStream
         return Ok(true);
     }
     pub(crate) fn decode_mcu_ac_refine(
-        &mut self, reader: &mut Cursor<Vec<u8>>, table: &HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut Cursor<&[u8]>, table: &HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     {
         let bit = (1 << self.successive_low) as i16;
@@ -693,7 +693,7 @@ fn huff_extend(x: i32, s: i32) -> i32
 /// Function is inlined (as always)
 #[inline(always)]
 #[allow(clippy::cast_possible_truncation)]
-fn read_u8(reader: &mut Cursor<Vec<u8>>) -> u64
+fn read_u8(reader: &mut Cursor<&[u8]>) -> u64
 {
     let pos = reader.position();
 
