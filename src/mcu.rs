@@ -125,7 +125,7 @@ impl Decoder
     #[inline(never)]
     #[rustfmt::skip]
     pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self, reader: &mut Cursor<Vec<u8>>,
+        &mut self, reader: &mut Cursor<&[u8]>,
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         self.check_component_dimensions()?;
