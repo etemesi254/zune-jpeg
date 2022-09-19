@@ -89,6 +89,7 @@ extern crate log;
 pub use crate::decoder::{Decoder, ImageInfo};
 pub use crate::misc::ColorSpace;
 pub use crate::options::ZuneJpegOptions;
+pub use crate::probe::probe;
 
 mod bitstream;
 mod color_convert;
@@ -103,6 +104,7 @@ mod mcu;
 mod mcu_prog;
 mod misc;
 mod options;
+mod probe;
 mod unsafe_utils;
 mod upsampler;
 mod worker;
