@@ -38,6 +38,10 @@ harness = false
 name = "decode_prog"
 harness = false
 
+[[bench]]
+name = "decode_x86"
+harness=false
+
 
 
 [profile.bench]
