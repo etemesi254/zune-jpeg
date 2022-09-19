@@ -177,7 +177,8 @@ impl Decoder
     /// See DecodeErrors for an explanation
     pub fn decode_buffer(&mut self, buf: &[u8]) -> Result<Vec<u8>, DecodeErrors>
     {
-        self.decode_internal(Cursor::new(buf.to_vec()))
+        let mut cursor = Cursor::new(buf);
+        self.decode_internal(&mut cursor)
     }
 
     /// Create a new Decoder instance
@@ -194,11 +195,12 @@ impl Decoder
     where
         P: AsRef<Path> + Clone,
     {
+        let data = read(file)?;
         //Read to an in memory buffer
-        let buffer = Cursor::new(read(file)?);
+        let mut buffer = Cursor::new(data.as_slice());
 
         info!("File size: {} bytes", buffer.get_ref().len());
-        self.decode_internal(buffer)
+        self.decode_internal(&mut buffer)
     }
 
     /// Returns the image information
@@ -417,19 +419,17 @@ impl Decoder
         return self.options.get_out_colorspace();
     }
 
-    fn decode_internal(&mut self, buf: Cursor<Vec<u8>>) -> Result<Vec<u8>, DecodeErrors>
+    fn decode_internal(&mut self, buf: &mut Cursor<&[u8]>) -> Result<Vec<u8>, DecodeErrors>
     {
-        let mut buf = buf;
-
-        self.decode_headers_internal(&mut buf)?;
+        self.decode_headers_internal(buf)?;
 
         if self.is_progressive
         {
-            self.decode_mcu_ycbcr_progressive(&mut buf)
+            self.decode_mcu_ycbcr_progressive(buf)
         }
         else
         {
-            self.decode_mcu_ycbcr_baseline(&mut buf)
+            self.decode_mcu_ycbcr_baseline(buf)
         }
     }
     /// Read only headers from a jpeg image buffer
