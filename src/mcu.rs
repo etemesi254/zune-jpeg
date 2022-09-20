@@ -289,29 +289,25 @@ impl Decoder
                                         // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
                                         // Get position to write
-                                        // This is complex, don't even try to understand it. ~author
-                                        let is_y =
-                                            usize::from(component.component_id == ComponentID::Y);
-                                        // This only affects 4:2:0 images.
-                                        let y_offset = is_y
-                                            * v
-                                            * (hv_width_stride
-                                            + (hv_width_stride * (component.vertical_sample - 1)));
-                                        let another_stride =
-                                            (width_stride * v_samp * usize::from(!is_hv))
-                                                + hv_width_stride * v_samp * usize::from(is_hv);
-                                        let yet_another_stride = usize::from(is_hv)
-                                            * (width_stride >> 2)
-                                            * v
-                                            * usize::from(component.component_id != ComponentID::Y);
-                                        // offset calculator.
-                                        let start = (j * 64 * component.horizontal_sample)
-                                            + (h_samp * 64)
-                                            + another_stride
-                                            + y_offset
-                                            + yet_another_stride;
+                                        let mut start_n = (j * 64 * component.horizontal_sample)
+                                            + (h_samp * 64);
+
+                                        if component.component_id == ComponentID::Y
+                                        {
+                                            start_n += v * hv_width_stride;
+                                            start_n += v * hv_width_stride * (component.vertical_sample - 1);
+
+                                            if is_hv
+                                            {
+                                                start_n += hv_width_stride * v_samp;
+                                            }
+                                            else
+                                            {
+                                                start_n += width_stride * v_samp;
+                                            }
+                                        }
                                         // It will always be zero since it's initialized per MCU height.
-                                        let tmp: &mut [i16; 64] = temporary.get_mut(pos).unwrap().get_mut(start..start + 64).unwrap().try_into().unwrap();
+                                        let tmp: &mut [i16; 64] = temporary.get_mut(pos).unwrap().get_mut(start_n..start_n + 64).unwrap().try_into().unwrap();
 
                                         stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
                                     } else {
