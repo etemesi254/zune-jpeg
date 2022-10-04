@@ -125,7 +125,7 @@ impl Decoder
     fn default(options: ZuneJpegOptions) -> Self
     {
         let color_convert =
-            choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, options.get_use_unsafe()).unwrap();
+            choose_ycbcr_to_rgb_convert_func(options.get_out_colorspace(), options.get_use_unsafe()).unwrap();
         Decoder {
             info: ImageInfo::default(),
             qt_tables: [None, None, None, None],
