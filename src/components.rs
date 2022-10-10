@@ -40,6 +40,8 @@ pub(crate) struct Components
     pub width_stride:              usize,
     /// Component ID for progressive
     pub(crate) id:                 u8,
+
+    pub(crate) needed: bool,
 }
 
 impl Components
@@ -110,6 +112,7 @@ impl Components
             // set later
             width_stride: horizontal_sample,
             id: a[0],
+            needed: true,
         })
     }
 }
