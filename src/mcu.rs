@@ -121,9 +121,12 @@ impl Decoder
     ///
     /// Because of this, we pull in some very crazy optimization tricks hence readability is a pinch
     /// here.
-    #[allow(clippy::similar_names,clippy::too_many_lines,clippy::cast_possible_truncation)]
+    #[allow(
+        clippy::similar_names,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation
+    )]
     #[inline(never)]
-    #[rustfmt::skip]
     pub(crate) fn decode_mcu_ycbcr_baseline(
         &mut self, reader: &mut Cursor<&[u8]>,
     ) -> Result<Vec<u8>, DecodeErrors>
@@ -132,8 +135,7 @@ impl Decoder
         // check dc and AC tables
         self.check_tables()?;
 
-        let  mut scoped_pools = scoped_threadpool::Pool::new(
-            self.options.get_threads());
+        let mut scoped_pools = scoped_threadpool::Pool::new(self.options.get_threads());
         info!("Created {} worker threads", scoped_pools.thread_count());
 
         let (mut mcu_width, mut mcu_height);
@@ -152,23 +154,29 @@ impl Decoder
                 // To make it complete we multiply width by 2 and divide mcu_height by 2
                 mcu_width = self.mcu_x * 2;
                 mcu_height = self.mcu_y / 2;
-            } else if self.sub_sample_ratio == SubSampRatios::HV
+            }
+            else if self.sub_sample_ratio == SubSampRatios::HV
             {
                 mcu_width = self.mcu_x;
                 mcu_height = self.mcu_y / 2;
                 bias = 2;
-            } else {
+            }
+            else
+            {
                 mcu_width = self.mcu_x;
                 mcu_height = self.mcu_y;
             }
-        } else {
+        }
+        else
+        {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided bu 8.
             mcu_width = ((self.info.width + 7) / 8) as usize;
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
 
-        if self.input_colorspace == ColorSpace::GRAYSCALE && self.interleaved {
+        if self.input_colorspace == ColorSpace::GRAYSCALE && self.interleaved
+        {
             /*
             Apparently, grayscale images which can be down sampled exists, which is weird in the sense
             that it has one component Y, which is not usually down sampled.
@@ -177,8 +185,11 @@ impl Decoder
             for such occurrences, warn and reset the image info to appear as if it were
             a non-sampled image to ensure decoding works
             */
-            if self.options.get_strict_mode(){
-                return Err(DecodeErrors::FormatStatic("[strict-mode]: Grayscale image with down-sampled component."))
+            if self.options.get_strict_mode()
+            {
+                return Err(DecodeErrors::FormatStatic(
+                    "[strict-mode]: Grayscale image with down-sampled component.",
+                ));
             }
 
             warn!("Grayscale image with down-sampled component, resetting component details");
@@ -204,7 +215,10 @@ impl Decoder
         // because the chunking calculation will do it wrongly,
         // this only applies to  small down-sampled images
         // See https://github.com/etemesi254/zune-jpeg/issues/11
-        let extra_space = usize::from(self.interleaved) * 128 * usize::from(self.height()) * self.options.get_out_colorspace().num_components();
+        let extra_space = usize::from(self.interleaved)
+            * 128
+            * usize::from(self.height())
+            * self.options.get_out_colorspace().num_components();
         // things needed for post processing that we can remove out of the loop
         let input = self.input_colorspace;
         let output = self.options.get_out_colorspace();
@@ -214,12 +228,17 @@ impl Decoder
         let h_max = self.h_max;
         let v_max = self.v_max;
         // Halfway width size, used for vertical sub-sampling to write |Y2| in the right position.
-        let width_stride = (component_capacity * self.components[0].vertical_sample * self.components[0].horizontal_sample * bias) >> 1;
+        let width_stride = (component_capacity
+            * self.components[0].vertical_sample
+            * self.components[0].horizontal_sample
+            * bias)
+            >> 1;
         let hv_width_stride = width_stride >> 1;
 
         let mut stream = BitStream::new();
         // Storage for decoded pixels
-        let mut global_channel = vec![0; (capacity * self.options.get_out_colorspace().num_components()) + extra_space];
+        let mut global_channel =
+            vec![0; (capacity * self.options.get_out_colorspace().num_components()) + extra_space];
 
         // Split output into different blocks each containing enough space for an MCU width
         let mut chunks =
@@ -237,15 +256,23 @@ impl Decoder
 
                 let mut temporary = [vec![], vec![], vec![]];
 
-                for (pos, comp) in self.components.iter().enumerate()
+                for (pos, comp) in self.components.iter_mut().enumerate()
                 {
                     // multiply capacity with sampling factor, it  should be 1*1 for un-sampled images
                     // Allocate only needed components.
                     if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
                     {
-                        let len = component_capacity * comp.vertical_sample * comp.horizontal_sample * bias;
+                        let len = component_capacity
+                            * comp.vertical_sample
+                            * comp.horizontal_sample
+                            * bias;
 
+                        comp.needed = true;
                         temporary[pos] = vec![0; len];
+                    }
+                    else
+                    {
+                        comp.needed = false;
                     }
                 }
                 // Bias only affects 4:2:0(chroma quartered) sub-sampled images.
@@ -261,20 +288,12 @@ impl Decoder
                             let component = &mut self.components[pos];
                             let dc_table = self.dc_huffman_tables[component.dc_huff_table & 3]
                                 .as_ref()
-                                .ok_or_else(|| {
-                                    DecodeErrors::HuffmanDecode(format!(
-                                        "No DC table for component {:?}",
-                                        component.component_id
-                                    ))
-                                })?;
+                                .ok_or(DecodeErrors::FormatStatic("No DC table for a component"))?;
                             let ac_table = self.ac_huffman_tables[component.ac_huff_table & 3]
                                 .as_ref()
-                                .ok_or_else(|| {
-                                    DecodeErrors::HuffmanDecode(format!(
-                                        "No AC table for component {:?}",
-                                        component.component_id
-                                    ))
-                                })?;
+                                .ok_or(DecodeErrors::FormatStatic("No AC table for component"))?;
+
+                            let channel = temporary.get_mut(pos).unwrap();
 
                             // If image is interleaved iterate over scan  components,
                             // otherwise if it-s non-interleaved, these routines iterate in
@@ -284,18 +303,20 @@ impl Decoder
                                 for h_samp in 0..component.horizontal_sample
                                 {
                                     // only decode needed components
-                                    if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
+                                    if component.needed
                                     {
                                         // The spec  https://www.w3.org/Graphics/JPEG/itu-t81.pdf page 26
 
                                         // Get position to write
-                                        let mut start_n = (j * 64 * component.horizontal_sample)
-                                            + (h_samp * 64);
+                                        let mut start_n =
+                                            (j * 64 * component.horizontal_sample) + (h_samp * 64);
 
                                         if component.component_id == ComponentID::Y
                                         {
                                             start_n += v * hv_width_stride;
-                                            start_n += v * hv_width_stride * (component.vertical_sample - 1);
+                                            start_n += v
+                                                * hv_width_stride
+                                                * (component.vertical_sample - 1);
 
                                             if is_hv
                                             {
@@ -307,41 +328,72 @@ impl Decoder
                                             }
                                         }
                                         // It will always be zero since it's initialized per MCU height.
-                                        let tmp: &mut [i16; 64] = temporary.get_mut(pos).unwrap().get_mut(start_n..start_n + 64).unwrap().try_into().unwrap();
+                                        let tmp: &mut [i16; 64] = channel
+                                            .get_mut(start_n..start_n + 64)
+                                            .unwrap()
+                                            .try_into()
+                                            .unwrap();
 
-                                        stream.decode_mcu_block(reader, dc_table, ac_table, tmp, &mut component.dc_pred)?;
-                                    } else {
+                                        stream.decode_mcu_block(
+                                            reader,
+                                            dc_table,
+                                            ac_table,
+                                            tmp,
+                                            &mut component.dc_pred,
+                                        )?;
+                                    }
+                                    else
+                                    {
                                         // component not needed, decode and discard bits
-                                        stream.decode_mcu_block(reader, dc_table, ac_table, &mut tmp, &mut component.dc_pred)?;
+                                        stream.decode_mcu_block(
+                                            reader,
+                                            dc_table,
+                                            ac_table,
+                                            &mut tmp,
+                                            &mut component.dc_pred,
+                                        )?;
                                     }
                                 }
                             }
-                            self.todo = self.todo.wrapping_sub(1);
-                            // after every interleaved MCU that's a mcu, count down restart markers.
-                            if self.todo == 0
+                        }
+                        self.todo = self.todo.wrapping_sub(1);
+                        // after every interleaved MCU that's a mcu, count down restart markers.
+                        if self.todo == 0
+                        {
+                            self.handle_rst(&mut stream)?;
+                        }
+
+                        // In some corrupt images, it may occur that header markers occur in the stream.
+                        // The spec EXPLICITLY FORBIDS this, specifically, in
+                        // routine F.2.2.5  it says
+                        // `The only valid marker which may occur within the Huffman coded data is the RSTm marker.`
+                        //
+                        // But libjpeg-turbo allows it because of some weird reason. so I'll also
+                        // allow it because of some weird reason.
+                        if let Some(m) = stream.marker
+                        {
+                            if m == Marker::EOI
                             {
-                                self.handle_rst(&mut stream)?;
+                                break;
                             }
 
-                            // In some corrupt images, it may occur that header markers occur in the stream.
-                            // The spec EXPLICITLY FORBIDS this, specifically, in
-                            // routine F.2.2.5  it says
-                            // `The only valid marker which may occur within the Huffman coded data is the RSTm marker.`
-                            //
-                            // But libjpeg-turbo allows it because of some weird reason. so I'll also
-                            // allow it because of some weird reason.
-                            if let Some(m) = stream.marker
+                            if let Marker::RST(_) = m
                             {
-                                if m == Marker::EOI
-                                {
-                                    break;
-                                }
-
-                                if let Marker::RST(_) = m { continue }
-
-                                error!("Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",m);
-                                self.parse_marker_inner(m, reader)?;
+                                continue;
                             }
+
+                            if self.options.get_strict_mode()
+                            {
+                                return Err(DecodeErrors::Format(format!(
+                                    "Marker {:?} found where not expected",
+                                    m
+                                )));
+                            }
+                            error!(
+                                "Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",
+                                m
+                            );
+                            self.parse_marker_inner(m, reader)?;
                         }
                     }
                 }
@@ -350,17 +402,22 @@ impl Decoder
                 let next_chunk = chunks.next().unwrap();
 
                 scope.execute(move || {
+                    let mut coeff: [&[i16]; 3] = [&[]; 3];
 
-                    let mut coeff :[&[i16];3]=[&[];3];
-
-                    temporary.iter().enumerate().for_each(|(pos,x)|{
+                    temporary.iter().enumerate().for_each(|(pos, x)| {
                         coeff[pos] = x;
                     });
 
-                    post_process(&coeff, &component,
-                                 idct_func, color_convert_16,
-                                 input, output, next_chunk,
-                                 width);
+                    post_process(
+                        &coeff,
+                        &component,
+                        idct_func,
+                        color_convert_16,
+                        input,
+                        output,
+                        next_chunk,
+                        width,
+                    );
                 });
             }
             //everything is okay
