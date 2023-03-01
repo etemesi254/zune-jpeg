@@ -36,7 +36,7 @@ we can do about that.
 ![](bar-graph_m1.png)
 
 
-The decoder is blazingly fast, especially on x86_64 with AVX2 enabled CPU's(most cpu's from 2013).
+The decoder is 🚀blazingly fast🚀, especially on x86_64 with AVX2 enabled CPU's(most cpu's from 2013).
 
 Even with CPU's that don't support these extensions, the code is carefully written to allow the auto-vectorizer to
 accelerate for whatever platforms in mind.
